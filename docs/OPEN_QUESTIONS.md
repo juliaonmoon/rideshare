@@ -8,3 +8,5 @@
 6. **Pilot first or build first?** I recommend a no-code pilot with 30–50 commuters, then build.
 7. **Map provider** – Google Maps (best data, costs money) vs Mapbox (cheaper)?
 8. **"Night share team"** – I don't have a team by that name in this session; I did the research myself. Tell me who/what you meant.
+9. **Profit or non-profit?** Leaning: no fee on riders; funded by employers/grants. OK?
+10. **Build or partner?** BC already has a free TransLink-backed carpool app (Liftango) and gobyRIDE. Do the 1–2 week "try the existing apps" test first?

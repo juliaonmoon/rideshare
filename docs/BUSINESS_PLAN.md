@@ -1,7 +1,16 @@
 # Business Plan (draft)
 
 ## Purpose
-Cut the cost of the daily commute drive, with no extra burden on the driver, in a fair system.
+Ease the pain of rising gas costs for daily commuters, with no extra burden on the driver, in a fair system.
+
+## Profit vs non-profit (decision pending)
+
+The stated goal is to cover running costs and the founder's effort; a small profit is a bonus, a non-profit is acceptable.
+
+- **Drivers can never profit.** BC's carpool exemption and ICBC coverage depend on that. Only the **platform** can earn.
+- **Non-profit / cost-recovery fits the market:** TransLink's carpool app is free to users, so charging a 15% fee (gobyRIDE) is hard to justify.
+- **Ways to cover costs without fees on riders:** employer or school subscriptions, TransLink/government grants, sponsors.
+- Draft position: **no fee on riders at launch; cover costs with an employer pilot fee or grant.** Decide the legal form (BC society vs company) after the pilot.
 
 ## How payment works
 

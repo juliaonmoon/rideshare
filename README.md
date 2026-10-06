@@ -20,10 +20,11 @@ No profit for drivers — the goal is to **lower the cost of driving**, with zer
 
 ## Verdict (short)
 
-- **Is there room?** Yes, but narrow. Consumer carpool apps have a poor track record (Waze Carpool shut down in 2022). The survivors sell to **employers**, not individuals.
+- **Is there room?** Narrow. BC already has a free TransLink-backed commuter app (Liftango) and gobyRIDE (cost-share + points). Consumer carpool apps have a poor track record (Waze Carpool shut down 2022); survivors sell to **employers**.
 - **Your differentiators:** driver-first detour control, and a points system that makes the app two-sided *without needing cash*.
 - **Biggest risks:** (1) not enough users on the same routes at the same time, (2) BC law/insurance only allows **cost-sharing**, not profit, (3) points must be designed so they can't be turned into cash.
-- **Recommendation:** pilot with **one employer or campus corridor in Burnaby** before building the full app.
+- **Recommendation:** first try the existing BC apps and find the real gaps; talk to TransLink/Liftango; only then pilot (one Burnaby employer or campus) and build.
+- **Money:** drivers can never profit (law/insurance). Platform can run **non-profit / cost-recovery**.
 
 ## Documents
 
