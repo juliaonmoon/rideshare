@@ -1,5 +1,7 @@
 # gobyRIDE Deep Dive
 
+> **Decision (2026-10-06): gobyRIDE is set aside** — weak reviews, stale listing, not findable on Android. See COMPETITOR_SCORECARD.md. Note: payment is cash + 15% fee; its points look like loyalty rewards, not payment.
+
 _2026-10-06. Based on web search summaries only (company sites were mostly unreachable). Small samples, possibly out of date. Verify by installing the app._
 
 ## Who is behind it
