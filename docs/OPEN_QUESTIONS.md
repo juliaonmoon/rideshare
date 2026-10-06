@@ -10,3 +10,5 @@
 8. **"Night share team"** – I don't have a team by that name in this session; I did the research myself. Tell me who/what you meant.
 9. **Profit or non-profit?** Leaning: no fee on riders; funded by employers/grants. OK?
 10. **Build or partner?** BC already has a free TransLink-backed carpool app (Liftango) and gobyRIDE. Do the 1–2 week "try the existing apps" test first?
+11. **Employer check:** does Electronic Arts (Burnaby) appear on TransLink's registered-employer list? Email travelsmart@translink.ca to find out.
+12. **Scope:** commute-only in BC first, with long-distance and cross-border later? (See EXPANSION_BEYOND_METRO.md)

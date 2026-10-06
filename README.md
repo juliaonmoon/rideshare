@@ -33,6 +33,8 @@ No profit for drivers — the goal is to **lower the cost of driving**, with zer
 | [docs/MARKET_RESEARCH.md](docs/MARKET_RESEARCH.md) | Competitors, feature comparison, is there an opportunity |
 | [docs/BUSINESS_PLAN.md](docs/BUSINESS_PLAN.md) | Model, pricing, points economy, launch plan, revenue |
 | [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md) | Features: MVP vs later, plus extras you didn't mention |
+| [docs/GOBYRIDE_DEEP_DIVE.md](docs/GOBYRIDE_DEEP_DIVE.md) | Closest competitor in detail: same or different, successful or not |
+| [docs/EXPANSION_BEYOND_METRO.md](docs/EXPANSION_BEYOND_METRO.md) | Going beyond Metro Vancouver: BC, Washington, California |
 | [docs/OPEN_QUESTIONS.md](docs/OPEN_QUESTIONS.md) | Decisions we need from you |
 
 All project documentation lives in this repo.
