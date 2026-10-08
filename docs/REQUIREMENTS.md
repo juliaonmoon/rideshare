@@ -15,6 +15,7 @@ Priority: **P0** = MVP, **P1** = soon after, **P2** = later.
 | 7 | Driver earns points for rides given; spends them when riding | P0 |
 | 8 | Google Maps (or equivalent) integration | P0 |
 | 9 | Zero added burden on driver (recurring trips, minimal taps) | P0 |
+| 10 | Driver and rider see the car move live on the map (ETA to pickup, then to drop-off) | P0 |
 
 ## Suggested additions
 

@@ -6,7 +6,7 @@
 4. **Starting place** – Burnaby corridor? Which employer/campus do you know best?
 5. **Legal check** – OK to book a short consult with a BC lawyer / ICBC on cost-sharing and points before launch?
 6. **Pilot first or build first?** I recommend a no-code pilot with 30–50 commuters, then build.
-7. **Map provider** – Google Maps (best data, costs money) vs Mapbox (cheaper)?
+7. **Map provider** – the prototype uses free OpenStreetMap + Leaflet (no key, no cost). Google Maps (best data and real routing, needs an API key and billing account) vs Mapbox (cheaper) can be decided later; the map layer is isolated so it can be swapped.
 8. **"Night share team"** – I don't have a team by that name in this session; I did the research myself. Tell me who/what you meant.
 9. **Profit or non-profit?** Leaning: no fee on riders; funded by employers/grants. OK?
 10. **Build or partner?** BC already has a free TransLink-backed carpool app (Liftango) and gobyRIDE. Do the 1–2 week "try the existing apps" test first?

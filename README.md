@@ -26,6 +26,10 @@ No profit for drivers — the goal is to **lower the cost of driving**, with zer
 - **Recommendation:** first try the existing BC apps and find the real gaps; talk to TransLink/Liftango; only then pilot (one Burnaby employer or campus) and build.
 - **Money:** drivers can never profit (law/insurance). Platform can run **non-profit / cost-recovery**.
 
+## Prototype
+
+[`prototype/`](prototype/) is a clickable demo (no server, no cost): driver detour/wait limits, rider matching, fair cost split, points, recurring weekly schedule with backup riders, live car on the map. Open `prototype/index.html` in a browser. See [prototype/README.md](prototype/README.md).
+
 ## Documents
 
 | File | What it is |
