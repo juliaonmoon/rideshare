@@ -15,5 +15,8 @@ Tests for the matching and pricing logic: `node test.js`
 ## Live car on the map
 "Start trip" (driver) and "Request" (rider) animate a car along the route with a status line (next stop / minutes to pickup). Demo speed: 3 simulated minutes per second; the car moves in straight lines between stops. It uses free OpenStreetMap tiles via Leaflet, **not Google Maps** (that needs an API key and billing). The map layer is small and can be swapped for Google Maps or Mapbox later.
 
+## Fallback map
+If the street map can't load (offline, or a sandboxed viewer), the app draws a schematic route with the moving car instead, so everything still works. The phone-friendly copy shared in Claude uses this schematic map.
+
 ## Not verified yet
 Automated checks cover matching/pricing logic and the page flow (accept, regular rider, start trip, request, points). The map tiles and the car icon could not be viewed in the build environment (map CDN blocked), so please check the map on your own browser.

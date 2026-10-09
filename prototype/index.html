@@ -7,7 +7,8 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
 <style>
 :root{--bg:#f6f7f9;--card:#fff;--ink:#1b2430;--mut:#5d6b7c;--line:#e1e5ea;--acc:#0b7a5b;--acc2:#e8f5f0;--warn:#b45309;--warnbg:#fef3c7;--bad:#b42318}
-@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#10151b;--card:#18202a;--ink:#e8edf3;--mut:#93a1b3;--line:#2a3542;--acc:#3ecf9e;--acc2:#12312a;--warn:#fbbf24;--warnbg:#3a2e0b;--bad:#f87171}}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#10151b;--card:#18202a;--ink:#e8edf3;--mut:#93a1b3;--line:#2a3542;--acc:#3ecf9e;--acc2:#12312a;--warn:#fbbf24;--warnbg:#3a2e0b;--bad:#f87171;color-scheme:dark}}
+:root[data-theme=dark]{--bg:#10151b;--card:#18202a;--ink:#e8edf3;--mut:#93a1b3;--line:#2a3542;--acc:#3ecf9e;--acc2:#12312a;--warn:#fbbf24;--warnbg:#3a2e0b;--bad:#f87171;color-scheme:dark}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
 header{padding:14px 16px 0;max-width:1100px;margin:0 auto}
@@ -165,9 +166,34 @@ function dayButtons(containerId, arr, onChange){
 
 // ---------- map ----------
 const maps = {};
+// Schematic fallback map (no tiles): used when Leaflet/OpenStreetMap can't load, e.g. in a sandboxed viewer.
+const svgState = {};
+function svgMap(id, stops, extra){
+  const el=$(id), pts=stops.map(s=>s.loc).concat((extra||[]).map(e=>e.loc));
+  const W=600,H=300,pad=34;
+  const lat0=Math.min(...pts.map(p=>p.lat)), lat1=Math.max(...pts.map(p=>p.lat));
+  const lng0=Math.min(...pts.map(p=>p.lng)), lng1=Math.max(...pts.map(p=>p.lng));
+  const k=Math.cos(((lat0+lat1)/2)*Math.PI/180);
+  const dx=(lng1-lng0)*k||0.01, dy=(lat1-lat0)||0.01;
+  const sc=Math.min((W-2*pad)/dx,(H-2*pad)/dy), ox=(W-dx*sc)/2, oy=(H-dy*sc)/2;
+  const P=(loc)=>[ox+(loc.lng-lng0)*k*sc, H-oy-(loc.lat-lat0)*sc];
+  const col={origin:'#0b7a5b',dest:'#b42318',pickup:'#2563eb',dropoff:'#7c3aed'};
+  const lbl=(s)=>({origin:'Start',dest:'End',pickup:'Pick up '+(s.rider?s.rider.name:''),dropoff:'Drop off '+(s.rider?s.rider.name:'')})[s.type];
+  let g='<polyline fill="none" stroke="var(--acc)" stroke-width="4" stroke-linejoin="round" points="'+stops.map(s=>P(s.loc).map(n=>n.toFixed(1)).join(',')).join(' ')+'"/>';
+  (extra||[]).forEach(e=>{const [x,y]=P(e.loc); g+=`<circle cx="${x}" cy="${y}" r="5" fill="var(--mut)" opacity=".6"/><text x="${x+8}" y="${y+4}" font-size="10" fill="var(--mut)">${e.label}</text>`;});
+  stops.forEach(s=>{const [x,y]=P(s.loc); g+=`<circle cx="${x}" cy="${y}" r="7" fill="${col[s.type]}"/><text x="${x+10}" y="${y-8}" font-size="11" font-weight="600" fill="var(--ink)">${lbl(s)}</text>`;});
+  el.innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="100%" height="100%" role="img" aria-label="Route map">${g}<text x="8" y="${H-8}" font-size="10" fill="var(--mut)">Schematic route (street map not available in this view)</text></svg>`;
+  svgState[id]={P};
+}
+function svgCar(id,pos){
+  const st=svgState[id], svg=$(id).querySelector('svg'); if(!st||!svg) return;
+  let c=svg.querySelector('.carsvg');
+  if(!c){ c=document.createElementNS('http://www.w3.org/2000/svg','text'); c.setAttribute('class','carsvg'); c.setAttribute('font-size','24'); c.setAttribute('text-anchor','middle'); c.textContent='\u{1F697}'; svg.appendChild(c); }
+  const [x,y]=st.P({lat:pos[0],lng:pos[1]}); c.setAttribute('x',x); c.setAttribute('y',y+8);
+}
 function drawMap(id, stops, extra){
   const el=$(id);
-  if (typeof L==='undefined'){ el.innerHTML='<div class="nomap">Map unavailable (could not load OpenStreetMap/Leaflet). Matching still works.</div>'; return; }
+  if (typeof L==='undefined'){ svgMap(id,stops,extra); return; }
   if(!maps[id]){ el.innerHTML=''; maps[id]=L.map(id); L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:18,attribution:'&copy; OpenStreetMap contributors'}).addTo(maps[id]); maps[id].layer=L.layerGroup().addTo(maps[id]); }
   const m=maps[id]; m.layer.clearLayers();
   const pts=stops.map(s=>[s.loc.lat,s.loc.lng]);
@@ -302,7 +328,7 @@ function renderAll(){ renderDriver(); renderRider(); renderWallet(); }
 // ---------- live trip simulation (car moves along the route) ----------
 // Demo only: the car follows the straight legs between stops at an accelerated speed (3 simulated minutes per second).
 const sim = {};
-function stopSim(key){ const s=sim[key]; if(!s) return; cancelAnimationFrame(s.raf); if(s.marker && maps[s.mapId]) maps[s.mapId].removeLayer(s.marker); delete sim[key]; }
+function stopSim(key){ const s=sim[key]; if(!s) return; cancelAnimationFrame(s.raf); if(s.marker && maps[s.mapId]) maps[s.mapId].removeLayer(s.marker); const c=$(s.mapId).querySelector('.carsvg'); if(c) c.remove(); delete sim[key]; }
 function startSim(key, mapId, stops, who, mode, riderObj){
   stopSim(key);
   const cum=[0]; for(let i=1;i<stops.length;i++) cum.push(cum[i-1]+RS.minutes(stops[i-1].loc,stops[i].loc));
@@ -319,7 +345,7 @@ function tick(key){
   if(m && typeof L!=='undefined'){
     if(!s.marker) s.marker=L.marker(pos,{icon:L.divIcon({html:'\u{1F697}',className:'car',iconSize:[28,28],iconAnchor:[14,14]}),zIndexOffset:1000}).addTo(m);
     else s.marker.setLatLng(pos);
-  }
+  } else svgCar(s.mapId,pos);
   const st=$('sim-'+key+'-status'), mins=(x)=>Math.max(0,Math.ceil(x));
   if(s.mode==='driver'){
     const nxt=s.stops[i];
@@ -340,7 +366,9 @@ bind('d-origin','origin'); bind('d-dest','dest'); bind('d-depart','depart'); bin
 const rbind=(id,key)=>$(id).addEventListener('input',e=>{ stopSim('r'); S.rider[key]=e.target.value; save(); renderRider(); });
 rbind('r-pickup','pickup'); rbind('r-dropoff','dropoff'); rbind('r-from','from'); rbind('r-to','to'); rbind('r-pays','pays');
 dayButtons('d-days',S.driver.days,renderSched); dayButtons('r-days',S.rider.days,()=>{});
-$('w-reset').onclick=()=>{ if(confirm('Reset all demo data?')){ S=JSON.parse(JSON.stringify(DEFAULT)); save(); location.reload(); } };
+let resetArmed=false;
+$('w-reset').onclick=()=>{ if(!resetArmed){ resetArmed=true; $('w-reset').textContent='Tap again to reset all demo data'; setTimeout(()=>{resetArmed=false;$('w-reset').textContent='Reset demo';},4000); return; }
+  S=JSON.parse(JSON.stringify(DEFAULT)); save(); location.reload(); };
 const tabs={driver:'v-driver',rider:'v-rider',wallet:'v-wallet'};
 Object.keys(tabs).forEach(k=>$('t-'+k).onclick=()=>{
   Object.keys(tabs).forEach(j=>{ $(tabs[j]).classList.toggle('hide',j!==k); $('t-'+j).setAttribute('aria-selected',j===k); });
