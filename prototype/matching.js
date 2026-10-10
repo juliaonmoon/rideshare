@@ -115,8 +115,9 @@
   const toPoints = (dollars) => Math.max(1, Math.round(dollars / POINT_VALUE));
   const money = (n) => '$' + n.toFixed(2);
   const clock = (m) => {
-    const h = Math.floor(m / 60) % 24, mm = Math.round(m % 60);
-    return String(h).padStart(2, '0') + ':' + String(mm === 60 ? 0 : mm).padStart(2, '0');
+    const total = Math.round(m);
+    const h = Math.floor(total / 60) % 24, mm = total % 60;
+    return String(h).padStart(2, '0') + ':' + String(mm).padStart(2, '0');
   };
 
   const RS = { haversineKm, roadKm, minutes, evaluate, bestInsertion, buildRoute, findMatches,
