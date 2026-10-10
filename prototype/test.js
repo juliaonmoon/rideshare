@@ -61,4 +61,9 @@ t('points conversion is closed-loop and at least 1', () => {
   assert.strictEqual(RS.toPoints(0.01), 1);
   assert.strictEqual(RS.toPoints(5), 50);
 });
+t('clock rolls the hour when minutes round up to 60 (07:59.6 -> 08:00)', () => {
+  assert.strictEqual(RS.clock(7 * 60 + 59.6), '08:00');
+  assert.strictEqual(RS.clock(7 * 60 + 30), '07:30');
+  assert.strictEqual(RS.clock(23 * 60 + 59.6), '00:00');
+});
 console.log(`\n${n} tests passed`);
