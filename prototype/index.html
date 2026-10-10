@@ -119,6 +119,13 @@ input[type=range]{width:100%;accent-color:var(--acc)}
       <p class="mut">Earn points by driving riders who pay in points. Spend them when you ride. Points can't be cashed out or transferred, and they never exceed the real cost of the trip, so nobody profits.</p>
       <button class="btn ghost" id="w-reset">Reset demo</button>
     </div>
+    <div class="card"><h2>Map</h2>
+      <div class="mut" id="g-status"></div>
+      <label for="g-key">Google Maps API key (optional)</label>
+      <input type="password" id="g-key" autocomplete="off" placeholder="Paste your own key" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);font:inherit">
+      <div style="margin-top:8px;display:flex;gap:8px"><button class="btn" id="g-save">Save and use Google Maps</button><button class="btn ghost" id="g-clear">Remove key</button></div>
+      <p class="mut">Your key stays in this browser only and is never sent anywhere except Google. Google Maps needs the page on a normal web address; it cannot load inside the Claude viewer, which shows the schematic map instead.</p>
+    </div>
   </section>
   <section><div class="card"><h2>History</h2><div id="w-ledger"></div></div></section>
 </main>
@@ -139,9 +146,9 @@ const hmStr = (m)=>RS.clock(m);
 
 const DEFAULT = {
   points: 40, ledger: [],
-  driver: {origin:'Surrey Central', dest:'BCIT / Willingdon (Burnaby)', depart:'07:30', maxDetour:8, maxWait:5, accepts:'either', cpk:0.20, days:[1,1,1,1,1]},
+  driver: {origin:'Surrey Central', dest:'BCIT / Willingdon (Burnaby)', depart:'07:30', maxDetour:10, maxWait:5, accepts:'either', cpk:0.20, days:[1,1,1,1,1]},
   acceptedIds: [], regular: {}, skip: {},
-  rider: {pickup:'Guildford (Surrey)', dropoff:'Brentwood (Burnaby)', from:'07:15', to:'07:50', pays:'points', days:[1,1,1,1,1]},
+  rider: {pickup:'Whalley (Surrey)', dropoff:'Brentwood (Burnaby)', from:'07:20', to:'07:50', pays:'points', days:[1,1,1,1,1]},
 };
 let S;
 try { S = JSON.parse(localStorage.getItem(KEY)) || null; } catch(e){ S = null; }
@@ -191,8 +198,36 @@ function svgCar(id,pos){
   if(!c){ c=document.createElementNS('http://www.w3.org/2000/svg','text'); c.setAttribute('class','carsvg'); c.setAttribute('font-size','24'); c.setAttribute('text-anchor','middle'); c.textContent='\u{1F697}'; svg.appendChild(c); }
   const [x,y]=st.P({lat:pos[0],lng:pos[1]}); c.setAttribute('x',x); c.setAttribute('y',y+8);
 }
+// ---------- Google Maps (optional, uses the user's own API key) ----------
+const GKEY='rs-gmaps-key';
+const gmaps={}; let gReady=false, gFailed=false, gLoading=false;
+function getKey(){ try{ return localStorage.getItem(GKEY)||''; }catch(e){ return ''; } }
+function loadGoogle(){
+  const key=getKey(); if(!key||gReady||gLoading||gFailed) return;
+  gLoading=true;
+  window.gm_authFailure=()=>{ gFailed=true; gReady=false; Object.keys(gmaps).forEach(k=>{ delete gmaps[k]; $(k).innerHTML=''; }); toast('Google rejected the API key. Using the fallback map.'); renderAll(); renderMapStatus(); };
+  window.__rsGmInit=()=>{ gReady=true; gLoading=false; renderAll(); renderMapStatus(); };
+  const sc=document.createElement('script');
+  sc.src='https://maps.googleapis.com/maps/api/js?key='+encodeURIComponent(key)+'&callback=__rsGmInit';
+  sc.async=true;
+  sc.onerror=()=>{ gLoading=false; gFailed=true; toast('Could not load Google Maps. Using the fallback map.'); renderAll(); renderMapStatus(); };
+  document.head.appendChild(sc);
+}
+const stopLabel=(s)=>({origin:'Start',dest:'End',pickup:'Pick up '+(s.rider?s.rider.name:''),dropoff:'Drop off '+(s.rider?s.rider.name:'')})[s.type];
+function gmapDraw(id, stops, extra){
+  const el=$(id), gm=google.maps;
+  if(!gmaps[id]){ el.innerHTML=''; gmaps[id]={map:new gm.Map(el,{center:{lat:49.22,lng:-122.9},zoom:11,mapTypeControl:false,streetViewControl:false,fullscreenControl:false}),over:[]}; }
+  const g=gmaps[id]; g.over.forEach(o=>o.setMap(null)); g.over=[];
+  const path=stops.map(s=>({lat:s.loc.lat,lng:s.loc.lng}));
+  g.over.push(new gm.Polyline({map:g.map,path,strokeColor:'#0b7a5b',strokeWeight:5,strokeOpacity:.85}));
+  const col={origin:'#0b7a5b',dest:'#b42318',pickup:'#2563eb',dropoff:'#7c3aed'};
+  stops.forEach(s=>g.over.push(new gm.Marker({map:g.map,position:{lat:s.loc.lat,lng:s.loc.lng},title:stopLabel(s),icon:{path:gm.SymbolPath.CIRCLE,scale:8,fillColor:col[s.type],fillOpacity:1,strokeColor:'#ffffff',strokeWeight:2}})));
+  (extra||[]).forEach(e=>g.over.push(new gm.Marker({map:g.map,position:{lat:e.loc.lat,lng:e.loc.lng},title:e.label,icon:{path:gm.SymbolPath.CIRCLE,scale:5,fillColor:'#94a3b8',fillOpacity:.7,strokeWeight:0}})));
+  g.bounds=new gm.LatLngBounds(); path.forEach(pt=>g.bounds.extend(pt)); g.map.fitBounds(g.bounds,40);
+}
 function drawMap(id, stops, extra){
   const el=$(id);
+  if (gReady && !gFailed){ gmapDraw(id,stops,extra); return; }
   if (typeof L==='undefined'){ svgMap(id,stops,extra); return; }
   if(!maps[id]){ el.innerHTML=''; maps[id]=L.map(id); L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:18,attribution:'&copy; OpenStreetMap contributors'}).addTo(maps[id]); maps[id].layer=L.layerGroup().addTo(maps[id]); }
   const m=maps[id]; m.layer.clearLayers();
@@ -328,7 +363,7 @@ function renderAll(){ renderDriver(); renderRider(); renderWallet(); }
 // ---------- live trip simulation (car moves along the route) ----------
 // Demo only: the car follows the straight legs between stops at an accelerated speed (3 simulated minutes per second).
 const sim = {};
-function stopSim(key){ const s=sim[key]; if(!s) return; cancelAnimationFrame(s.raf); if(s.marker && maps[s.mapId]) maps[s.mapId].removeLayer(s.marker); const c=$(s.mapId).querySelector('.carsvg'); if(c) c.remove(); delete sim[key]; }
+function stopSim(key){ const s=sim[key]; if(!s) return; cancelAnimationFrame(s.raf); if(s.gcar) s.gcar.setMap(null); if(s.marker && maps[s.mapId]) maps[s.mapId].removeLayer(s.marker); const c=$(s.mapId).querySelector('.carsvg'); if(c) c.remove(); delete sim[key]; }
 function startSim(key, mapId, stops, who, mode, riderObj){
   stopSim(key);
   const cum=[0]; for(let i=1;i<stops.length;i++) cum.push(cum[i-1]+RS.minutes(stops[i-1].loc,stops[i].loc));
@@ -341,8 +376,12 @@ function tick(key){
   let i=1; while(i<s.cum.length-1 && s.cum[i]<t) i++;
   const f=(t-s.cum[i-1])/Math.max(1e-6,s.cum[i]-s.cum[i-1]);
   const a=s.stops[i-1].loc, b=s.stops[i].loc, pos=[a.lat+(b.lat-a.lat)*f, a.lng+(b.lng-a.lng)*f];
-  const m=maps[s.mapId];
-  if(m && typeof L!=='undefined'){
+  const m=maps[s.mapId], gmc=gmaps[s.mapId];
+  if(gmc){
+    const ll={lat:pos[0],lng:pos[1]};
+    if(!s.gcar) s.gcar=new google.maps.Marker({map:gmc.map,position:ll,zIndex:999,icon:{path:google.maps.SymbolPath.CIRCLE,scale:0},label:{text:'\u{1F697}',fontSize:'26px'}});
+    else s.gcar.setPosition(ll);
+  } else if(m && typeof L!=='undefined'){
     if(!s.marker) s.marker=L.marker(pos,{icon:L.divIcon({html:'\u{1F697}',className:'car',iconSize:[28,28],iconAnchor:[14,14]}),zIndexOffset:1000}).addTo(m);
     else s.marker.setLatLng(pos);
   } else svgCar(s.mapId,pos);
@@ -360,6 +399,13 @@ function tick(key){
   if(el<total) s.raf=requestAnimationFrame(()=>tick(key));
 }
 
+function renderMapStatus(){
+  const k=getKey();
+  $('g-status').textContent = gReady ? 'Using Google Maps.' : gLoading ? 'Loading Google Maps...' : gFailed ? 'Google Maps failed to load (check the key). Using the fallback map.' : k ? 'Key saved. Reload to use Google Maps.' : 'No key set. Using free OpenStreetMap (or a schematic map if that cannot load).';
+}
+$('g-save').onclick=()=>{ const v=$('g-key').value.trim(); if(!v){ toast('Paste a key first'); return; } try{ localStorage.setItem(GKEY,v); }catch(e){ toast('Could not save the key in this browser'); return; } location.reload(); };
+$('g-clear').onclick=()=>{ try{ localStorage.removeItem(GKEY); }catch(e){} location.reload(); };
+
 // ---------- wiring ----------
 const bind=(id,key,cast)=>$(id).addEventListener('input',e=>{ stopSim('d'); S.driver[key]=cast?cast(e.target.value):e.target.value; save(); renderDriver(); });
 bind('d-origin','origin'); bind('d-dest','dest'); bind('d-depart','depart'); bind('d-detour','maxDetour',Number); bind('d-wait','maxWait',Number); bind('d-accepts','accepts'); bind('d-cpk','cpk',Number);
@@ -372,8 +418,8 @@ $('w-reset').onclick=()=>{ if(!resetArmed){ resetArmed=true; $('w-reset').textCo
 const tabs={driver:'v-driver',rider:'v-rider',wallet:'v-wallet'};
 Object.keys(tabs).forEach(k=>$('t-'+k).onclick=()=>{
   Object.keys(tabs).forEach(j=>{ $(tabs[j]).classList.toggle('hide',j!==k); $('t-'+j).setAttribute('aria-selected',j===k); });
-  renderAll(); setTimeout(()=>Object.values(maps).forEach(m=>m.invalidateSize()),60); });
-renderAll();
+  renderAll(); setTimeout(()=>{ Object.values(maps).forEach(m=>m.invalidateSize()); Object.values(gmaps).forEach(g=>{ google.maps.event.trigger(g.map,'resize'); if(g.bounds) g.map.fitBounds(g.bounds,40); }); },60); });
+renderAll(); renderMapStatus(); loadGoogle();
 })();
 </script>
 </body>
