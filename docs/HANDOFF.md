@@ -21,6 +21,11 @@ Picking this up in Claude Code on the owner's own computer? Read this first.
 5. Resize to phone width; no horizontal scroll.
 6. Confirm the page works with no key (fallback map).
 
+## Road routes (added 2026-10-12)
+- With a Google key, the route and car follow real roads using the **Routes API** (one request per distinct route, cached, max 60 per day per browser). Key must allow **Maps JavaScript API** and **Routes API**.
+- If Google refuses or the cap is hit, the page falls back to straight lines and Points > Map shows why.
+- Not yet verified on a real phone. The car is a simulation, not the phone's GPS.
+
 ## Rules
 - Do not commit API keys or any secrets.
 - Keep trading-bot code out of this repo (separate project).
