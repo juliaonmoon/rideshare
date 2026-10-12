@@ -213,17 +213,75 @@ function loadGoogle(){
   sc.onerror=()=>{ gLoading=false; gFailed=true; toast('Could not load Google Maps. Using the fallback map.'); renderAll(); renderMapStatus(); };
   document.head.appendChild(sc);
 }
+// ---------- Road routes (Google Routes API, optional; falls back to straight lines) ----------
+// One request per distinct route, cached for the session, capped per day to protect the user's quota.
+const RT={cache:{},pending:{},timers:{},err:'',DAILY_CAP:60,CAPKEY:'rs-route-count'};
+const routeKey=(stops)=>stops.map(s=>s.loc.lat.toFixed(4)+','+s.loc.lng.toFixed(4)).join('|');
+function decodePoly(str){
+  let i=0,lat=0,lng=0,out=[];
+  while(i<str.length){
+    for(const axis of [0,1]){
+      let b,sh=0,r=0; do{ b=str.charCodeAt(i++)-63; r|=(b&31)<<sh; sh+=5; }while(b>=32);
+      const d=(r&1)?~(r>>1):(r>>1); if(axis===0) lat+=d; else lng+=d;
+    }
+    out.push({lat:lat/1e5,lng:lng/1e5});
+  }
+  return out;
+}
+function withLen(path){ const cum=[0]; for(let i=1;i<path.length;i++) cum.push(cum[i-1]+RS.haversineKm(path[i-1],path[i])); return {path,cum,len:cum[cum.length-1]}; }
+function roadPos(leg,f){
+  const t=f*leg.len; let i=1; while(i<leg.cum.length-1 && leg.cum[i]<t) i++;
+  const a=leg.path[i-1], b=leg.path[i], g=(t-leg.cum[i-1])/Math.max(1e-9,leg.cum[i]-leg.cum[i-1]);
+  return [a.lat+(b.lat-a.lat)*g, a.lng+(b.lng-a.lng)*g];
+}
+function routeBudgetOk(){
+  try{ const day=new Date().toISOString().slice(0,10), c=JSON.parse(localStorage.getItem(RT.CAPKEY)||'{}');
+    if(c.day!==day) return true; return (c.n||0)<RT.DAILY_CAP; }catch(e){ return true; }
+}
+function routeCount(){
+  try{ const day=new Date().toISOString().slice(0,10); let c=JSON.parse(localStorage.getItem(RT.CAPKEY)||'{}');
+    if(c.day!==day) c={day,n:0}; c.n++; localStorage.setItem(RT.CAPKEY,JSON.stringify(c)); }catch(e){}
+}
+function fetchRoad(stops,k,done){
+  const ll=(s)=>({location:{latLng:{latitude:s.loc.lat,longitude:s.loc.lng}}});
+  const body={origin:ll(stops[0]),destination:ll(stops[stops.length-1]),intermediates:stops.slice(1,-1).map(ll),
+    travelMode:'DRIVE',routingPreference:'TRAFFIC_UNAWARE',polylineEncoding:'ENCODED_POLYLINE'};
+  routeCount();
+  fetch('https://routes.googleapis.com/directions/v2:computeRoutes',{method:'POST',
+    headers:{'Content-Type':'application/json','X-Goog-Api-Key':getKey(),'X-Goog-FieldMask':'routes.polyline.encodedPolyline,routes.legs.polyline.encodedPolyline'},
+    body:JSON.stringify(body)})
+  .then(r=>r.json().then(j=>({ok:r.ok,j})))
+  .then(({ok,j})=>{
+    if(!ok||!j.routes||!j.routes[0]) throw new Error((j.error&&j.error.message)||'No route returned');
+    const rt=j.routes[0];
+    RT.cache[k]={full:withLen(decodePoly(rt.polyline.encodedPolyline)),legs:rt.legs.map(l=>withLen(decodePoly(l.polyline.encodedPolyline)))};
+    RT.err=''; done();
+  })
+  .catch(e=>{ if(!RT.err){ RT.err=String(e.message||e); toast('Road routes unavailable ('+RT.err+'). Showing straight lines.'); renderMapStatus(); } })
+  .finally(()=>{ delete RT.pending[k]; });
+}
+// Returns the cached road route for these stops, or null (and asks for it, debounced, if allowed).
+function roadFor(id,stops,redraw){
+  if(!getKey()||stops.length<2) return null;
+  const k=routeKey(stops); if(RT.cache[k]) return RT.cache[k];
+  if(RT.err||RT.pending[k]||!routeBudgetOk()) return null;
+  clearTimeout(RT.timers[id]);
+  RT.timers[id]=setTimeout(()=>{ if(RT.cache[k]||RT.pending[k]) return; RT.pending[k]=1; fetchRoad(stops,k,redraw); },700);
+  return null;
+}
 const stopLabel=(s)=>({origin:'Start',dest:'End',pickup:'Pick up '+(s.rider?s.rider.name:''),dropoff:'Drop off '+(s.rider?s.rider.name:'')})[s.type];
 function gmapDraw(id, stops, extra){
   const el=$(id), gm=google.maps;
   if(!gmaps[id]){ el.innerHTML=''; gmaps[id]={map:new gm.Map(el,{center:{lat:49.22,lng:-122.9},zoom:11,mapTypeControl:false,streetViewControl:false,fullscreenControl:false}),over:[]}; }
   const g=gmaps[id]; g.over.forEach(o=>o.setMap(null)); g.over=[];
   const path=stops.map(s=>({lat:s.loc.lat,lng:s.loc.lng}));
-  g.over.push(new gm.Polyline({map:g.map,path,strokeColor:'#0b7a5b',strokeWeight:5,strokeOpacity:.85}));
+  g.last={stops,extra};
+  const road=roadFor(id,stops,()=>{ if(gmaps[id]&&gmaps[id].last&&routeKey(gmaps[id].last.stops)===routeKey(stops)) gmapDraw(id,stops,extra); });
+  g.over.push(new gm.Polyline({map:g.map,path:road?road.full.path:path,strokeColor:'#0b7a5b',strokeWeight:5,strokeOpacity:.85}));
   const col={origin:'#0b7a5b',dest:'#b42318',pickup:'#2563eb',dropoff:'#7c3aed'};
   stops.forEach(s=>g.over.push(new gm.Marker({map:g.map,position:{lat:s.loc.lat,lng:s.loc.lng},title:stopLabel(s),icon:{path:gm.SymbolPath.CIRCLE,scale:8,fillColor:col[s.type],fillOpacity:1,strokeColor:'#ffffff',strokeWeight:2}})));
   (extra||[]).forEach(e=>g.over.push(new gm.Marker({map:g.map,position:{lat:e.loc.lat,lng:e.loc.lng},title:e.label,icon:{path:gm.SymbolPath.CIRCLE,scale:5,fillColor:'#94a3b8',fillOpacity:.7,strokeWeight:0}})));
-  g.bounds=new gm.LatLngBounds(); path.forEach(pt=>g.bounds.extend(pt)); g.map.fitBounds(g.bounds,40);
+  g.bounds=new gm.LatLngBounds(); (road?road.full.path:path).forEach(pt=>g.bounds.extend(pt)); g.map.fitBounds(g.bounds,40);
 }
 function drawMap(id, stops, extra){
   const el=$(id);
@@ -361,13 +419,14 @@ function renderAll(){ renderDriver(); renderRider(); renderWallet(); }
 
 
 // ---------- live trip simulation (car moves along the route) ----------
-// Demo only: the car follows the straight legs between stops at an accelerated speed (3 simulated minutes per second).
+// Demo only: the car follows the road (or straight legs if road routes are unavailable) between stops at an accelerated speed (3 simulated minutes per second).
 const sim = {};
 function stopSim(key){ const s=sim[key]; if(!s) return; cancelAnimationFrame(s.raf); if(s.gcar) s.gcar.setMap(null); if(s.marker && maps[s.mapId]) maps[s.mapId].removeLayer(s.marker); const c=$(s.mapId).querySelector('.carsvg'); if(c) c.remove(); delete sim[key]; }
 function startSim(key, mapId, stops, who, mode, riderObj){
   stopSim(key);
   const cum=[0]; for(let i=1;i<stops.length;i++) cum.push(cum[i-1]+RS.minutes(stops[i-1].loc,stops[i].loc));
-  sim[key]={mapId,stops,cum,t0:performance.now(),who,mode,riderObj,marker:null,raf:0};
+  const road=RT.cache[routeKey(stops)];
+  sim[key]={mapId,stops,cum,road,t0:performance.now(),who,mode,riderObj,marker:null,raf:0};
   tick(key);
 }
 function tick(key){
@@ -375,7 +434,7 @@ function tick(key){
   const el=(performance.now()-s.t0)/1000*3, total=s.cum[s.cum.length-1], t=Math.min(el,total);
   let i=1; while(i<s.cum.length-1 && s.cum[i]<t) i++;
   const f=(t-s.cum[i-1])/Math.max(1e-6,s.cum[i]-s.cum[i-1]);
-  const a=s.stops[i-1].loc, b=s.stops[i].loc, pos=[a.lat+(b.lat-a.lat)*f, a.lng+(b.lng-a.lng)*f];
+  const a=s.stops[i-1].loc, b=s.stops[i].loc, pos=(s.road&&s.road.legs[i-1])?roadPos(s.road.legs[i-1],f):[a.lat+(b.lat-a.lat)*f, a.lng+(b.lng-a.lng)*f];
   const m=maps[s.mapId], gmc=gmaps[s.mapId];
   if(gmc){
     const ll={lat:pos[0],lng:pos[1]};
@@ -401,7 +460,7 @@ function tick(key){
 
 function renderMapStatus(){
   const k=getKey();
-  $('g-status').textContent = gReady ? 'Using Google Maps.' : gLoading ? 'Loading Google Maps...' : gFailed ? 'Google Maps failed to load (check the key). Using the fallback map.' : k ? 'Key saved. Reload to use Google Maps.' : 'No key set. Using free OpenStreetMap (or a schematic map if that cannot load).';
+  $('g-status').textContent = gReady ? 'Using Google Maps.'+(RT.err?' Road routes off: '+RT.err:' Road routes on.') : gLoading ? 'Loading Google Maps...' : gFailed ? 'Google Maps failed to load (check the key). Using the fallback map.' : k ? 'Key saved. Reload to use Google Maps.' : 'No key set. Using free OpenStreetMap (or a schematic map if that cannot load).';
 }
 $('g-save').onclick=()=>{ const v=$('g-key').value.trim(); if(!v){ toast('Paste a key first'); return; } try{ localStorage.setItem(GKEY,v); }catch(e){ toast('Could not save the key in this browser'); return; } location.reload(); };
 $('g-clear').onclick=()=>{ try{ localStorage.removeItem(GKEY); }catch(e){} location.reload(); };
