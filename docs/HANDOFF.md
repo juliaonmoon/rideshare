@@ -15,7 +15,7 @@ Picking this up in Claude Code on the owner's own computer? Read this first.
 
 ## Test checklist (do in a real browser)
 1. Open the Pages URL. Go to **Points > Map**; status should read "Using Google Maps." (If not, note the exact text and any red Console errors.)
-2. **I'm driving** tab: default trip should list 6 matching riders. Accept one, tick "Make regular", mark them away for a day and confirm backup riders are suggested.
+2. **I'm driving** tab: default trip should list 10 matching riders (Ellis and Frankie are hidden on purpose: too early, too far). Accept one, tick "Make regular", mark them away for a day and confirm backup riders are suggested.
 3. Press **Start trip**: a Google map shows the route and a car moving; status line counts down.
 4. **I need a ride** tab: default trip should list 3 drivers. Request one with points; points drop by the shown amount; car moves on the map; **Points** tab shows the entry.
 5. Resize to phone width; no horizontal scroll.

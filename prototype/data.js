@@ -38,6 +38,13 @@ window.DEMO = (function () {
     { id: 'r10', name: 'Sam T.', pickup: L['Newton (Surrey)'],           dropoff: L['Metrotown (Burnaby)'],         readyFrom: h(7,10), readyTo: h(7,40), pays: 'points' },
     { id: 'r11', name: 'Jo',     pickup: L['Cloverdale (Surrey)'],       dropoff: L['Lougheed (Burnaby)'],          readyFrom: h(7,0),  readyTo: h(7,20), pays: 'cash' },
     { id: 'r12', name: 'Leah',   pickup: L['Port Coquitlam'],            dropoff: L['SFU Burnaby'],                 readyFrom: h(7,30), readyTo: h(8,0),  pays: 'either' },
+    // Extra test riders for the default driver (Surrey Central -> BCIT, leaves 07:30, detour 10, wait 5, accepts either)
+    { id: 'r13', name: 'Riley',  pickup: L['Surrey Central'],           dropoff: L['BCIT / Willingdon (Burnaby)'], readyFrom: h(7,30), readyTo: h(7,45), pays: 'points' },
+    { id: 'r14', name: 'Casey',  pickup: L['Whalley (Surrey)'],          dropoff: L['Metrotown (Burnaby)'],         readyFrom: h(7,25), readyTo: h(7,55), pays: 'cash' },
+    { id: 'r15', name: 'Avery',  pickup: L['Pattullo Bridge (New West)'],dropoff: L['Royal Oak (Burnaby)'],         readyFrom: h(7,40), readyTo: h(8,10), pays: 'either' },
+    { id: 'r16', name: 'Blake',  pickup: L['Braid (New West)'],          dropoff: L['BCIT / Willingdon (Burnaby)'], readyFrom: h(7,45), readyTo: h(8,15), pays: 'points' },
+    { id: 'r17', name: 'Ellis',  pickup: L['Surrey Central'],            dropoff: L['BCIT / Willingdon (Burnaby)'], readyFrom: h(6,0),  readyTo: h(6,30), pays: 'points' },
+    { id: 'r18', name: 'Frankie',pickup: L['Port Coquitlam'],            dropoff: L['BCIT / Willingdon (Burnaby)'], readyFrom: h(7,30), readyTo: h(8,0),  pays: 'cash' },
   ];
   // Seeded drivers for the Rider tab.
   const drivers = [
