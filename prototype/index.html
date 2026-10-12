@@ -53,12 +53,13 @@ input[type=range]{width:100%;accent-color:var(--acc)}
 <header>
   <h1>RideShare <span class="sub">prototype</span></h1>
   <div class="sub">Share the cost of your commute. Driver-first: you set the detour and wait you'll accept.</div>
-  <div class="demo">Demo data &middot; times and prices are rough estimates, not real routing &middot; nothing is saved outside this browser</div>
+  <div class="demo">Demo data &middot; times and prices are rough estimates, not real routing &middot; demo tabs save nothing outside this browser; Live (beta) uses real accounts</div>
 </header>
 <nav role="tablist">
   <button role="tab" id="t-driver" aria-selected="true">I'm driving</button>
   <button role="tab" id="t-rider" aria-selected="false">I need a ride</button>
   <button role="tab" id="t-wallet" aria-selected="false">Points</button>
+  <button role="tab" id="t-live" aria-selected="false">Live (beta)</button>
 </nav>
 
 <main id="v-driver">
@@ -112,6 +113,8 @@ input[type=range]{width:100%;accent-color:var(--acc)}
   </section>
 </main>
 
+<main id="v-live" class="hide"><section style="grid-column:1/-1;max-width:640px"><div id="live-root"></div></section></main>
+
 <main id="v-wallet" class="hide">
   <section>
     <div class="card"><h2>Points</h2>
@@ -134,6 +137,8 @@ input[type=range]{width:100%;accent-color:var(--acc)}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
 <script src="matching.js"></script>
 <script src="data.js"></script>
+<script src="config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.58.0/dist/umd/supabase.min.js"></script>
 <script>
 (function(){
 'use strict';
@@ -474,12 +479,13 @@ dayButtons('d-days',S.driver.days,renderSched); dayButtons('r-days',S.rider.days
 let resetArmed=false;
 $('w-reset').onclick=()=>{ if(!resetArmed){ resetArmed=true; $('w-reset').textContent='Tap again to reset all demo data'; setTimeout(()=>{resetArmed=false;$('w-reset').textContent='Reset demo';},4000); return; }
   S=JSON.parse(JSON.stringify(DEFAULT)); save(); location.reload(); };
-const tabs={driver:'v-driver',rider:'v-rider',wallet:'v-wallet'};
+const tabs={driver:'v-driver',rider:'v-rider',wallet:'v-wallet',live:'v-live'};
 Object.keys(tabs).forEach(k=>$('t-'+k).onclick=()=>{
   Object.keys(tabs).forEach(j=>{ $(tabs[j]).classList.toggle('hide',j!==k); $('t-'+j).setAttribute('aria-selected',j===k); });
   renderAll(); setTimeout(()=>{ Object.values(maps).forEach(m=>m.invalidateSize()); Object.values(gmaps).forEach(g=>{ google.maps.event.trigger(g.map,'resize'); if(g.bounds) g.map.fitBounds(g.bounds,40); }); },60); });
 renderAll(); renderMapStatus(); loadGoogle();
 })();
 </script>
+<script src="live.js"></script>
 </body>
 </html>

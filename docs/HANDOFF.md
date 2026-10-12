@@ -26,6 +26,12 @@ Picking this up in Claude Code on the owner's own computer? Read this first.
 - If Google refuses or the cap is hit, the page falls back to straight lines and Points > Map shows why.
 - Not yet verified on a real phone. The car is a simulation, not the phone's GPS.
 
+## Live mode (beta, added 2026-10-12)
+- New **Live (beta)** tab: email sign-in link, post a real trip or ride request, drivers/riders matched with the same matching code, seat requests accepted/declined, points moved by the database (never by the page).
+- Backend: Supabase project `iivhfapvkseeomxtsrxf` (public URL + publishable key in `prototype/config.js`). Setup SQL: `supabase/schema.sql` (already run). RLS is on for every table. Only area names are stored, never addresses.
+- Known limits: rider's page sends the points amount (server only range-checks it); Supabase's built-in email is rate-limited, so use few test sign-ins or add custom SMTP; no ratings, no safety checks, no GPS.
+- Two-person test needed: two accounts (two emails). Not yet tested end to end.
+
 ## Rules
 - Do not commit API keys or any secrets.
 - Keep trading-bot code out of this repo (separate project).
