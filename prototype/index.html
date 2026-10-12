@@ -37,7 +37,7 @@ input[type=range]{width:100%;accent-color:var(--acc)}
 .name{font-weight:600}.mut{color:var(--mut);font-size:13px}
 .tag{display:inline-block;background:var(--acc2);color:var(--acc);border-radius:6px;padding:1px 7px;font-size:12px;margin-left:6px}
 .stat{display:flex;gap:18px;flex-wrap:wrap}.stat div{min-width:110px}.stat b{display:block;font-size:20px}
-#map-d,#map-r{height:300px;border-radius:12px;border:1px solid var(--line);margin-bottom:14px;background:var(--acc2)}
+#map-d,#map-r,#map-ld,#map-lr{height:300px;border-radius:12px;border:1px solid var(--line);margin-bottom:14px;background:var(--acc2)}
 .nomap{display:flex;align-items:center;justify-content:center;height:100%;color:var(--mut);padding:14px;text-align:center;font-size:13px}
 .empty{color:var(--mut);padding:8px 0}
 .warn{color:var(--bad);font-size:13px}
@@ -53,16 +53,16 @@ input[type=range]{width:100%;accent-color:var(--acc)}
 <header>
   <h1>RideShare <span class="sub">prototype</span></h1>
   <div class="sub">Share the cost of your commute. Driver-first: you set the detour and wait you'll accept.</div>
-  <div class="demo">Demo data &middot; times and prices are rough estimates, not real routing &middot; demo tabs save nothing outside this browser; Live (beta) uses real accounts</div>
+  <div class="demo">Pre-launch test version &middot; sample riders and drivers are made up &middot; times and prices are rough estimates</div>
 </header>
 <nav role="tablist">
   <button role="tab" id="t-driver" aria-selected="true">I'm driving</button>
   <button role="tab" id="t-rider" aria-selected="false">I need a ride</button>
   <button role="tab" id="t-wallet" aria-selected="false">Points</button>
-  <button role="tab" id="t-live" aria-selected="false">Live (beta)</button>
 </nav>
+<div id="auth-bar" style="max-width:1100px;margin:0 auto;padding:16px 16px 0"></div>
 
-<main id="v-driver">
+<main id="v-driver" class="hide" aria-hidden="true">
   <section>
     <div class="card">
       <h2>My commute</h2>
@@ -90,7 +90,7 @@ input[type=range]{width:100%;accent-color:var(--acc)}
   </section>
 </main>
 
-<main id="v-rider" class="hide">
+<main id="v-rider" class="hide" aria-hidden="true">
   <section>
     <div class="card">
       <h2>My trip</h2>
@@ -113,16 +113,37 @@ input[type=range]{width:100%;accent-color:var(--acc)}
   </section>
 </main>
 
-<main id="v-live" class="hide"><section style="grid-column:1/-1;max-width:640px"><div id="live-root"></div></section></main>
+<main id="v-ldriver">
+  <section id="ld-form"></section>
+  <section>
+    <div id="map-ld"></div>
+    <div class="card" id="sim-ld"><span class="mut">Live trip</span><div class="status" id="sim-ld-status">Not started. Press &ldquo;Start trip&rdquo; to watch the car move.</div></div>
+    <div id="ld-lists"></div>
+  </section>
+</main>
 
-<main id="v-wallet" class="hide">
+<main id="v-lrider" class="hide">
+  <section id="lr-form"></section>
+  <section>
+    <div id="map-lr"></div>
+    <div class="card" id="sim-lr"><span class="mut">Live ride</span><div class="status" id="sim-lr-status">Get accepted by a driver, then press &ldquo;Watch my ride&rdquo;.</div></div>
+    <div id="lr-lists"></div>
+  </section>
+</main>
+
+<main id="v-lwallet" class="hide">
+  <section id="lw-main"></section>
+  <section id="lw-slot"></section>
+</main>
+
+<main id="v-wallet" class="hide" aria-hidden="true">
   <section>
     <div class="card"><h2>Points</h2>
       <div class="stat"><div><span class="mut">Balance</span><b id="w-bal"></b></div><div><span class="mut">Value</span><b>1 pt = $0.10</b></div></div>
       <p class="mut">Earn points by driving riders who pay in points. Spend them when you ride. Points can't be cashed out or transferred, and they never exceed the real cost of the trip, so nobody profits.</p>
       <button class="btn ghost" id="w-reset">Reset demo</button>
     </div>
-    <div class="card"><h2>Map</h2>
+    <div class="card" id="map-card"><h2>Map</h2>
       <div class="mut" id="g-status"></div>
       <label for="g-key">Google Maps API key (optional)</label>
       <input type="password" id="g-key" autocomplete="off" placeholder="Paste your own key" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);font:inherit">
@@ -210,8 +231,8 @@ function getKey(){ try{ return localStorage.getItem(GKEY)||''; }catch(e){ return
 function loadGoogle(){
   const key=getKey(); if(!key||gReady||gLoading||gFailed) return;
   gLoading=true;
-  window.gm_authFailure=()=>{ gFailed=true; gReady=false; Object.keys(gmaps).forEach(k=>{ delete gmaps[k]; $(k).innerHTML=''; }); toast('Google rejected the API key. Using the fallback map.'); renderAll(); renderMapStatus(); };
-  window.__rsGmInit=()=>{ gReady=true; gLoading=false; renderAll(); renderMapStatus(); };
+  window.gm_authFailure=()=>{ gFailed=true; gReady=false; Object.keys(gmaps).forEach(k=>{ delete gmaps[k]; $(k).innerHTML=''; }); toast('Google rejected the API key. Using the fallback map.'); renderAll(); renderMapStatus(); window.dispatchEvent(new Event('rs-google-ready')); };
+  window.__rsGmInit=()=>{ gReady=true; gLoading=false; renderAll(); renderMapStatus(); window.dispatchEvent(new Event('rs-google-ready')); };
   const sc=document.createElement('script');
   sc.src='https://maps.googleapis.com/maps/api/js?key='+encodeURIComponent(key)+'&callback=__rsGmInit';
   sc.async=true;
@@ -479,10 +500,12 @@ dayButtons('d-days',S.driver.days,renderSched); dayButtons('r-days',S.rider.days
 let resetArmed=false;
 $('w-reset').onclick=()=>{ if(!resetArmed){ resetArmed=true; $('w-reset').textContent='Tap again to reset all demo data'; setTimeout(()=>{resetArmed=false;$('w-reset').textContent='Reset demo';},4000); return; }
   S=JSON.parse(JSON.stringify(DEFAULT)); save(); location.reload(); };
-const tabs={driver:'v-driver',rider:'v-rider',wallet:'v-wallet',live:'v-live'};
+const tabs={driver:'v-ldriver',rider:'v-lrider',wallet:'v-lwallet'};
 Object.keys(tabs).forEach(k=>$('t-'+k).onclick=()=>{
   Object.keys(tabs).forEach(j=>{ $(tabs[j]).classList.toggle('hide',j!==k); $('t-'+j).setAttribute('aria-selected',j===k); });
   renderAll(); setTimeout(()=>{ Object.values(maps).forEach(m=>m.invalidateSize()); Object.values(gmaps).forEach(g=>{ google.maps.event.trigger(g.map,'resize'); if(g.bounds) g.map.fitBounds(g.bounds,40); }); },60); });
+window.RS_UI={drawMap,startSim,stopSim};
+$('lw-slot').appendChild($('map-card'));
 renderAll(); renderMapStatus(); loadGoogle();
 })();
 </script>
