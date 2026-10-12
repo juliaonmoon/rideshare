@@ -69,9 +69,14 @@
       return;
     }
     bar.innerHTML = `<div class="card"><h2>Sign in</h2>
-      <p class="mut">We email you a one-time link. No password. Others only see your first name and neighbourhood-level areas.</p>
+      <button class="btn" id="lv-google" style="width:100%;padding:12px;font-size:15px">Continue with Google</button>
+      <p class="mut">Others only see your first name and neighbourhood-level areas. Or use an email link:</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap"><input type="email" id="lv-email" autocomplete="email" placeholder="you@example.com" style="${INPUT};flex:1;min-width:200px"><button class="btn" id="lv-send">Email me a sign-in link</button></div>
       <p class="mut" id="lv-note"></p></div>`;
+    $('lv-google').onclick = async () => {
+      const { error } = await sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin + location.pathname } });
+      if (error) toast(error.message);
+    };
     $('lv-send').onclick = async () => {
       const email = $('lv-email').value.trim(); if (!/^\S+@\S+\.\S+$/.test(email)) { toast('Enter a valid email'); return; }
       $('lv-send').disabled = true;
