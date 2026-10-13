@@ -66,4 +66,15 @@ t('clock rolls the hour when minutes round up to 60 (07:59.6 -> 08:00)', () => {
   assert.strictEqual(RS.clock(7 * 60 + 30), '07:30');
   assert.strictEqual(RS.clock(23 * 60 + 59.6), '00:00');
 });
+t('points asked for never exceed the server-side fair limit (supabase/migrations/002)', () => {
+  global.window = global.window || {}; require('./data.js'); const D = window.DEMO;
+  let pairs = 0;
+  for (const d of D.drivers) for (const r of D.riders) {
+    const m = RS.findMatches({ ...d, cpk: 0.2 }, [r], []); if (!m.length) continue; pairs++;
+    const pts = RS.toPoints(RS.priceRoute(m[0].stops, 0.2).riderPay.get(r) || 0);
+    const max = Math.ceil(((RS.roadKm(r.pickup, r.dropoff) + d.maxDetour * 40 / 60) * 0.2 / 2) / 0.10) + 1;
+    assert.ok(pts >= 1 && pts <= max, `${d.name}/${r.name}: ${pts} > ${max}`);
+  }
+  assert.ok(pairs > 20);
+});
 console.log(`\n${n} tests passed`);
