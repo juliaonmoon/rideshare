@@ -4,7 +4,7 @@ A **driver-centred commuter carpool app** for people who drive to work every day
 Riders chip in for gas **or** pay with **points** earned by driving others.
 No profit for drivers — the goal is to **lower the cost of driving**, with zero extra effort.
 
-> Status: planning. Nothing is built yet. Drafted 2026-10-05.
+> Status: pre-launch working app (sign-in with Google or email, real trips and requests, matching, points, road routes, live map). Not launched; testing with friends only. Planning drafted 2026-10-05.
 
 ## One-page summary
 
@@ -26,9 +26,9 @@ No profit for drivers — the goal is to **lower the cost of driving**, with zer
 - **Recommendation:** first try the existing BC apps and find the real gaps; talk to TransLink/Liftango; only then pilot (one Burnaby employer or campus) and build.
 - **Money:** drivers can never profit (law/insurance). Platform can run **non-profit / cost-recovery**.
 
-## Prototype
+## App
 
-[`prototype/`](prototype/) is a clickable demo (no server, no cost): driver detour/wait limits, rider matching, fair cost split, points, recurring weekly schedule with backup riders, live car on the map. Open `prototype/index.html` in a browser. See [prototype/README.md](prototype/README.md).
+[`prototype/`](prototype/) is the working web app (static page on GitHub Pages plus a Supabase database). Drivers set detour and wait limits, riders get matched, drivers accept, points move, and a car drives the road route on a Google map. See [prototype/README.md](prototype/README.md) and [docs/HANDOFF.md](docs/HANDOFF.md).
 
 ## Documents
 

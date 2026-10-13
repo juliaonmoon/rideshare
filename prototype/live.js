@@ -222,6 +222,24 @@
   sb.auth.onAuthStateChange((_e, session) => setTimeout(() => start(session), 0));
   sb.auth.getSession().then(({ data }) => start(data.session));
   sb.channel('rs-matches').on('postgres_changes', { event: '*', schema: 'public', table: 'matches' }, () => loadAll()).subscribe();
-  window.addEventListener('rs-google-ready', () => { mapSig = {}; render(); });
+
+  // ---------- show my location (phone/computer GPS; stays on this device) ----------
+  let watchId = null, lastPos = null;
+  const locBtns = () => ['loc-ld', 'loc-lr'].map($).filter(Boolean);
+  const setLocLabel = (t) => locBtns().forEach((b) => { b.textContent = t; });
+  const applyMe = (center) => ['map-ld', 'map-lr'].forEach((id) => window.RS_UI.setMe(id, lastPos, center));
+  function toggleLocate() {
+    if (watchId != null) { navigator.geolocation.clearWatch(watchId); watchId = null; lastPos = null; applyMe(false); setLocLabel('Show my location'); return; }
+    if (!navigator.geolocation) { toast('This device cannot share its location'); return; }
+    setLocLabel('Finding you...'); let first = true;
+    watchId = navigator.geolocation.watchPosition((p) => {
+      lastPos = { lat: p.coords.latitude, lng: p.coords.longitude }; applyMe(first); first = false; setLocLabel('Stop showing my location');
+    }, (err) => {
+      watchId = null; lastPos = null; setLocLabel('Show my location');
+      toast(err && err.code === 1 ? 'Location is blocked. Allow it in your browser settings.' : 'Could not find your location');
+    }, { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 });
+  }
+  locBtns().forEach((b) => (b.onclick = toggleLocate));
+  window.addEventListener('rs-google-ready', () => { mapSig = {}; render(); if (lastPos) applyMe(false); });
   ['t-driver', 't-rider', 't-wallet'].forEach((id) => $(id).addEventListener('click', () => { mapSig = {}; render(); loadAll(); }));
 })();

@@ -117,7 +117,7 @@ input[type=range]{width:100%;accent-color:var(--acc)}
   <section id="ld-form"></section>
   <section>
     <div id="map-ld"></div>
-    <div class="card" id="sim-ld"><span class="mut">Live trip</span><div class="status" id="sim-ld-status">Not started. Press &ldquo;Start trip&rdquo; to watch the car move.</div></div>
+    <div class="card" id="sim-ld"><span class="mut">Live trip</span><div class="status" id="sim-ld-status">Not started. Press &ldquo;Start trip&rdquo; to watch the car move.</div><div style="margin-top:8px"><button class="btn ghost" id="loc-ld">Show my location</button> <span class="mut">Stays on this device. Not sent to RideShare.</span></div></div>
     <div id="ld-lists"></div>
   </section>
 </main>
@@ -126,7 +126,7 @@ input[type=range]{width:100%;accent-color:var(--acc)}
   <section id="lr-form"></section>
   <section>
     <div id="map-lr"></div>
-    <div class="card" id="sim-lr"><span class="mut">Live ride</span><div class="status" id="sim-lr-status">Get accepted by a driver, then press &ldquo;Watch my ride&rdquo;.</div></div>
+    <div class="card" id="sim-lr"><span class="mut">Live ride</span><div class="status" id="sim-lr-status">Get accepted by a driver, then press &ldquo;Watch my ride&rdquo;.</div><div style="margin-top:8px"><button class="btn ghost" id="loc-lr">Show my location</button> <span class="mut">Stays on this device. Not sent to RideShare.</span></div></div>
     <div id="lr-lists"></div>
   </section>
 </main>
@@ -504,7 +504,20 @@ const tabs={driver:'v-ldriver',rider:'v-lrider',wallet:'v-lwallet'};
 Object.keys(tabs).forEach(k=>$('t-'+k).onclick=()=>{
   Object.keys(tabs).forEach(j=>{ $(tabs[j]).classList.toggle('hide',j!==k); $('t-'+j).setAttribute('aria-selected',j===k); });
   renderAll(); setTimeout(()=>{ Object.values(maps).forEach(m=>m.invalidateSize()); Object.values(gmaps).forEach(g=>{ google.maps.event.trigger(g.map,'resize'); if(g.bounds) g.map.fitBounds(g.bounds,40); }); },60); });
-window.RS_UI={drawMap,startSim,stopSim};
+function setMe(id,p,center){
+  const gm=gmaps[id], lm=maps[id];
+  if(gm){
+    if(!p){ if(gm.me){ gm.me.setMap(null); gm.me=null; } return; }
+    const ll={lat:p.lat,lng:p.lng};
+    if(!gm.me) gm.me=new google.maps.Marker({map:gm.map,position:ll,zIndex:900,title:'You are here',icon:{path:google.maps.SymbolPath.CIRCLE,scale:9,fillColor:'#1a73e8',fillOpacity:1,strokeColor:'#ffffff',strokeWeight:3}}); else gm.me.setPosition(ll);
+    if(center) gm.map.panTo(ll);
+  } else if(lm && typeof L!=='undefined'){
+    if(!p){ if(lm.me){ lm.me.remove(); lm.me=null; } return; }
+    if(!lm.me) lm.me=L.circleMarker([p.lat,p.lng],{radius:9,color:'#ffffff',weight:3,fillColor:'#1a73e8',fillOpacity:1}).bindTooltip('You are here').addTo(lm); else lm.me.setLatLng([p.lat,p.lng]);
+    if(center) lm.panTo([p.lat,p.lng]);
+  }
+}
+window.RS_UI={drawMap,startSim,stopSim,setMe};
 $('lw-slot').appendChild($('map-card'));
 renderAll(); renderMapStatus(); loadGoogle();
 })();
