@@ -35,7 +35,7 @@ Picking this up in Claude Code on the owner's own computer? Read this first.
 - Google key is per-browser: paste it again under Points > Map on each device (phone too).
 - Known limits: rider's page sends the points amount (server only range-checks it); Supabase's built-in email is rate-limited; no ratings, safety checks or phone GPS; database is in US West, move to Canada before real users.
 
-- **Pending (owner must run once in Supabase SQL Editor):** `supabase/migrations/002_points_price_check.sql` makes the server reject a points amount above the fair limit. Until it is run, the server only range-checks 1 to 500.
+- Migration 002 (`supabase/migrations/002_points_price_check.sql`) was run on 2026-10-14: the server now rejects a points amount above the fair limit. Checked from outside: `areas` table exists and is hidden from signed-out users; `request_seat` still locked to signed-in users. Not yet exercised with a real signed-in request.
 
 ## Rules
 - Do not commit API keys or any secrets.
