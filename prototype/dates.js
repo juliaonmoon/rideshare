@@ -46,6 +46,20 @@
     if (date === t && minutes < n.getHours() * 60 + n.getMinutes() + MIN_LEAD_MIN) return 'Pick a time at least ' + MIN_LEAD_MIN + ' minutes from now';
     return '';
   }
-  const RSD = { DAY_NAMES, MIN_LEAD_MIN, MAX_AHEAD_DAYS, toStr, parse, isoDow, addDays, today, occursOn, nextOccurrences, label, repeatText, check };
+  // The exact moment (epoch ms) of a date + minutes-since-midnight in Vancouver time (same rule the database uses).
+  function vanEpoch(date, minutes) {
+    const [y, m, d] = date.split('-').map(Number);
+    const target = Date.UTC(y, m - 1, d, 0, minutes);
+    let guess = target;
+    const fmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Vancouver', hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+    for (let i = 0; i < 2; i++) {
+      const parts = fmt.formatToParts(new Date(guess)); const g = (k) => +parts.find((p) => p.type === k).value;
+      guess -= Date.UTC(g('year'), g('month') - 1, g('day'), g('hour'), g('minute')) - target;
+    }
+    return guess;
+  }
+  // Same calendar month in Vancouver time?
+  const vanMonth = (epoch) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Vancouver', year: 'numeric', month: '2-digit' }).format(new Date(epoch));
+  const RSD = { DAY_NAMES, MIN_LEAD_MIN, MAX_AHEAD_DAYS, toStr, parse, isoDow, addDays, today, occursOn, nextOccurrences, label, repeatText, check, vanEpoch, vanMonth };
   if (typeof module !== 'undefined' && module.exports) module.exports = RSD; else root.RSD = RSD;
 })(typeof window !== 'undefined' ? window : globalThis);

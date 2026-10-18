@@ -102,4 +102,12 @@ t('dates: booking rules (30 min ahead, 30 days max, no past)', () => {
   assert.strictEqual(D.check('2026-11-18', 600, now), 'You can book up to 30 days ahead');
   assert.strictEqual(D.check('', 600, now), 'Pick a date');
 });
+t('dates: Vancouver pickup time handles summer and winter time', () => {
+  const D = require('./dates.js');
+  assert.strictEqual(D.vanEpoch('2026-10-19', 450), Date.UTC(2026, 9, 19, 14, 30));   // PDT = UTC-7
+  assert.strictEqual(D.vanEpoch('2026-12-01', 450), Date.UTC(2026, 11, 1, 15, 30));   // PST = UTC-8
+  assert.strictEqual(D.vanEpoch('2026-11-01', 60), Date.UTC(2026, 10, 1, 8, 0));      // 01:00 on the day clocks go back
+  assert.strictEqual(D.vanMonth(Date.UTC(2026, 9, 31, 20, 0)), '2026-10');
+  assert.strictEqual(D.vanMonth(Date.UTC(2026, 10, 1, 3, 0)), '2026-10');            // 20:00 on Oct 31 in Vancouver
+});
 console.log(`\n${n} tests passed`);
