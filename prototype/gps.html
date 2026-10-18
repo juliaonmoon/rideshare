@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>RideShare GPS test</title>
+<meta name="theme-color" content="#0b7a5b">
+<link rel="icon" href="icon-192.png">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--ink:#1b2430;--mut:#5d6b7c;--line:#e1e5ea;--acc:#0b7a5b;--acc2:#e8f5f0;--bad:#b42318}
+@media (prefers-color-scheme:dark){:root{--bg:#10151b;--card:#18202a;--ink:#e8edf3;--mut:#93a1b3;--line:#2a3542;--acc:#3ecf9e;--acc2:#12312a;--bad:#f87171}}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{font:15px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink);display:flex;flex-direction:column;overflow-x:hidden}
+header{padding:10px 14px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+header h1{font-size:16px;margin:0}
+a{color:var(--acc)}
+#map{flex:1;min-height:48vh;border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:var(--acc2)}
+#panel{padding:10px 14px calc(12px + env(safe-area-inset-bottom));background:var(--card)}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px}
+.cell{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:8px 10px;min-width:0}
+.cell span{display:block;color:var(--mut);font-size:12px}
+.cell b{display:block;font-size:20px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+button{border:0;background:var(--acc);color:#fff;padding:10px 14px;border-radius:10px;font:inherit;cursor:pointer}
+button.ghost{background:none;color:var(--acc);border:1px solid var(--acc)}
+button.on{outline:3px solid var(--acc2)}
+#status{margin:0 0 8px;font-weight:600}
+.mut{color:var(--mut);font-size:13px}
+#arrow{display:inline-block;transition:transform .3s}
+.nomap{display:flex;align-items:center;justify-content:center;height:100%;color:var(--mut);padding:14px;text-align:center}
+.me{width:18px;height:18px;border-radius:50%;background:#1a73e8;border:3px solid #fff;box-shadow:0 0 0 2px rgba(26,115,232,.35)}
+</style>
+</head>
+<body>
+<header><h1>GPS test</h1><a href="./">Back to RideShare</a></header>
+<div id="map"><div class="nomap">Press Start to find you.</div></div>
+<div id="panel">
+  <p id="status">Not tracking.</p>
+  <div class="grid">
+    <div class="cell"><span>Speed</span><b id="s-speed">-</b></div>
+    <div class="cell"><span>Distance</span><b id="s-dist">0 m</b></div>
+    <div class="cell"><span>Time</span><b id="s-time">0:00</b></div>
+    <div class="cell"><span>Heading</span><b><span id="arrow">&#8593;</span> <span id="s-head">-</span></b></div>
+    <div class="cell"><span>Accuracy</span><b id="s-acc">-</b></div>
+    <div class="cell"><span>Updated</span><b id="s-upd">-</b></div>
+  </div>
+  <p class="mut" id="s-pos">Position: -</p>
+  <div class="row">
+    <button id="b-go">Start tracking</button>
+    <button class="ghost on" id="b-follow">Follow me: on</button>
+    <button class="ghost" id="b-clear">Clear trail</button>
+    <button class="ghost" id="b-sim">Simulate a walk</button>
+  </div>
+  <p class="mut" style="margin-top:10px">Your location stays on this device. Nothing is sent to RideShare or saved. Keep this page open and the screen on while you walk.</p>
+  <p class="mut" id="s-map"></p>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script>
+(function () {
+  'use strict';
+  const $ = (id) => document.getElementById(id);
+  const KEYNAME = 'rs-gmaps-key';
+  let key = ''; try { key = localStorage.getItem(KEYNAME) || ''; } catch (e) {}
+  const state = { watchId: null, sim: null, follow: true, trail: [], dist: 0, t0: 0, last: null, timer: 0, wake: null };
+
+  // ---------- map adapter (Google if a key is saved, else OpenStreetMap) ----------
+  let map = null, kind = '';
+  function startLeaflet(why) {
+    kind = 'leaflet'; $('s-map').textContent = why;
+    $('map').innerHTML = '';
+    const m = L.map('map', { zoomControl: true }).setView([49.2, -122.9], 12);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }).addTo(m);
+    const line = L.polyline([], { color: '#0b7a5b', weight: 5, opacity: .9 }).addTo(m);
+    let dot = null, ring = null;
+    map = {
+      setMe(lat, lng, acc) {
+        if (!dot) { dot = L.marker([lat, lng], { icon: L.divIcon({ className: '', html: '<div class="me"></div>', iconSize: [18, 18], iconAnchor: [9, 9] }) }).addTo(m); ring = L.circle([lat, lng], { radius: acc || 10, color: '#1a73e8', weight: 1, fillOpacity: .08 }).addTo(m); }
+        else { dot.setLatLng([lat, lng]); ring.setLatLng([lat, lng]).setRadius(acc || 10); }
+      },
+      addTrail(lat, lng) { line.addLatLng([lat, lng]); },
+      clearTrail() { line.setLatLngs([]); },
+      center(lat, lng, zoom) { m.setView([lat, lng], zoom || Math.max(m.getZoom(), 17)); },
+      pan(lat, lng) { m.panTo([lat, lng]); },
+      stopFollowOnDrag(cb) { m.on('dragstart', cb); },
+      resize() { m.invalidateSize(); },
+    };
+  }
+  function startGoogle() {
+    window.gm_authFailure = () => startLeaflet('Google rejected the key, showing the free map.');
+    window.__gpsInit = () => {
+      kind = 'google'; $('s-map').textContent = 'Google Maps.';
+      const gm = google.maps; $('map').innerHTML = '';
+      const m = new gm.Map($('map'), { center: { lat: 49.2, lng: -122.9 }, zoom: 12, mapTypeControl: false, streetViewControl: false, fullscreenControl: false, gestureHandling: 'greedy' });
+      const line = new gm.Polyline({ map: m, path: [], strokeColor: '#0b7a5b', strokeWeight: 5, strokeOpacity: .9 });
+      let dot = null, ring = null;
+      map = {
+        setMe(lat, lng, acc) {
+          const ll = { lat, lng };
+          if (!dot) { dot = new gm.Marker({ map: m, position: ll, zIndex: 9, title: 'You are here', icon: { path: gm.SymbolPath.CIRCLE, scale: 9, fillColor: '#1a73e8', fillOpacity: 1, strokeColor: '#fff', strokeWeight: 3 } }); ring = new gm.Circle({ map: m, center: ll, radius: acc || 10, strokeColor: '#1a73e8', strokeWeight: 1, fillColor: '#1a73e8', fillOpacity: .08 }); }
+          else { dot.setPosition(ll); ring.setCenter(ll); ring.setRadius(acc || 10); }
+        },
+        addTrail(lat, lng) { line.getPath().push(new gm.LatLng(lat, lng)); },
+        clearTrail() { line.setPath([]); },
+        center(lat, lng, zoom) { m.setCenter({ lat, lng }); m.setZoom(zoom || Math.max(m.getZoom(), 17)); },
+        pan(lat, lng) { m.panTo({ lat, lng }); },
+        stopFollowOnDrag(cb) { m.addListener('dragstart', cb); },
+        resize() { gm.event.trigger(m, 'resize'); },
+      };
+      wireMap();
+    };
+    const sc = document.createElement('script'); sc.async = true;
+    sc.src = 'https://maps.googleapis.com/maps/api/js?key=' + encodeURIComponent(key) + '&callback=__gpsInit';
+    sc.onerror = () => startLeaflet('Could not load Google Maps, showing the free map.');
+    document.head.appendChild(sc);
+  }
+  function wireMap() { map.stopFollowOnDrag(() => { if (state.follow) setFollow(false); }); }
+  function initMap() {
+    if (key) startGoogle(); else { startLeaflet('Free OpenStreetMap. To use Google Maps, paste your key under Points > Map in RideShare on this device.'); wireMap(); }
+  }
+
+  // ---------- helpers ----------
+  const rad = (d) => (d * Math.PI) / 180;
+  function haversine(a, b) { const R = 6371000, dLat = rad(b.lat - a.lat), dLng = rad(b.lng - a.lng); const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(h)); }
+  function bearing(a, b) { const y = Math.sin(rad(b.lng - a.lng)) * Math.cos(rad(b.lat)), x = Math.cos(rad(a.lat)) * Math.sin(rad(b.lat)) - Math.sin(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.cos(rad(b.lng - a.lng)); return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360; }
+  const compass = (d) => ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round(d / 45) % 8];
+  const fmtDist = (m) => (m < 1000 ? Math.round(m) + ' m' : (m / 1000).toFixed(2) + ' km');
+  const fmtTime = (s) => Math.floor(s / 3600) ? Math.floor(s / 3600) + ':' + String(Math.floor(s / 60) % 60).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0') : Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+  function setFollow(on) { state.follow = on; $('b-follow').textContent = 'Follow me: ' + (on ? 'on' : 'off'); $('b-follow').classList.toggle('on', on); }
+
+  // ---------- one position update (real GPS or simulated) ----------
+  function onPos(p) {
+    const c = p.coords, here = { lat: c.latitude, lng: c.longitude, t: p.timestamp || Date.now() };
+    const acc = c.accuracy == null ? null : c.accuracy;
+    map.setMe(here.lat, here.lng, acc);
+    let speed = c.speed, head = c.heading;
+    if (state.last) {
+      const d = haversine(state.last, here), dt = (here.t - state.last.t) / 1000;
+      const good = acc == null || acc <= 100;
+      if (good && d >= Math.max(3, (acc || 0) * 0.3)) {
+        state.dist += d; state.trail.push(here); map.addTrail(here.lat, here.lng);
+        if (speed == null && dt > 0) speed = d / dt;
+        if ((head == null || isNaN(head)) && d > 2) head = bearing(state.last, here);
+        state.last = here;
+      }
+    } else { state.last = here; state.trail.push(here); map.addTrail(here.lat, here.lng); }
+    $('s-speed').textContent = speed == null || isNaN(speed) ? '-' : (speed * 3.6).toFixed(1) + ' km/h';
+    $('s-dist').textContent = fmtDist(state.dist);
+    $('s-acc').textContent = acc == null ? '-' : Math.round(acc) + ' m';
+    if (head != null && !isNaN(head)) { $('s-head').textContent = compass(head) + ' ' + Math.round(head) + '°'; $('arrow').style.transform = 'rotate(' + head + 'deg)'; }
+    $('s-upd').textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    $('s-pos').textContent = 'Position: ' + here.lat.toFixed(5) + ', ' + here.lng.toFixed(5) + (c.altitude != null && !isNaN(c.altitude) ? '  ·  altitude ' + Math.round(c.altitude) + ' m' : '');
+    if (state.follow) { if (state.trail.length <= 1) map.center(here.lat, here.lng, 17); else map.pan(here.lat, here.lng); }
+    $('status').textContent = state.sim ? 'Simulating a walk (not your real position).' : 'Tracking you' + (acc != null && acc > 50 ? ' (weak signal, accuracy ' + Math.round(acc) + ' m)' : '') + '.';
+  }
+
+  function tick() { if (state.t0) $('s-time').textContent = fmtTime(Math.floor((Date.now() - state.t0) / 1000)); }
+  async function keepAwake(on) {
+    try { if (on && 'wakeLock' in navigator) state.wake = await navigator.wakeLock.request('screen'); else if (state.wake) { await state.wake.release(); state.wake = null; } } catch (e) {}
+  }
+  function stop() {
+    if (state.watchId != null) navigator.geolocation.clearWatch(state.watchId);
+    if (state.sim) clearInterval(state.sim);
+    state.watchId = null; state.sim = null; clearInterval(state.timer); keepAwake(false);
+    $('b-go').textContent = 'Start tracking'; $('b-sim').textContent = 'Simulate a walk'; $('status').textContent = 'Stopped. Distance ' + fmtDist(state.dist) + ' in ' + $('s-time').textContent + '.';
+  }
+  function resetStats() { state.trail = []; state.dist = 0; state.last = null; state.t0 = Date.now(); map.clearTrail(); $('s-dist').textContent = '0 m'; $('s-time').textContent = '0:00'; }
+  function startReal() {
+    if (!navigator.geolocation) { $('status').textContent = 'This device cannot share its location.'; return; }
+    if (!window.isSecureContext) { $('status').textContent = 'Location only works on a secure (https) page.'; return; }
+    resetStats(); $('status').textContent = 'Finding you... (allow location when asked)'; $('b-go').textContent = 'Stop tracking';
+    state.timer = setInterval(tick, 1000); keepAwake(true);
+    state.watchId = navigator.geolocation.watchPosition(onPos, (e) => {
+      $('status').textContent = e.code === 1 ? 'Location is blocked. Allow it in your browser/site settings, then press Start again.' : e.code === 3 ? 'Still looking for a GPS signal... go outside or near a window.' : 'Could not find your location.';
+      if (e.code === 1) stop();
+    }, { enableHighAccuracy: true, maximumAge: 1000, timeout: 20000 });
+  }
+  function startSim() {
+    resetStats(); $('b-sim').textContent = 'Stop simulation'; state.timer = setInterval(tick, 1000);
+    let lat = 49.1890, lng = -122.8490, i = 0;
+    state.sim = setInterval(() => { i++; lat += 0.00006 + Math.sin(i / 6) * 0.00003; lng += 0.00009; onPos({ coords: { latitude: lat, longitude: lng, accuracy: 8 + (i % 5), speed: 1.4, heading: null, altitude: null }, timestamp: Date.now() }); }, 700);
+  }
+
+  $('b-go').onclick = () => { if (state.watchId != null) stop(); else { if (state.sim) stop(); startReal(); } };
+  $('b-sim').onclick = () => { if (state.sim) stop(); else { if (state.watchId != null) stop(); startSim(); } };
+  $('b-follow').onclick = () => { setFollow(!state.follow); if (state.follow && state.last) map.pan(state.last.lat, state.last.lng); };
+  $('b-clear').onclick = () => { state.trail = state.last ? [state.last] : []; state.dist = 0; map.clearTrail(); $('s-dist').textContent = '0 m'; };
+  window.addEventListener('resize', () => map && map.resize());
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && (state.watchId != null || state.sim)) keepAwake(true); });
+  initMap();
+  if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+  window.__gps = { onPos };
+})();
+</script>
+</body>
+</html>

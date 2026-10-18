@@ -277,6 +277,7 @@
       <div style="margin-top:8px"><button class="btn ghost" id="lv-savename">Save name</button></div>
       <div class="stat" style="margin-top:12px"><div><span class="mut">Points balance</span><b>${me.points}</b></div><div><span class="mut">On hold (your rides)</span><b>${heldAsRider}</b></div><div><span class="mut">Coming to you</span><b>${pendingAsDriver}</b></div><div><span class="mut">Value</span><b>1 pt = $0.10</b></div></div>
       <p class="mut">Earn points by driving riders who pay in points. Spend them when you ride. Points can't be cashed out or transferred, and they never exceed the real cost of the trip, so nobody profits.</p>`)
+      + card('Track yourself', '<p class="mut">Walk or drive and watch yourself move on the map, with speed, distance and a trail. Your location stays on this device.</p><a class="btn" href="gps.html" style="display:inline-block;text-decoration:none">Open GPS test</a>')
       + card('History', ledger.length ? ledger.map((x) => `<div style="padding:4px 0">${(x.delta > 0 ? '+' : '') + x.delta} pts <span class="mut">${esc(x.reason)}</span></div>`).join('') : '<p class="mut">Nothing yet.</p>');
   }
 
