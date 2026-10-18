@@ -1,5 +1,5 @@
--- Sample data for pre-launch testing. Run once in Supabase > SQL Editor (after schema.sql).
--- Creates made-up people (emails end in @example.invalid, they cannot sign in) with trips and ride requests.
+-- Sample data for pre-launch testing. Run once in Supabase > SQL Editor (after schema.sql and migrations 002 and 003).
+-- Creates made-up people (emails end in @example.invalid, they cannot sign in) with trips and ride requests that repeat every day, starting today.
 -- Safe to re-run: it removes the old sample people first. Delete them all with the first statement alone.
 delete from auth.users where email like 'sample-%@example.invalid';
 
@@ -29,8 +29,8 @@ insert into auth.users (instance_id, id, aud, role, email, email_confirmed_at, r
   ('00000000-0000-0000-0000-000000000000', gen_random_uuid(), 'authenticated', 'authenticated', 'sample-r-ellis@example.invalid', now(), '{"provider":"email","providers":["email"]}', '{"display_name":"Ellis (sample)"}'::jsonb, now(), now()),
   ('00000000-0000-0000-0000-000000000000', gen_random_uuid(), 'authenticated', 'authenticated', 'sample-r-frankie@example.invalid', now(), '{"provider":"email","providers":["email"]}', '{"display_name":"Frankie (sample)"}'::jsonb, now(), now());
 
-insert into public.trips (user_id, origin, dest, depart_min, max_detour, max_wait, accepts, cost_per_km)
-select u.id, v.o, v.d, v.t, v.dt, v.w, v.a, 0.20 from (values
+insert into public.trips (user_id, origin, dest, depart_min, max_detour, max_wait, accepts, cost_per_km, trip_date, repeat_days)
+select u.id, v.o, v.d, v.t, v.dt, v.w, v.a, 0.20, current_date, '{1,2,3,4,5,6,7}'::smallint[] from (values
   ('sample-d-taylor@example.invalid', 'Surrey Central', 'BCIT / Willingdon (Burnaby)', 450, 8, 5, 'either'),
   ('sample-d-robin@example.invalid', 'Fleetwood (Surrey)', 'Brentwood (Burnaby)', 440, 10, 8, 'points'),
   ('sample-d-kim@example.invalid', 'Newton (Surrey)', 'Metrotown (Burnaby)', 435, 6, 5, 'cash'),
@@ -39,8 +39,8 @@ select u.id, v.o, v.d, v.t, v.dt, v.w, v.a, 0.20 from (values
   ('sample-d-omar@example.invalid', 'Guildford (Surrey)', 'Production Way (Burnaby)', 440, 8, 6, 'points')
 ) as v(em, o, d, t, dt, w, a) join auth.users u on u.email = v.em;
 
-insert into public.ride_requests (user_id, pickup, dropoff, ready_from, ready_to, pays)
-select u.id, v.p, v.d, v.f, v.t, v.pay from (values
+insert into public.ride_requests (user_id, pickup, dropoff, ready_from, ready_to, pays, ride_date, repeat_days)
+select u.id, v.p, v.d, v.f, v.t, v.pay, current_date, '{1,2,3,4,5,6,7}'::smallint[] from (values
   ('sample-r-alex@example.invalid', 'Whalley (Surrey)', 'BCIT / Willingdon (Burnaby)', 445, 470, 'points'),
   ('sample-r-priya@example.invalid', 'Surrey Central', 'Edmonds (Burnaby)', 440, 465, 'cash'),
   ('sample-r-sam@example.invalid', 'Pattullo Bridge (New West)', 'BCIT / Willingdon (Burnaby)', 455, 485, 'points'),

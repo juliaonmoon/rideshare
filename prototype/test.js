@@ -77,4 +77,29 @@ t('points asked for never exceed the server-side fair limit (supabase/migrations
   }
   assert.ok(pairs > 20);
 });
+t('dates: one-off and weekly repeat occurrences (ISO days, Mon=1)', () => {
+  const D = require('./dates.js');
+  assert.strictEqual(D.isoDow('2026-10-18'), 7);            // Sunday
+  assert.strictEqual(D.isoDow('2026-10-19'), 1);            // Monday
+  assert.ok(D.occursOn('2026-10-19', [], '2026-10-19'));
+  assert.ok(!D.occursOn('2026-10-19', [], '2026-10-20'));
+  assert.ok(D.occursOn('2026-10-19', [1, 2, 3, 4, 5], '2026-10-23'));   // Fri after start
+  assert.ok(!D.occursOn('2026-10-19', [1, 2, 3, 4, 5], '2026-10-24'));  // Sat not in list
+  assert.ok(!D.occursOn('2026-10-19', [1, 2, 3, 4, 5], '2026-10-16'));  // before start
+  const now = new Date(2026, 9, 18, 10, 0);
+  assert.deepStrictEqual(D.nextOccurrences('2026-10-18', [1, 2, 3, 4, 5], now, 3), ['2026-10-18', '2026-10-19', '2026-10-20']);
+  assert.strictEqual(D.label('2026-10-18', now), 'Today');
+  assert.strictEqual(D.label('2026-10-19', now), 'Tomorrow');
+  assert.strictEqual(D.label('2026-10-22', now), 'Thu Oct 22');
+  assert.strictEqual(D.repeatText([3, 1, 5]), 'Mon Wed Fri');
+});
+t('dates: booking rules (30 min ahead, 30 days max, no past)', () => {
+  const D = require('./dates.js'), now = new Date(2026, 9, 18, 10, 0);
+  assert.strictEqual(D.check('2026-10-18', 10 * 60 + 29, now), 'Pick a time at least 30 minutes from now');
+  assert.strictEqual(D.check('2026-10-18', 10 * 60 + 30, now), '');
+  assert.strictEqual(D.check('2026-10-17', 600, now), 'That date has passed');
+  assert.strictEqual(D.check('2026-11-17', 600, now), '');
+  assert.strictEqual(D.check('2026-11-18', 600, now), 'You can book up to 30 days ahead');
+  assert.strictEqual(D.check('', 600, now), 'Pick a date');
+});
 console.log(`\n${n} tests passed`);

@@ -6,12 +6,14 @@ Live at https://juliaonmoon.github.io/rideshare/prototype/ (static page + Supaba
 - **Sign in** with Google (one tap) or an emailed link. Others only see your first name and neighbourhood-level areas, never addresses.
 - **I'm driving:** post your commute with a max detour and max wait. See riders along your route, accept seat requests, press **Start trip** to watch the car on the road route.
 - **I need a ride:** post your request, see matching drivers with the fair price (points or cash gas-share), ask for a seat, then **Watch my ride** once accepted.
+- **Dates:** pick a date and time (30 minutes to 30 days ahead, like Uber Reserve) and optionally repeat weekly on chosen days (like Liftango). Review, then Confirm. Date chips switch which day you are looking at. The **Upcoming** tab lists your trip, request, rides and passengers.
 - **Points:** private balance and history. 1 point = $0.10. Points move only when a driver accepts, through database functions, never by editing tables. No cash-out.
 - **Show my location:** a blue dot from your device GPS on the maps. It stays on your device and is not sent to RideShare.
 
 ## Files
 - `index.html` the page and map code (Google Maps with road routes via the Routes API, Leaflet fallback). Old demo code is still in the file, hidden and unused (clean up later).
 - `live.js` the app logic (sign-in, trips, requests, matching, seat requests).
+- `dates.js` date and repeat helpers (tested).
 - `matching.js` detour/wait matching and fair-split pricing. Tests: `node test.js`.
 - `data.js` area coordinates (and the original demo people).
 - `config.js` public Supabase address and publishable key (safe to commit; never put a secret key here).
