@@ -7,6 +7,18 @@
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const toast = (m) => { const t = $('toast'); t.textContent = m; t.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), 3500); };
+  // Clear message right under a form button (the toast alone is easy to miss on a phone).
+  const formMsg = (id, text) => { const e = $(id); if (e) { e.textContent = text || ''; if (text) { try { e.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (x) {} } } if (text) toast(text); };
+  // If anything breaks, show it on the page (phones have no console) so it can be reported.
+  function showErr(msg) {
+    let b = $('err-bar');
+    if (!b) { b = document.createElement('div'); b.id = 'err-bar'; b.style.cssText = 'position:fixed;left:8px;right:8px;top:8px;z-index:99;background:#b42318;color:#fff;padding:10px 12px;border-radius:10px;font-size:13px;box-shadow:0 2px 10px rgba(0,0,0,.3)'; document.body.appendChild(b); }
+    b.innerHTML = 'Something went wrong: ' + esc(String(msg).slice(0, 160)) + ' <button type="button" id="err-x" style="margin-left:8px;background:#fff;color:#b42318;border:0;border-radius:6px;padding:2px 8px">Dismiss</button>';
+    $('err-x').onclick = () => b.remove();
+  }
+  window.addEventListener('error', (e) => { if (e && e.message && !/ResizeObserver/.test(e.message)) showErr(e.message); });
+  window.addEventListener('unhandledrejection', (e) => showErr((e.reason && e.reason.message) || e.reason || 'unknown error'));
+  const guard = (label, fn) => { try { return fn(); } catch (e) { console.error(label, e); showErr(label + ': ' + (e && e.message || e)); return '<div class="card"><p class="mut">This part could not load. Pull to refresh or try again.</p></div>'; } };
   const hm = (s) => { const [h, m] = s.split(':').map(Number); return h * 60 + m; };
   const hmIn = (m) => String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
   const areas = Object.keys(LOC);
@@ -158,7 +170,7 @@
       <label>Max detour (min)</label><input type="number" id="lt-dt" min="0" max="60" value="${t.max_detour}">
       <label>Max wait at a pickup (min)</label><input type="number" id="lt-w" min="0" max="60" value="${t.max_wait}">
       <label>I accept</label><select id="lt-a"><option value="either" ${t.accepts === 'either' ? 'selected' : ''}>Points or cash</option><option value="points" ${t.accepts === 'points' ? 'selected' : ''}>Points only</option><option value="cash" ${t.accepts === 'cash' ? 'selected' : ''}>Cash gas-share only</option></select>
-      <div style="margin-top:10px"><button class="btn" id="lt-review">Review trip</button></div>`);
+      <div style="margin-top:10px"><button class="btn" id="lt-review">Review trip</button></div><p class="warn" id="lt-msg" role="alert"></p>`);
   }
 
   function driverLists() {
@@ -212,7 +224,7 @@
       <div class="row"><div><label>Ready from</label><input type="time" id="lr-f" value="${hmIn(r.ready_from)}"></div><div><label>Ready until</label><input type="time" id="lr-u" value="${hmIn(r.ready_to)}"></div></div>
       <label>Repeat every week on <span class="mut">(optional)</span></label>${dayChips('lr-days', r.repeat_days)}
       <label>I'll pay with</label><select id="lr-pay"><option value="points" ${r.pays === 'points' ? 'selected' : ''}>Points</option><option value="cash" ${r.pays === 'cash' ? 'selected' : ''}>Cash gas-share</option><option value="either" ${r.pays === 'either' ? 'selected' : ''}>Either</option></select>
-      <div style="margin-top:10px"><button class="btn" id="lr-review">Review request</button></div>
+      <div style="margin-top:10px"><button class="btn" id="lr-review">Review request</button></div><p class="warn" id="lr-msg" role="alert"></p>
       <div class="mut" style="margin-top:10px">Your points: <b>${me.points} pts</b></div>`);
   }
 
@@ -303,11 +315,11 @@
     if (!user) { ['ld-form', 'ld-lists', 'lr-form', 'lr-lists', 'lu-main', 'lw-main'].forEach((id) => { $(id).innerHTML = /form|main/.test(id) ? hint : ''; }); return; }
     const sig = JSON.stringify([myTrip, myReq, me.points, pending]);
     const typing = document.activeElement && /^(lt|lr|lv)-/.test(document.activeElement.id || '') && document.activeElement.tagName !== 'BUTTON' && !pending;
-    if (!typing && sig !== formSig) { formSig = sig; $('ld-form').innerHTML = driverForm(); $('lr-form').innerHTML = riderForm(); $('lw-main').innerHTML = walletMain(); }
-    $('ld-lists').innerHTML = driverLists();
-    $('lr-lists').innerHTML = riderLists();
-    $('lu-main').innerHTML = upcomingMain();
-    wire();
+    if (!typing && sig !== formSig) { formSig = sig; $('ld-form').innerHTML = guard('trip form', driverForm); $('lr-form').innerHTML = guard('ride form', riderForm); $('lw-main').innerHTML = guard('points', walletMain); }
+    $('ld-lists').innerHTML = guard('riders list', driverLists);
+    $('lr-lists').innerHTML = guard('drivers list', riderLists);
+    $('lu-main').innerHTML = guard('upcoming', upcomingMain);
+    try { wire(); } catch (e) { console.error('wire', e); showErr('buttons: ' + (e && e.message || e)); }
   }
 
   async function run(p, ok) { try { const r = await p; if (r.error) throw r.error; if (ok) toast(ok); return true; } catch (e) { fail(e); return false; } finally { formSig = ''; await loadAll(); } }
@@ -317,8 +329,10 @@
     document.querySelectorAll('#lt-days button, #lr-days button').forEach((b) => (b.onclick = () => b.classList.toggle('on')));
     on('lt-review', () => {
       const row = { origin: $('lt-o').value, dest: $('lt-d').value, trip_date: $('lt-date').value, depart_min: hm($('lt-t').value || '07:30'), repeat_days: readDays('lt-days'), max_detour: +$('lt-dt').value, max_wait: +$('lt-w').value, accepts: $('lt-a').value };
-      if (row.origin === row.dest) { toast('Pick two different places'); return; }
-      const bad = RSD.check(row.trip_date, row.depart_min); if (bad) { toast(bad); return; }
+      formMsg('lt-msg', '');
+      if (row.origin === row.dest) { formMsg('lt-msg', 'Pick two different places'); return; }
+      if (!row.trip_date) { formMsg('lt-msg', 'Pick a date'); return; }
+      const bad = RSD.check(row.trip_date, row.depart_min); if (bad) { formMsg('lt-msg', bad); return; }
       pending = { kind: 'trip', row }; formSig = ''; render();
     });
     on('lt-back', () => { pending = null; formSig = ''; render(); });
@@ -328,9 +342,11 @@
     });
     on('lr-review', () => {
       const row = { pickup: $('lr-p').value, dropoff: $('lr-d').value, ride_date: $('lr-date').value, ready_from: hm($('lr-f').value || '07:20'), ready_to: hm($('lr-u').value || '07:50'), repeat_days: readDays('lr-days'), pays: $('lr-pay').value };
-      if (row.pickup === row.dropoff) { toast('Pick two different places'); return; }
-      if (row.ready_to < row.ready_from) { toast('"Ready until" must be after "Ready from"'); return; }
-      const bad = RSD.check(row.ride_date, row.ready_from); if (bad) { toast(bad); return; }
+      formMsg('lr-msg', '');
+      if (row.pickup === row.dropoff) { formMsg('lr-msg', 'Pick two different places'); return; }
+      if (!row.ride_date) { formMsg('lr-msg', 'Pick a date'); return; }
+      if (row.ready_to < row.ready_from) { formMsg('lr-msg', '"Ready until" must be after "Ready from"'); return; }
+      const bad = RSD.check(row.ride_date, row.ready_from); if (bad) { formMsg('lr-msg', bad); return; }
       pending = { kind: 'req', row }; formSig = ''; render();
     });
     on('lr-back', () => { pending = null; formSig = ''; render(); });
