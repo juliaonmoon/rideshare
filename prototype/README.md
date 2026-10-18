@@ -7,6 +7,7 @@ Live at https://juliaonmoon.github.io/rideshare/prototype/ (static page + Supaba
 - **I'm driving:** post your commute with a max detour and max wait. See riders along your route, accept seat requests, press **Start trip** to watch the car on the road route.
 - **I need a ride:** post your request, see matching drivers with the fair price (points or cash gas-share), ask for a seat, then **Watch my ride** once accepted.
 - **Dates:** pick a date and time (30 minutes to 30 days ahead, like Uber Reserve) and optionally repeat weekly on chosen days (like Liftango). Review, then Confirm. Date chips switch which day you are looking at. The **Upcoming** tab lists your trip, request, rides and passengers.
+- **Ride steps:** drivers tap On my way, Arrived, Picked up, Dropped off; riders see each step live and can confirm I am in the car. Points are paid at drop-off. Open in Google Maps gives turn-by-turn directions to the next stop.
 - **Cancelling:** points are held until the ride. More than 2 hours before pickup: full refund. Within 2 hours: your first each month is free, then the driver keeps half. No cancelling after pickup (drivers can mark a no-show). If a driver cancels, the rider gets everything back.
 - **Points:** private balance and history. 1 point = $0.10. Points move only when a driver accepts, through database functions, never by editing tables. No cash-out.
 - **Show my location:** a blue dot from your device GPS on the maps. It stays on your device and is not sent to RideShare.
