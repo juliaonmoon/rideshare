@@ -3,7 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>RideShare Prototype</title>
+<title>RideShare</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0b7a5b">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="RideShare">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
 <style>
 :root{--bg:#f6f7f9;--card:#fff;--ink:#1b2430;--mut:#5d6b7c;--line:#e1e5ea;--acc:#0b7a5b;--acc2:#e8f5f0;--warn:#b45309;--warnbg:#fef3c7;--bad:#b42318}
@@ -50,6 +58,7 @@ input[type=range]{width:100%;accent-color:var(--acc)}
 </style>
 </head>
 <body>
+<div id="install-bar" class="hide" style="max-width:1100px;margin:0 auto;padding:12px 16px 0"></div>
 <header>
   <h1>RideShare <span class="sub">prototype</span></h1>
   <div class="sub">Share the cost of your commute. Driver-first: you set the detour and wait you'll accept.</div>
@@ -523,5 +532,6 @@ renderAll(); renderMapStatus(); loadGoogle();
 })();
 </script>
 <script src="live.js"></script>
+<script src="install.js"></script>
 </body>
 </html>

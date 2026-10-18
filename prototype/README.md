@@ -17,6 +17,9 @@ Live at https://juliaonmoon.github.io/rideshare/prototype/ (static page + Supaba
 - `config.js` public Supabase address and publishable key (safe to commit; never put a secret key here).
 - `../supabase/schema.sql` database tables, privacy rules and points functions. `../supabase/seed.sql` 24 made-up sample people.
 
+## Install on a phone
+The page is an installable app (PWA): `manifest.webmanifest`, `sw.js`, `icon-*.png`, `install.js`. On Android/Chrome an **Install app** banner appears; on iPhone the page shows a short "Share > Add to Home Screen" tip (Apple allows no automatic prompt).
+
 ## Google Maps key (bring your own, per browser)
 Never commit it. Paste it under **Points > Map** on each device. Restrict the key to the Maps JavaScript API and Routes API and to `https://juliaonmoon.github.io/*`, and keep a daily quota and budget alert.
 
