@@ -56,7 +56,18 @@
     const keep = Math.floor(pts / 2);
     return { ok: true, text: 'Late cancel (within 2 hours) and your free one this month is used: your driver keeps ' + keep + ' points and you get ' + (pts - keep) + ' back.' };
   }
-  const canNoShow = (m) => { const t = tripBy(m.trip_id), pk = pickupMs(m); return m.status === 'accepted' && m.driver_id === user.id && t && pk != null && Date.now() >= pk + t.max_wait * 60000; };
+  const canNoShow = (m) => { const t = tripBy(m.trip_id), pk = pickupMs(m); return m.status === 'accepted' && !m.picked_up_at && m.driver_id === user.id && t && pk != null && Date.now() >= pk + t.max_wait * 60000; };
+  // Ride steps (driver taps, rider sees): accepted -> on_my_way -> arrived -> picked_up -> dropped_off (completed)
+  const stageOf = (m) => (m.status === 'completed' && m.dropped_off_at ? 'dropped_off' : m.picked_up_at ? 'picked_up' : m.arrived_at ? 'arrived' : m.en_route_at ? 'on_my_way' : 'accepted');
+  const STEP_LABEL = { accepted: 'accepted', on_my_way: 'driver on the way', arrived: 'driver has arrived', picked_up: 'ride in progress', dropped_off: 'completed' };
+  const nextStep = (m, riderName) => ({ accepted: { step: 'on_my_way', label: 'On my way' }, on_my_way: { step: 'arrived', label: 'Arrived at pickup' }, arrived: { step: 'picked_up', label: 'Picked up ' + riderName }, picked_up: { step: 'dropped_off', label: 'Dropped off ' + riderName } }[stageOf(m)]);
+  const stepsOpen = (m) => { const pk = pickupMs(m); return pk != null && Date.now() >= pk - LATE_MIN * 60000; };
+  // Opens the Google Maps app with directions to the next stop (pickup, then drop-off). Areas are neighbourhood centres, not exact addresses.
+  function mapsLink(m, req) {
+    if (!req) return '';
+    const spot = LOC[stageOf(m) === 'picked_up' ? req.dropoff : req.pickup]; if (!spot) return '';
+    return 'https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=' + spot.lat + ',' + spot.lng;
+  }
   const statusText = (s) => ({ requested: 'requested', accepted: 'accepted', completed: 'completed', cancelled: 'cancelled', declined: 'declined', no_show: 'no-show' }[s] || s);
 
   const driverObj = (t) => ({ origin: LOC[t.origin], dest: LOC[t.dest], departMin: t.depart_min, maxDetour: t.max_detour, maxWait: t.max_wait, accepts: t.accepts, cpk: Number(t.cost_per_km) || 0.2, name: names[t.user_id] || 'Driver' });
@@ -169,10 +180,12 @@
     const pr = RS.priceRoute(stops, dr.cpk);
     const summary = card(RSD.label(viewD) + '\'s trip', `<div class="stat"><div><span class="mut">Cost if driving alone</span><b>${RS.money(RS.priceRoute(RS.buildRoute(dr, []), dr.cpk).total)}</b></div><div><span class="mut">Your share now</span><b>${RS.money(pr.driverShare)}</b></div></div>
       <p class="mut">${RS.km(stops).toFixed(1)} km total &middot; riders pay only their share, never more.</p>
-      <button class="btn" id="ld-start">Start trip (watch the car move)</button> <button class="btn ghost" id="ld-stop">Stop</button>`);
+      <button class="btn ghost" id="ld-start">Preview route (watch the car)</button> <button class="btn ghost" id="ld-stop">Stop</button>`);
     const reqs = card('Seat requests for you', inc.length ? inc.map((x) => `<div style="padding:8px 0;border-top:1px solid var(--line)"><b>${nm(x.rider_id)}</b>${badge(x.rider_id, 'rider')} <span class="mut">pays ${x.pay_with === 'points' ? x.points + ' pts' : 'cash gas-share'}</span>
         <div style="margin-top:6px"><button class="btn" data-acc="${x.id}">Accept</button> <button class="btn ghost" data-dec="${x.id}">Decline</button></div></div>`).join('') : '<p class="mut">None yet. Riders ask you for a seat; you accept here.</p>');
-    const riding = card('Riding with me', acc.length ? acc.map((x) => `<div style="padding:4px 0">${nm(x.rider_id)}${badge(x.rider_id, 'rider')} <span class="mut">(${x.pay_with === 'points' ? x.points + ' pts held until the ride' : 'cash'})</span>${canNoShow(x) ? ` <button class="btn ghost" data-noshow="${x.id}">Mark no-show</button>` : ''}</div>`).join('') : '<p class="mut">No riders yet.</p>');
+    const riding = card('Riding with me', acc.length ? acc.map((x) => { const q = reqById[x.request_id], ns = nextStep(x, esc(names[x.rider_id] || 'rider')), open = stepsOpen(x), link = mapsLink(x, q);
+      return `<div style="padding:8px 0;border-top:1px solid var(--line)"><b>${nm(x.rider_id)}</b>${badge(x.rider_id, 'rider')} <span class="tag">${esc(STEP_LABEL[stageOf(x)])}</span>${x.rider_confirmed_at ? ' <span class="tag">rider confirmed</span>' : ''}<div class="mut">${x.pay_with === 'points' ? x.points + ' pts held until drop-off' : 'cash gas-share'}${q ? ' &middot; ' + esc(q.pickup) + ' to ' + esc(q.dropoff) : ''}</div>
+        <div style="margin-top:6px">${open ? `<button class="btn" data-step="${x.id}|${ns.step}">${ns.label}</button>` : '<span class="mut">Steps open 2 hours before pickup.</span>'} ${link && open ? `<a class="btn ghost" style="display:inline-block;text-decoration:none" href="${link}" target="_blank" rel="noopener">Open in Google Maps</a>` : ''} ${canNoShow(x) ? `<button class="btn ghost" data-noshow="${x.id}">Mark no-show</button>` : ''}</div></div>`; }).join('') : '<p class="mut">No riders yet.</p>');
     const near = card('People who need a ride along your route', found.length ? found.map((m) => { const q = reqById[m.rider.id]; return `<div style="padding:6px 0;border-top:1px solid var(--line)"><b>${nm(q.user_id)}</b>${badge(q.user_id, 'rider')} <span class="mut">${esc(q.pickup)} to ${esc(q.dropoff)} &middot; +${Math.round(m.addedDetour)} min detour &middot; pick up ${RS.clock(m.pickupAt)} &middot; drop ${RS.clock(m.dropAt)}</span></div>`; }).join('') : '<p class="mut">Nobody matching on this date.</p>');
     return dateCard + summary + reqs + riding + near;
   }
@@ -211,12 +224,15 @@
     if (!viewR) return dateCard;
     const meO = riderObj(myReq), tripById = {}; [...otherTrips, ...extraTrips].forEach((t) => { tripById[t.id] = t; });
     const mine = matches.filter((x) => x.rider_id === user.id && x.request_id === myReq.id && x.ride_date === viewR);
-    const accepted = mine.find((x) => x.status === 'accepted'), accTrip = accepted && tripById[accepted.trip_id];
+    const accepted = mine.find((x) => x.status === 'accepted' || x.status === 'completed'), accTrip = accepted && tripById[accepted.trip_id];
     let html = dateCard, mapStops = [{ loc: meO.pickup, type: 'pickup', rider: meO }, { loc: meO.dropoff, type: 'dropoff', rider: meO }];
     if (accepted && accTrip && known(accTrip)) {
       const stops = RS.buildRoute(driverObj(accTrip), [meO]);
       if (stops) { mapStops = stops; window.__lrStops = stops; window.__lrDriver = names[accTrip.user_id] || 'Your driver'; window.__lrMe = meO; }
-      html += card('Your ride', `<p><b>${nm(accTrip.user_id)}</b> accepted for ${esc(RSD.label(viewR))}. You paid ${accepted.pay_with === 'points' ? accepted.points + ' pts' : 'cash gas-share (settle with your driver)'}.</p><button class="btn" id="lr-watch">Watch my ride</button> <button class="btn ghost" id="lr-stop">Stop</button><p class="mut" style="margin-top:8px">To cancel, open the Upcoming tab. Your points are held until the ride and refunded if you cancel in time.</p>`);
+      const stg = stageOf(accepted), dn = nm(accTrip.user_id);
+      const live = { accepted: `${dn} accepted. They will tap <b>On my way</b> when they set off.`, on_my_way: `<b>${dn} is on the way.</b>`, arrived: `<b>${dn} has arrived.</b> Look for them at the pickup spot.`, picked_up: `<b>Ride in progress</b> with ${dn}.`, dropped_off: `<b>You have arrived.</b> Thanks for sharing the ride!` }[stg];
+      const inCar = stg === 'picked_up' ? (accepted.rider_confirmed_at ? '<span class="tag">You confirmed you are in the car</span>' : `<button class="btn" data-incar="${accepted.id}">I'm in the car</button>`) : '';
+      html += card('Your ride', `<p>${live}</p><p class="mut">${esc(RSD.label(viewR))} &middot; ${accepted.pay_with === 'points' ? accepted.points + ' pts' + (stg === 'dropped_off' ? ' paid' : ' held until drop-off') : 'cash gas-share (settle with your driver)'}</p>${inCar}<p style="margin-top:8px"><button class="btn ghost" id="lr-watch">Preview route</button> <button class="btn ghost" id="lr-stop">Stop</button></p>${stg === 'accepted' || stg === 'on_my_way' ? '<p class="mut">To cancel, open the Upcoming tab.</p>' : ''}`);
     }
     let list = '';
     otherTrips.filter((t) => known(t) && tripOn(t, viewR)).forEach((t) => {
@@ -254,11 +270,11 @@
         const b = [];
         if (!isRider && x.status === 'requested') b.push(`<button class="btn" data-acc="${x.id}">Accept</button> <button class="btn ghost" data-dec="${x.id}">Decline</button>`);
         if (canNoShow(x)) b.push(`<button class="btn ghost" data-noshow="${x.id}">Mark no-show</button>`);
-        if (isRider || x.status === 'accepted') b.push(`<button class="btn ghost" data-cancelask="${x.id}">${x.status === 'requested' ? 'Cancel request' : 'Cancel ride'}</button>`);
+        if ((isRider || x.status === 'accepted') && !x.picked_up_at) b.push(`<button class="btn ghost" data-cancelask="${x.id}">${x.status === 'requested' ? 'Cancel request' : 'Cancel ride'}</button>`);
         actions = b.length ? `<div style="margin-top:6px">${b.join(' ')}</div>` : '';
       }
       const held = x.status === 'accepted' && x.pay_with === 'points' && !x.settled ? ' (held until the ride)' : '';
-      return `<div style="padding:8px 0;border-top:1px solid var(--line)"><b>${when(x)}</b> <span class="tag">${esc(statusText(x.status))}</span><div class="mut">${isRider ? 'Driver' : 'Rider'} ${nm(other)}${badge(other, isRider ? 'driver' : 'rider')} &middot; ${pay}${held}</div>${actions}</div>`;
+      return `<div style="padding:8px 0;border-top:1px solid var(--line)"><b>${when(x)}</b> <span class="tag">${esc(x.status === 'accepted' ? STEP_LABEL[stageOf(x)] : statusText(x.status))}</span><div class="mut">${isRider ? 'Driver' : 'Rider'} ${nm(other)}${badge(other, isRider ? 'driver' : 'rider')} &middot; ${pay}${held}</div>${actions}</div>`;
     };
     const riderRows = asRider.length ? asRider.map((x) => row(x, true)).join('') : '<p class="mut">No upcoming rides.</p>';
     const driverRows = asDriver.length ? asDriver.map((x) => row(x, false)).join('') : '<p class="mut">No upcoming passengers.</p>';
@@ -335,6 +351,8 @@
     each('[data-cancelask]', (b) => { askCancel = b.dataset.cancelask; render(); });
     each('[data-cancelno]', () => { askCancel = null; render(); });
     each('[data-cancelgo]', (b) => { askCancel = null; run(sb.rpc('cancel_ride', { p_match: b.dataset.cancelgo }), 'Ride cancelled. See your points history for any refund.'); });
+    each('[data-step]', (b) => { const [id, st] = b.dataset.step.split('|'); run(sb.rpc('ride_step', { p_match: id, p_step: st }), st === 'dropped_off' ? 'Ride complete. Points paid.' : 'Updated'); });
+    each('[data-incar]', (b) => run(sb.rpc('rider_in_car', { p_match: b.dataset.incar }), 'Thanks, confirmed'));
     each('[data-noshow]', (b) => run(sb.rpc('mark_no_show', { p_match: b.dataset.noshow }), 'Marked as a no-show. You keep the points.'));
     each('[data-acc]', (b) => run(sb.rpc('respond_match', { p_match: b.dataset.acc, p_accept: true }), 'Accepted'));
     each('[data-dec]', (b) => run(sb.rpc('respond_match', { p_match: b.dataset.dec, p_accept: false }), 'Declined'));
