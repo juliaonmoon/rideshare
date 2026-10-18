@@ -32,6 +32,7 @@ Picking this up in Claude Code on the owner's own computer? Read this first.
 - Logic is in `prototype/live.js`. The old demo code in `index.html` is still there but hidden and unused; remove it in a cleanup pass.
 - **Show my location** button (driver and rider maps) uses device GPS; position stays on the device.
 - Google sign-in is set up (Google Cloud OAuth client + Supabase provider, done by the owner); email link is the backup.
+- **Installable app (PWA, 2026-10-18):** `manifest.webmanifest`, `sw.js` (network-first, same-origin only), icons, and `install.js` (Install banner on Android/Chrome; "Share > Add to Home Screen" tip on iPhone). Chrome's real install prompt was confirmed locally. Not yet confirmed on a real phone. Google sign-in inside an installed app may bounce through the browser.
 - Google key is per-browser: paste it again under Points > Map on each device (phone too).
 - Known limits: rider's page sends the points amount (server only range-checks it); Supabase's built-in email is rate-limited; no ratings, safety checks or phone GPS; database is in US West, move to Canada before real users.
 
