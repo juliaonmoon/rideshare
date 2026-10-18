@@ -25,12 +25,13 @@ h1{margin:0;font-size:20px} .sub{color:var(--mut);font-size:13px}
 nav{display:flex;gap:6px;max-width:1100px;margin:12px auto 0;padding:0 16px;border-bottom:1px solid var(--line)}
 nav button{background:none;border:0;padding:10px 14px;font:inherit;color:var(--mut);cursor:pointer;border-bottom:3px solid transparent}
 nav button[aria-selected=true]{color:var(--acc);border-bottom-color:var(--acc);font-weight:600}
+@media(max-width:380px){nav{gap:0;padding:0 8px}nav button{padding:10px 8px;font-size:14px}}
 main{max-width:1100px;margin:0 auto;padding:16px;display:grid;grid-template-columns:340px 1fr;gap:16px}
 @media(max-width:820px){main{grid-template-columns:1fr}}
 .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px}
 .card h2{margin:0 0 10px;font-size:15px}
 label{display:block;font-size:12px;color:var(--mut);margin:10px 0 3px}
-select,input[type=time],input[type=number]{width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);font:inherit}
+select,input[type=time],input[type=date],input[type=number]{width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);font:inherit}
 input[type=range]{width:100%;accent-color:var(--acc)}
 .row{display:flex;gap:10px}.row>*{flex:1}
 .val{float:right;color:var(--ink);font-weight:600}
@@ -67,6 +68,7 @@ input[type=range]{width:100%;accent-color:var(--acc)}
 <nav role="tablist">
   <button role="tab" id="t-driver" aria-selected="true">I'm driving</button>
   <button role="tab" id="t-rider" aria-selected="false">I need a ride</button>
+  <button role="tab" id="t-upcoming" aria-selected="false">Upcoming</button>
   <button role="tab" id="t-wallet" aria-selected="false">Points</button>
 </nav>
 <div id="auth-bar" style="max-width:1100px;margin:0 auto;padding:16px 16px 0"></div>
@@ -138,6 +140,10 @@ input[type=range]{width:100%;accent-color:var(--acc)}
     <div class="card" id="sim-lr"><span class="mut">Live ride</span><div class="status" id="sim-lr-status">Get accepted by a driver, then press &ldquo;Watch my ride&rdquo;.</div><div style="margin-top:8px"><button class="btn ghost" id="loc-lr">Show my location</button> <span class="mut">Stays on this device. Not sent to RideShare.</span></div></div>
     <div id="lr-lists"></div>
   </section>
+</main>
+
+<main id="v-lupcoming" class="hide">
+  <section id="lu-main" style="grid-column:1/-1;max-width:640px"></section>
 </main>
 
 <main id="v-lwallet" class="hide">
@@ -509,7 +515,7 @@ dayButtons('d-days',S.driver.days,renderSched); dayButtons('r-days',S.rider.days
 let resetArmed=false;
 $('w-reset').onclick=()=>{ if(!resetArmed){ resetArmed=true; $('w-reset').textContent='Tap again to reset all demo data'; setTimeout(()=>{resetArmed=false;$('w-reset').textContent='Reset demo';},4000); return; }
   S=JSON.parse(JSON.stringify(DEFAULT)); save(); location.reload(); };
-const tabs={driver:'v-ldriver',rider:'v-lrider',wallet:'v-lwallet'};
+const tabs={driver:'v-ldriver',rider:'v-lrider',upcoming:'v-lupcoming',wallet:'v-lwallet'};
 Object.keys(tabs).forEach(k=>$('t-'+k).onclick=()=>{
   Object.keys(tabs).forEach(j=>{ $(tabs[j]).classList.toggle('hide',j!==k); $('t-'+j).setAttribute('aria-selected',j===k); });
   renderAll(); setTimeout(()=>{ Object.values(maps).forEach(m=>m.invalidateSize()); Object.values(gmaps).forEach(g=>{ google.maps.event.trigger(g.map,'resize'); if(g.bounds) g.map.fitBounds(g.bounds,40); }); },60); });
@@ -531,6 +537,7 @@ $('lw-slot').appendChild($('map-card'));
 renderAll(); renderMapStatus(); loadGoogle();
 })();
 </script>
+<script src="dates.js"></script>
 <script src="live.js"></script>
 <script src="install.js"></script>
 </body>
