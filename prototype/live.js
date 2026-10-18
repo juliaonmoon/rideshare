@@ -27,9 +27,37 @@
   const sb = window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseKey);
   let user = null, me = { name: '', points: 0 }, myTrip = null, myReq = null, ledger = [], matches = [];
   let otherTrips = [], otherReqs = [], extraTrips = [], extraReqs = [], names = {}, timer = null, busy = false, formSig = '', mapSig = {};
-  let pending = null, viewD = null, viewR = null;
+  let pending = null, viewD = null, viewR = null, askCancel = null, rel = {};
   const fail = (e) => toast(e && e.message ? e.message : 'Something went wrong');
   const nm = (id) => esc(names[id] || 'Someone');
+  // Small warning next to a name when someone has recent cancellations (counts only, last 30 days).
+  const badge = (id, role) => {
+    const r = rel[id]; if (!r) return '';
+    const bits = role === 'driver' ? (r.driver_cancels ? [r.driver_cancels + ' cancelled ride' + (r.driver_cancels > 1 ? 's' : '')] : [])
+      : [r.late_cancels ? r.late_cancels + ' late cancel' + (r.late_cancels > 1 ? 's' : '') : '', r.no_shows ? r.no_shows + ' no-show' + (r.no_shows > 1 ? 's' : '') : ''].filter(Boolean);
+    return bits.length ? ` <span class="tag" style="background:var(--warnbg);color:var(--warn)">${bits.join(', ')} (30 days)</span>` : '';
+  };
+  const who = (id, role) => nm(id) + badge(id, role);
+  const LATE_MIN = 120;
+  const tripBy = (id) => [...otherTrips, ...extraTrips, ...(myTrip ? [myTrip] : [])].find((t) => t.id === id);
+  const pickupMs = (m) => { const t = tripBy(m.trip_id); return t ? RSD.vanEpoch(m.ride_date, t.depart_min) : null; };
+  const lateUsedThisMonth = (excludeId) => matches.some((x) => x.rider_id === user.id && x.id !== excludeId && x.late && x.cancelled_by === user.id && x.cancelled_at && RSD.vanMonth(Date.parse(x.cancelled_at)) === RSD.vanMonth(Date.now()));
+  // Plain-language result of cancelling this match now (mirrors the database rules).
+  function cancelInfo(m) {
+    const isRider = m.rider_id === user.id, pts = m.pay_with === 'points' ? m.points : 0;
+    if (m.status === 'requested') return { ok: true, text: 'Free to cancel. No points have moved.' };
+    if (!isRider) return { ok: true, text: 'If you cancel, ' + nm(m.rider_id) + ' gets ' + (pts ? 'all ' + pts + ' points' : 'nothing charged') + ' back. Cancelling often shows as a warning next to your name.' };
+    const pk = pickupMs(m); if (pk == null) return { ok: true, text: 'Cancel this ride.' };
+    if (Date.now() >= pk) return { ok: false, text: 'The pickup time has passed, so this ride can no longer be cancelled. Your driver can mark a no-show.' };
+    const late = pk - Date.now() < LATE_MIN * 60000;
+    if (!pts) return { ok: true, text: late ? 'Late cancel (within 2 hours). No points involved, but it counts toward your cancellation record.' : 'Free to cancel. No points involved.' };
+    if (!late) return { ok: true, text: 'Free to cancel: you get all ' + pts + ' points back.' };
+    if (!lateUsedThisMonth(m.id)) return { ok: true, text: 'This is a late cancel (within 2 hours), but your one free late cancel this month covers it: you get all ' + pts + ' points back.' };
+    const keep = Math.floor(pts / 2);
+    return { ok: true, text: 'Late cancel (within 2 hours) and your free one this month is used: your driver keeps ' + keep + ' points and you get ' + (pts - keep) + ' back.' };
+  }
+  const canNoShow = (m) => { const t = tripBy(m.trip_id), pk = pickupMs(m); return m.status === 'accepted' && m.driver_id === user.id && t && pk != null && Date.now() >= pk + t.max_wait * 60000; };
+  const statusText = (s) => ({ requested: 'requested', accepted: 'accepted', completed: 'completed', cancelled: 'cancelled', declined: 'declined', no_show: 'no-show' }[s] || s);
 
   const driverObj = (t) => ({ origin: LOC[t.origin], dest: LOC[t.dest], departMin: t.depart_min, maxDetour: t.max_detour, maxWait: t.max_wait, accepts: t.accepts, cpk: Number(t.cost_per_km) || 0.2, name: names[t.user_id] || 'Driver' });
   const riderObj = (r) => ({ id: r.id, name: names[r.user_id] || 'Rider', pickup: LOC[r.pickup], dropoff: LOC[r.dropoff], readyFrom: r.ready_from, readyTo: r.ready_to, pays: r.pays });
@@ -41,6 +69,7 @@
     if (!user || busy) return; busy = true;
     try {
       const uid = user.id;
+      try { await sb.rpc('settle_due'); } catch (e) { /* older database: ignore */ }
       const [p, w, l, t, r, m, ot, orq] = await Promise.all([
         sb.from('profiles').select('display_name').eq('id', uid).maybeSingle(),
         sb.from('wallets').select('points').eq('user_id', uid).maybeSingle(),
@@ -63,6 +92,7 @@
       const ids = new Set([uid, ...otherTrips.map((x) => x.user_id), ...otherReqs.map((x) => x.user_id), ...extraTrips.map((x) => x.user_id), ...extraReqs.map((x) => x.user_id), ...matches.flatMap((x) => [x.driver_id, x.rider_id])]);
       const n = await sb.from('profiles').select('id,display_name').in('id', [...ids]);
       (n.data || []).forEach((x) => { names[x.id] = x.display_name; });
+      const rl = await sb.from('reliability').select('*'); rel = {}; (rl.data || []).forEach((x) => { rel[x.user_id] = x; });
     } catch (e) { fail(e); } finally { busy = false; }
     render();
   }
@@ -140,10 +170,10 @@
     const summary = card(RSD.label(viewD) + '\'s trip', `<div class="stat"><div><span class="mut">Cost if driving alone</span><b>${RS.money(RS.priceRoute(RS.buildRoute(dr, []), dr.cpk).total)}</b></div><div><span class="mut">Your share now</span><b>${RS.money(pr.driverShare)}</b></div></div>
       <p class="mut">${RS.km(stops).toFixed(1)} km total &middot; riders pay only their share, never more.</p>
       <button class="btn" id="ld-start">Start trip (watch the car move)</button> <button class="btn ghost" id="ld-stop">Stop</button>`);
-    const reqs = card('Seat requests for you', inc.length ? inc.map((x) => `<div style="padding:8px 0;border-top:1px solid var(--line)"><b>${nm(x.rider_id)}</b> <span class="mut">pays ${x.pay_with === 'points' ? x.points + ' pts' : 'cash gas-share'}</span>
+    const reqs = card('Seat requests for you', inc.length ? inc.map((x) => `<div style="padding:8px 0;border-top:1px solid var(--line)"><b>${nm(x.rider_id)}</b>${badge(x.rider_id, 'rider')} <span class="mut">pays ${x.pay_with === 'points' ? x.points + ' pts' : 'cash gas-share'}</span>
         <div style="margin-top:6px"><button class="btn" data-acc="${x.id}">Accept</button> <button class="btn ghost" data-dec="${x.id}">Decline</button></div></div>`).join('') : '<p class="mut">None yet. Riders ask you for a seat; you accept here.</p>');
-    const riding = card('Riding with me', acc.length ? acc.map((x) => `<div>${nm(x.rider_id)} <span class="mut">(${x.pay_with === 'points' ? x.points + ' pts' : 'cash'})</span></div>`).join('') : '<p class="mut">No riders yet.</p>');
-    const near = card('People who need a ride along your route', found.length ? found.map((m) => { const q = reqById[m.rider.id]; return `<div style="padding:6px 0;border-top:1px solid var(--line)"><b>${nm(q.user_id)}</b> <span class="mut">${esc(q.pickup)} to ${esc(q.dropoff)} &middot; +${Math.round(m.addedDetour)} min detour &middot; pick up ${RS.clock(m.pickupAt)} &middot; drop ${RS.clock(m.dropAt)}</span></div>`; }).join('') : '<p class="mut">Nobody matching on this date.</p>');
+    const riding = card('Riding with me', acc.length ? acc.map((x) => `<div style="padding:4px 0">${nm(x.rider_id)}${badge(x.rider_id, 'rider')} <span class="mut">(${x.pay_with === 'points' ? x.points + ' pts held until the ride' : 'cash'})</span>${canNoShow(x) ? ` <button class="btn ghost" data-noshow="${x.id}">Mark no-show</button>` : ''}</div>`).join('') : '<p class="mut">No riders yet.</p>');
+    const near = card('People who need a ride along your route', found.length ? found.map((m) => { const q = reqById[m.rider.id]; return `<div style="padding:6px 0;border-top:1px solid var(--line)"><b>${nm(q.user_id)}</b>${badge(q.user_id, 'rider')} <span class="mut">${esc(q.pickup)} to ${esc(q.dropoff)} &middot; +${Math.round(m.addedDetour)} min detour &middot; pick up ${RS.clock(m.pickupAt)} &middot; drop ${RS.clock(m.dropAt)}</span></div>`; }).join('') : '<p class="mut">Nobody matching on this date.</p>');
     return dateCard + summary + reqs + riding + near;
   }
 
@@ -186,7 +216,7 @@
     if (accepted && accTrip && known(accTrip)) {
       const stops = RS.buildRoute(driverObj(accTrip), [meO]);
       if (stops) { mapStops = stops; window.__lrStops = stops; window.__lrDriver = names[accTrip.user_id] || 'Your driver'; window.__lrMe = meO; }
-      html += card('Your ride', `<p><b>${nm(accTrip.user_id)}</b> accepted for ${esc(RSD.label(viewR))}. You paid ${accepted.pay_with === 'points' ? accepted.points + ' pts' : 'cash gas-share (settle with your driver)'}.</p><button class="btn" id="lr-watch">Watch my ride</button> <button class="btn ghost" id="lr-stop">Stop</button>`);
+      html += card('Your ride', `<p><b>${nm(accTrip.user_id)}</b> accepted for ${esc(RSD.label(viewR))}. You paid ${accepted.pay_with === 'points' ? accepted.points + ' pts' : 'cash gas-share (settle with your driver)'}.</p><button class="btn" id="lr-watch">Watch my ride</button> <button class="btn ghost" id="lr-stop">Stop</button><p class="mut" style="margin-top:8px">To cancel, open the Upcoming tab. Your points are held until the ride and refunded if you cancel in time.</p>`);
     }
     let list = '';
     otherTrips.filter((t) => known(t) && tripOn(t, viewR)).forEach((t) => {
@@ -196,8 +226,8 @@
       if (!(t.accepts === 'either' || t.accepts === payWith)) return;
       const st = mine.find((x) => x.trip_id === t.id);
       const price = payWith === 'points' ? pts + ' pts' : RS.money(dollars);
-      const btn = st ? `<span class="tag">${esc(st.status)}</span>${st.status === 'requested' ? ` <button class="btn ghost" data-can="${st.id}">Cancel</button>` : ''}` : `<button class="btn" data-req="${t.id}" data-pay="${payWith}" data-pts="${pts}" data-date="${viewR}">Request &middot; ${price}</button>`;
-      list += `<div style="padding:8px 0;border-top:1px solid var(--line)"><b>${nm(t.user_id)}</b> <span class="mut">leaves ${RS.clock(t.depart_min)} &middot; picks you up ${RS.clock(m.pickupAt)} &middot; drops ${RS.clock(m.dropAt)} &middot; adds ${Math.round(m.addedDetour)} min for them</span><div style="margin-top:6px">${btn}</div></div>`;
+      const btn = st ? `<span class="tag">${esc(statusText(st.status))}</span>${st.status === 'requested' ? ` <button class="btn ghost" data-can="${st.id}">Cancel</button>` : ''}` : `<button class="btn" data-req="${t.id}" data-pay="${payWith}" data-pts="${pts}" data-date="${viewR}">Request &middot; ${price}</button>`;
+      list += `<div style="padding:8px 0;border-top:1px solid var(--line)"><b>${nm(t.user_id)}</b>${badge(t.user_id, 'driver')} <span class="mut">leaves ${RS.clock(t.depart_min)} &middot; picks you up ${RS.clock(m.pickupAt)} &middot; drops ${RS.clock(m.dropAt)} &middot; adds ${Math.round(m.addedDetour)} min for them</span><div style="margin-top:6px">${btn}</div></div>`;
     });
     html += card('Drivers going your way on ' + esc(RSD.label(viewR)), list || '<p class="mut">No drivers match on this date. Check back soon.</p>');
     const sig = routeSig(mapStops) + viewR; if (mapSig.r !== sig) { mapSig.r = sig; window.RS_UI.drawMap('map-lr', mapStops); }
@@ -211,20 +241,41 @@
     [...otherReqs, ...extraReqs].concat(myReq ? [myReq] : []).forEach((q) => { reqById[q.id] = q; });
     const mineTrip = myTrip ? `<div style="padding:6px 0"><b>${esc(myTrip.origin)} to ${esc(myTrip.dest)}</b><div class="mut">${whenText(myTrip.trip_date, myTrip.depart_min, myTrip.repeat_days)}</div><div style="margin-top:6px"><button class="btn ghost" data-go="t-driver">Edit</button> <button class="btn ghost" data-offtrip="${myTrip.id}">Take it down</button></div></div>` : '<p class="mut">No trip posted. Use <b>I\'m driving</b>.</p>';
     const mineReq = myReq ? `<div style="padding:6px 0"><b>${esc(myReq.pickup)} to ${esc(myReq.dropoff)}</b><div class="mut">${esc(RSD.label(myReq.ride_date))}, ready ${RS.clock(myReq.ready_from)} to ${RS.clock(myReq.ready_to)}${myReq.repeat_days.length ? ' &middot; repeats ' + RSD.repeatText(myReq.repeat_days) : ' &middot; one time'}</div><div style="margin-top:6px"><button class="btn ghost" data-go="t-rider">Edit</button> <button class="btn ghost" data-offreq="${myReq.id}">Take it down</button></div></div>` : '<p class="mut">No ride requested. Use <b>I need a ride</b>.</p>';
-    const upcoming = matches.filter((x) => x.ride_date >= t0 && (x.status === 'requested' || x.status === 'accepted')).sort((a, b) => (a.ride_date < b.ride_date ? -1 : 1));
-    const asRider = upcoming.filter((x) => x.rider_id === user.id), asDriver = upcoming.filter((x) => x.driver_id === user.id);
-    const when = (x) => { const t = tripById[x.trip_id]; return esc(RSD.label(x.ride_date)) + (t ? ' at ' + RS.clock(t.depart_min) : ''); };
-    const riderRows = asRider.length ? asRider.map((x) => `<div style="padding:8px 0;border-top:1px solid var(--line)"><b>${when(x)}</b> <span class="tag">${esc(x.status)}</span><div class="mut">Driver ${nm(x.driver_id)} &middot; ${x.pay_with === 'points' ? x.points + ' pts' : 'cash gas-share'}</div>${x.status === 'requested' ? `<div style="margin-top:6px"><button class="btn ghost" data-can="${x.id}">Cancel request</button></div>` : ''}</div>`).join('') : '<p class="mut">No upcoming rides.</p>';
-    const driverRows = asDriver.length ? asDriver.map((x) => `<div style="padding:8px 0;border-top:1px solid var(--line)"><b>${when(x)}</b> <span class="tag">${esc(x.status)}</span><div class="mut">Rider ${nm(x.rider_id)} &middot; ${x.pay_with === 'points' ? x.points + ' pts' : 'cash gas-share'}</div>${x.status === 'requested' ? `<div style="margin-top:6px"><button class="btn" data-acc="${x.id}">Accept</button> <button class="btn ghost" data-dec="${x.id}">Decline</button></div>` : ''}</div>`).join('') : '<p class="mut">No upcoming passengers.</p>';
-    return card('My trip', mineTrip) + card('My ride request', mineReq) + card('Upcoming rides (as a rider)', riderRows) + card('Upcoming passengers (as a driver)', driverRows)
-      + '<p class="mut">Cancelling a ride after the driver accepted is not available yet; message your driver.</p>';
+    const live = matches.filter((x) => (x.status === 'requested' || x.status === 'accepted') && x.ride_date >= t0).sort((a, b) => (a.ride_date < b.ride_date ? -1 : 1));
+    const asRider = live.filter((x) => x.rider_id === user.id), asDriver = live.filter((x) => x.driver_id === user.id);
+    const when = (x) => { const t = tripBy(x.trip_id); return esc(RSD.label(x.ride_date)) + (t ? ' at ' + RS.clock(t.depart_min) : ''); };
+    const row = (x, isRider) => {
+      const other = isRider ? x.driver_id : x.rider_id, pay = x.pay_with === 'points' ? x.points + ' pts' : 'cash gas-share';
+      let actions = '';
+      if (askCancel === x.id) {
+        const ci = cancelInfo(x);
+        actions = `<div class="open" style="margin-top:6px">${esc(ci.text)}</div><div style="margin-top:6px">${ci.ok ? `<button class="btn" data-cancelgo="${x.id}">Yes, cancel ride</button> ` : ''}<button class="btn ghost" data-cancelno="1">Keep ride</button></div>`;
+      } else {
+        const b = [];
+        if (!isRider && x.status === 'requested') b.push(`<button class="btn" data-acc="${x.id}">Accept</button> <button class="btn ghost" data-dec="${x.id}">Decline</button>`);
+        if (canNoShow(x)) b.push(`<button class="btn ghost" data-noshow="${x.id}">Mark no-show</button>`);
+        if (isRider || x.status === 'accepted') b.push(`<button class="btn ghost" data-cancelask="${x.id}">${x.status === 'requested' ? 'Cancel request' : 'Cancel ride'}</button>`);
+        actions = b.length ? `<div style="margin-top:6px">${b.join(' ')}</div>` : '';
+      }
+      const held = x.status === 'accepted' && x.pay_with === 'points' && !x.settled ? ' (held until the ride)' : '';
+      return `<div style="padding:8px 0;border-top:1px solid var(--line)"><b>${when(x)}</b> <span class="tag">${esc(statusText(x.status))}</span><div class="mut">${isRider ? 'Driver' : 'Rider'} ${nm(other)}${badge(other, isRider ? 'driver' : 'rider')} &middot; ${pay}${held}</div>${actions}</div>`;
+    };
+    const riderRows = asRider.length ? asRider.map((x) => row(x, true)).join('') : '<p class="mut">No upcoming rides.</p>';
+    const driverRows = asDriver.length ? asDriver.map((x) => row(x, false)).join('') : '<p class="mut">No upcoming passengers.</p>';
+    const past = matches.filter((x) => ['completed', 'cancelled', 'no_show', 'declined'].includes(x.status)).slice(0, 8);
+    const pastRows = past.length ? past.map((x) => { const isRider = x.rider_id === user.id; return `<div style="padding:6px 0;border-top:1px solid var(--line)">${when(x)} <span class="tag">${esc(statusText(x.status))}</span><div class="mut">${isRider ? 'Driver' : 'Rider'} ${nm(isRider ? x.driver_id : x.rider_id)} &middot; ${x.pay_with === 'points' ? x.points + ' pts' : 'cash'}${x.refunded ? ' &middot; ' + x.refunded + ' pts returned' : ''}</div></div>`; }).join('') : '<p class="mut">Nothing yet.</p>';
+    const policy = `<p class="mut">Points are held when a driver accepts, and paid to the driver after the ride.</p>
+      <ul class="mut" style="margin:6px 0 0 18px;padding:0"><li>Cancel more than 2 hours before pickup: all points back.</li><li>Cancel within 2 hours: your first one each month is free; after that the driver keeps half.</li><li>You can't cancel after the pickup time. If a rider doesn't show, the driver can mark a no-show after waiting.</li><li>If a driver cancels, the rider gets all points back.</li><li>Cash rides: no points move.</li></ul>`;
+    return card('My trip', mineTrip) + card('My ride request', mineReq) + card('Upcoming rides (as a rider)', riderRows) + card('Upcoming passengers (as a driver)', driverRows) + card('Recent', pastRows) + card('Cancellation rules', policy);
   }
 
   // ---------- points tab ----------
   function walletMain() {
+    const sum = (list) => list.reduce((a, x) => a + x.points, 0), heldList = matches.filter((x) => x.status === 'accepted' && !x.settled && x.pay_with === 'points');
+    const heldAsRider = sum(heldList.filter((x) => x.rider_id === user.id)), pendingAsDriver = sum(heldList.filter((x) => x.driver_id === user.id));
     return card('Me', `<label>First name shown to others</label><input type="text" id="lv-name" maxlength="30" value="${esc(me.name)}" style="${INPUT}">
       <div style="margin-top:8px"><button class="btn ghost" id="lv-savename">Save name</button></div>
-      <div class="stat" style="margin-top:12px"><div><span class="mut">Points balance</span><b>${me.points}</b></div><div><span class="mut">Value</span><b>1 pt = $0.10</b></div></div>
+      <div class="stat" style="margin-top:12px"><div><span class="mut">Points balance</span><b>${me.points}</b></div><div><span class="mut">On hold (your rides)</span><b>${heldAsRider}</b></div><div><span class="mut">Coming to you</span><b>${pendingAsDriver}</b></div><div><span class="mut">Value</span><b>1 pt = $0.10</b></div></div>
       <p class="mut">Earn points by driving riders who pay in points. Spend them when you ride. Points can't be cashed out or transferred, and they never exceed the real cost of the trip, so nobody profits.</p>`)
       + card('History', ledger.length ? ledger.map((x) => `<div style="padding:4px 0">${(x.delta > 0 ? '+' : '') + x.delta} pts <span class="mut">${esc(x.reason)}</span></div>`).join('') : '<p class="mut">Nothing yet.</p>');
   }
@@ -279,7 +330,11 @@
     each('#ld-dates button', (b) => { viewD = b.dataset.date; mapSig = {}; render(); });
     each('#lr-dates button', (b) => { viewR = b.dataset.date; mapSig = {}; render(); });
     each('[data-req]', (b) => run(sb.rpc('request_seat', { p_trip: b.dataset.req, p_request: myReq.id, p_pay_with: b.dataset.pay, p_points: +b.dataset.pts, p_date: b.dataset.date }), 'Seat requested'));
-    each('[data-can]', (b) => run(sb.rpc('cancel_match', { p_match: b.dataset.can }), 'Cancelled'));
+    each('[data-can]', (b) => run(sb.rpc('cancel_ride', { p_match: b.dataset.can }), 'Cancelled'));
+    each('[data-cancelask]', (b) => { askCancel = b.dataset.cancelask; render(); });
+    each('[data-cancelno]', () => { askCancel = null; render(); });
+    each('[data-cancelgo]', (b) => { askCancel = null; run(sb.rpc('cancel_ride', { p_match: b.dataset.cancelgo }), 'Ride cancelled. See your points history for any refund.'); });
+    each('[data-noshow]', (b) => run(sb.rpc('mark_no_show', { p_match: b.dataset.noshow }), 'Marked as a no-show. You keep the points.'));
     each('[data-acc]', (b) => run(sb.rpc('respond_match', { p_match: b.dataset.acc, p_accept: true }), 'Accepted'));
     each('[data-dec]', (b) => run(sb.rpc('respond_match', { p_match: b.dataset.dec, p_accept: false }), 'Declined'));
     each('[data-offtrip]', (b) => run(sb.from('trips').update({ active: false }).eq('id', b.dataset.offtrip), 'Trip taken down'));
@@ -306,7 +361,7 @@
   locBtns().forEach((b) => (b.onclick = toggleLocate));
 
   function start(session) {
-    user = session ? session.user : null; clearInterval(timer); formSig = ''; mapSig = {}; pending = null; viewD = null; viewR = null;
+    user = session ? session.user : null; clearInterval(timer); formSig = ''; mapSig = {}; pending = null; viewD = null; viewR = null; askCancel = null;
     if (!user) { me = { name: '', points: 0 }; render(); return; }
     render(); loadAll(); timer = setInterval(() => { if (!document.hidden) loadAll(); }, 15000);
   }
