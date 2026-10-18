@@ -395,6 +395,17 @@
   }
   locBtns().forEach((b) => (b.onclick = toggleLocate));
 
+  // Footer: show which version is running, and a one-tap way to clear saved copies and reload.
+  function footer() {
+    if ($('ver')) $('ver').textContent = CFG.version || '';
+    if ($('hard-refresh')) $('hard-refresh').onclick = async (e) => {
+      e.preventDefault();
+      try { const regs = await navigator.serviceWorker.getRegistrations(); await Promise.all(regs.map((r) => r.unregister())); const ks = await caches.keys(); await Promise.all(ks.map((k) => caches.delete(k))); } catch (x) {}
+      location.reload();
+    };
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', footer); else footer();
+
   function start(session) {
     user = session ? session.user : null; clearInterval(timer); formSig = ''; mapSig = {}; pending = null; viewD = null; viewR = null; askCancel = null;
     if (!user) { me = { name: '', points: 0 }; render(); return; }

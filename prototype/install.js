@@ -4,7 +4,12 @@
 (function () {
   'use strict';
   const bar = document.getElementById('install-bar');
-  if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+  if ('serviceWorker' in navigator) {
+    const hadController = !!navigator.serviceWorker.controller; let reloaded = false;
+    // When a newer version of the app takes over, reload once so the new code is the one running.
+    navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadController && !reloaded) { reloaded = true; location.reload(); } });
+    window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').then((reg) => reg.update()).catch(() => {}));
+  }
   const standalone = (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
   if (!bar || standalone) return;
   const KEY = 'rs-install-dismissed';
