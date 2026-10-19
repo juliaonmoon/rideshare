@@ -58,7 +58,7 @@
   let otherTrips = [], otherReqs = [], extraTrips = [], extraReqs = [], names = {}, timer = null, busy = false, formSig = '', mapSig = {};
   let pending = null, viewD = null, viewR = null, askCancel = null, rel = {}, mySet = null, styles = {};
   // Personal settings: defaults for new trips and requests (every trip can still be changed before posting).
-  const SD = { d_detour: 10, d_wait: 5, d_accepts: 'either', d_seats: 3, d_auto_accept: false, d_chat: 'some', d_pets: true, r_pays: 'points', r_chat: 'some', r_pets: false };
+  const SD = { d_detour: 10, d_total_detour: 15, d_wait: 5, d_accepts: 'either', d_seats: 1, d_auto_accept: false, d_chat: 'some', d_pets: true, r_pays: 'points', r_chat: 'some', r_pets: false };
   const S_ = () => Object.assign({}, SD, mySet || {});
   // Ride-style tags next to a name (quiet ride, no pets...). Only shown when they differ from the usual.
   const tagsFor = (id, role) => {
@@ -114,7 +114,7 @@
   }
   const statusText = (s) => ({ requested: 'requested', accepted: 'accepted', completed: 'completed', cancelled: 'cancelled', declined: 'declined', no_show: 'no-show' }[s] || s);
 
-  const driverObj = (t) => ({ origin: LOC[t.origin], dest: LOC[t.dest], departMin: t.depart_min, maxDetour: t.max_detour, maxWait: t.max_wait, accepts: t.accepts, cpk: Number(t.cost_per_km) || 0.2, name: names[t.user_id] || 'Driver' });
+  const driverObj = (t) => ({ origin: LOC[t.origin], dest: LOC[t.dest], departMin: t.depart_min, maxDetour: t.max_detour, maxTotal: t.max_total_detour == null ? null : t.max_total_detour, maxPickups: t.max_pickups == null ? null : t.max_pickups, maxWait: t.max_wait, accepts: t.accepts, cpk: Number(t.cost_per_km) || 0.2, name: names[t.user_id] || 'Driver' });
   const riderObj = (r) => ({ id: r.id, name: names[r.user_id] || 'Rider', pickup: LOC[r.pickup], dropoff: LOC[r.dropoff], readyFrom: r.ready_from, readyTo: r.ready_to, pays: r.pays });
   const known = (x) => LOC[x.origin || x.pickup] && LOC[x.dest || x.dropoff];
   const tripOn = (t, d) => RSD.occursOn(t.trip_date, t.repeat_days, d);
@@ -318,15 +318,17 @@
     if (pending && pending.kind === 'trip') {
       const r = pending.row;
       return card('Confirm your trip', `<p><b>${esc(r.origin)}</b> to <b>${esc(r.dest)}</b></p><p>${whenText(r.trip_date, r.depart_min, r.repeat_days)}</p>
-        <p class="mut">Max detour ${r.max_detour} min &middot; max wait ${r.max_wait} min &middot; accepts ${r.accepts === 'either' ? 'points or cash' : r.accepts === 'points' ? 'points only' : 'cash gas-share only'}</p>
+        <p class="mut">${r.max_pickups === 1 ? 'One pickup only' : 'Up to ' + r.max_pickups + ' pickups'} &middot; max ${r.max_detour} extra min for one pickup${r.max_pickups > 1 && r.max_total_detour != null ? ' &middot; max ' + r.max_total_detour + ' extra min for all pickups together' : ''} &middot; max wait ${r.max_wait} min &middot; accepts ${r.accepts === 'either' ? 'points or cash' : r.accepts === 'points' ? 'points only' : 'cash gas-share only'}</p>
         <div style="margin-top:10px"><button class="btn" id="lt-confirm">${myTrip ? 'Confirm and update' : 'Confirm and post'}</button> <button class="btn ghost" id="lt-back">Back</button></div>`);
     }
-    const t = myTrip || { origin: 'Surrey Central', dest: 'BCIT / Willingdon (Burnaby)', depart_min: 450, max_detour: S_().d_detour, max_wait: S_().d_wait, accepts: S_().d_accepts, trip_date: todayStr(), repeat_days: [] };
+    const t = myTrip || { origin: 'Surrey Central', dest: 'BCIT / Willingdon (Burnaby)', depart_min: 450, max_detour: S_().d_detour, max_total_detour: S_().d_total_detour, max_pickups: Math.min(4, S_().d_seats), max_wait: S_().d_wait, accepts: S_().d_accepts, trip_date: todayStr(), repeat_days: [] };
     const date = defaultDate(t.trip_date, t.depart_min);
     return card(myTrip ? 'My trip' : 'Post a trip', `<label>From</label><select id="lt-o">${opts(t.origin)}</select><label>To</label><select id="lt-d">${opts(t.dest)}</select>
       <div class="row"><div><label>Date</label><input type="date" id="lt-date" min="${todayStr()}" max="${maxDate()}" value="${date}"></div><div><label>Leave at</label><input type="time" id="lt-t" value="${hmIn(t.depart_min)}"></div></div>
       <label>Repeat every week on <span class="mut">(optional)</span></label>${dayChips('lt-days', t.repeat_days)}
-      <label>Max detour (min)</label><input type="number" id="lt-dt" min="0" max="60" value="${t.max_detour}">
+      <label>Most riders I will pick up</label><select id="lt-pk">${[1, 2, 3, 4].map((n) => '<option value="' + n + '"' + (n === (t.max_pickups || 1) ? ' selected' : '') + '>' + (n === 1 ? 'Just 1 (a single pickup)' : 'Up to ' + n) + '</option>').join('')}</select>
+      <label>Most extra minutes for ONE pickup</label><input type="number" id="lt-dt" min="0" max="60" value="${t.max_detour}">
+      <label>Most extra minutes for ALL pickups together <span class="mut">(only matters if you take more than 1 rider)</span></label><input type="number" id="lt-tt" min="0" max="120" value="${t.max_total_detour == null ? t.max_detour : t.max_total_detour}">
       <label>Max wait at a pickup (min)</label><input type="number" id="lt-w" min="0" max="60" value="${t.max_wait}">
       <label>I accept</label><select id="lt-a"><option value="either" ${t.accepts === 'either' ? 'selected' : ''}>Points or cash</option><option value="points" ${t.accepts === 'points' ? 'selected' : ''}>Points only</option><option value="cash" ${t.accepts === 'cash' ? 'selected' : ''}>Cash gas-share only</option></select>
       <div style="margin-top:10px"><button class="btn" id="lt-review">Review trip</button></div><p class="warn" id="lt-msg" role="alert"></p>`);
@@ -464,11 +466,12 @@
     const chk = (id, on, text) => '<label style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="' + id + '"' + (on ? ' checked' : '') + '> ' + text + '</label>';
     const num = (id, v, max) => '<input type="number" id="' + id + '" min="0" max="' + max + '" value="' + v + '" style="' + INPUT + '">';
     return card('Driver settings', '<p class="mut">These fill in each new trip for you. You can still change them on any trip before you post it. Once a rider is accepted, a trip cannot be changed.</p>'
-      + '<label>Most extra minutes I will drive to pick someone up</label>' + num('ls-detour', x.d_detour, 60)
+      + '<label>Most extra minutes for ONE pickup</label>' + num('ls-detour', x.d_detour, 60)
       + '<label>Longest I will wait at a pickup (min)</label>' + num('ls-wait', x.d_wait, 60)
       + '<label>I accept</label>' + sel('ls-accepts', [['either', 'Points or cash'], ['points', 'Points only'], ['cash', 'Cash gas-share only']], x.d_accepts)
-      + '<label>Free seats</label>' + sel('ls-seats', [1, 2, 3, 4, 5, 6].map((n) => [n, String(n)]), x.d_seats)
-      + chk('ls-auto', x.d_auto_accept, 'Accept requests automatically (while I have seats left, and the rider can pay)')
+      + '<label>Most riders I will pick up</label>' + sel('ls-seats', [1, 2, 3, 4].map((n) => [n, n === 1 ? 'Just 1 (a single pickup)' : 'Up to ' + n]), Math.min(4, x.d_seats))
+      + '<label>Most extra minutes for ALL pickups together (if more than 1 rider)</label>' + num('ls-total', x.d_total_detour, 120)
+      + chk('ls-auto', x.d_auto_accept, 'Accept the first rider automatically (if they can pay). Later riders wait for my tap, so my total time limit is respected')
       + '<label>My ride style</label>' + sel('ls-dchat', CHAT, x.d_chat)
       + chk('ls-dpets', x.d_pets, 'Pets are welcome in my car')
       + '<div style="margin-top:12px"><button class="btn" id="ls-save-d">Save driver settings</button></div>')
@@ -482,7 +485,7 @@
   const saveSettings = () => {
     const g = (id) => $(id), n = (id, max) => Math.max(0, Math.min(max, Math.round(+g(id).value || 0)));
     const base = S_(), row = Object.assign({}, base, { user_id: user.id, updated_at: new Date().toISOString() });
-    if (g('ls-detour')) Object.assign(row, { d_detour: n('ls-detour', 60), d_wait: n('ls-wait', 60), d_accepts: g('ls-accepts').value, d_seats: Math.max(1, Math.min(6, +g('ls-seats').value || 1)), d_auto_accept: g('ls-auto').checked, d_chat: g('ls-dchat').value, d_pets: g('ls-dpets').checked });
+    if (g('ls-detour')) Object.assign(row, { d_detour: n('ls-detour', 60), d_wait: n('ls-wait', 60), d_accepts: g('ls-accepts').value, d_seats: Math.max(1, Math.min(4, +g('ls-seats').value || 1)), d_total_detour: n('ls-total', 120), d_auto_accept: g('ls-auto').checked, d_chat: g('ls-dchat').value, d_pets: g('ls-dpets').checked });
     if (g('ls-pays')) Object.assign(row, { r_pays: g('ls-pays').value, r_chat: g('ls-rchat').value, r_pets: g('ls-rpets').checked });
     return row;
   };
@@ -523,7 +526,8 @@
     const on = (id, fn) => { const e = $(id); if (e) e.onclick = fn; };
     document.querySelectorAll('#lt-days button, #lr-days button').forEach((b) => (b.onclick = () => b.classList.toggle('on')));
     on('lt-review', () => {
-      const row = { origin: $('lt-o').value, dest: $('lt-d').value, trip_date: $('lt-date').value, depart_min: hm($('lt-t').value || '07:30'), repeat_days: readDays('lt-days'), max_detour: +$('lt-dt').value, max_wait: +$('lt-w').value, accepts: $('lt-a').value };
+      const row = { origin: $('lt-o').value, dest: $('lt-d').value, trip_date: $('lt-date').value, depart_min: hm($('lt-t').value || '07:30'), repeat_days: readDays('lt-days'), max_detour: +$('lt-dt').value, max_total_detour: +$('lt-tt').value, max_pickups: +$('lt-pk').value, max_wait: +$('lt-w').value, accepts: $('lt-a').value };
+      if (row.max_pickups === 1) row.max_total_detour = null; else if (row.max_total_detour < row.max_detour) { formMsg('lt-msg', 'The total for all pickups cannot be less than the time for one pickup'); return; }
       formMsg('lt-msg', '');
       if (row.origin === row.dest) { formMsg('lt-msg', 'Pick two different places'); return; }
       if (!row.trip_date) { formMsg('lt-msg', 'Pick a date'); return; }
@@ -589,7 +593,7 @@
     on('rn-loc', () => useMyLocation('rn-p', 'rn-msg'));
     on('ln-go', async () => {
       const o = $('ln-o').value, d = $('ln-d').value; if (o === d) { formMsg('ln-msg', 'Pick two different places'); return; }
-      const f = myTrip || {}; const ok = await run(sb.rpc('go_live_trip', { p_origin: o, p_dest: d, p_max_detour: f.max_detour == null ? S_().d_detour : f.max_detour, p_max_wait: f.max_wait == null ? S_().d_wait : f.max_wait, p_accepts: f.accepts || S_().d_accepts, p_cost_per_km: 0.2, p_minutes: 720 }), 'You are live for 30 minutes');
+      const f = myTrip || {}; const ok = await run(sb.rpc('go_live_trip', { p_origin: o, p_dest: d, p_max_detour: f.max_detour == null ? S_().d_detour : f.max_detour, p_max_wait: f.max_wait == null ? S_().d_wait : f.max_wait, p_accepts: f.accepts || S_().d_accepts, p_cost_per_km: 0.2, p_minutes: 720, p_max_pickups: Math.min(4, S_().d_seats), p_max_total_detour: Math.min(4, S_().d_seats) > 1 ? Math.max(S_().d_total_detour, f.max_detour == null ? S_().d_detour : f.max_detour) : null }), 'You are live for 30 minutes');
       if (ok) { viewD = null; mapSig = {}; }
     });
     on('rn-go', async () => {
