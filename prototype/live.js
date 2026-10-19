@@ -42,6 +42,7 @@
   let user = null, me = { name: '', points: 0 }, myTrip = null, myReq = null, ledger = [], matches = [];
   let otherTrips = [], otherReqs = [], extraTrips = [], extraReqs = [], names = {}, timer = null, busy = false, formSig = '', mapSig = {};
   let pending = null, viewD = null, viewR = null, askCancel = null, rel = {};
+  let myLiveTrip = null, myLiveReq = null, curTrip = null, curReq = null, positions = {}, nowSel = {}, firstSeen = {};
   const fail = (e) => toast(e && e.message ? e.message : 'Something went wrong');
   const nm = (id) => esc(names[id] || 'Someone');
   // Small warning next to a name when someone has recent cancellations (counts only, last 30 days).
@@ -53,7 +54,7 @@
   };
   const who = (id, role) => nm(id) + badge(id, role);
   const LATE_MIN = 120;
-  const tripBy = (id) => [...otherTrips, ...extraTrips, ...(myTrip ? [myTrip] : [])].find((t) => t.id === id);
+  const tripBy = (id) => [...otherTrips, ...extraTrips, ...(myTrip ? [myTrip] : []), ...(myLiveTrip ? [myLiveTrip] : [])].find((t) => t.id === id);
   const pickupMs = (m) => { const t = tripBy(m.trip_id); return t ? RSD.vanEpoch(m.ride_date, t.depart_min) : null; };
   const lateUsedThisMonth = (excludeId) => matches.some((x) => x.rider_id === user.id && x.id !== excludeId && x.late && x.cancelled_by === user.id && x.cancelled_at && RSD.vanMonth(Date.parse(x.cancelled_at)) === RSD.vanMonth(Date.now()));
   // Plain-language result of cancelling this match now (mirrors the database rules).
@@ -62,6 +63,8 @@
     if (m.status === 'requested') return { ok: true, text: 'Free to cancel. No points have moved.' };
     if (!isRider) return { ok: true, text: 'If you cancel, ' + nm(m.rider_id) + ' gets ' + (pts ? 'all ' + pts + ' points' : 'nothing charged') + ' back. Cancelling often shows as a warning next to your name.' };
     const pk = pickupMs(m); if (pk == null) return { ok: true, text: 'Cancel this ride.' };
+    const tr = tripBy(m.trip_id);
+    if (tr && !m.arrived_at && Date.now() >= pk + (tr.max_wait + 10) * 60000) return { ok: true, text: 'Your driver is very late. You can cancel and get ' + (pts ? 'all ' + pts + ' points' : 'nothing charged') + ' back.' };
     if (Date.now() >= pk) return { ok: false, text: 'The pickup time has passed, so this ride can no longer be cancelled. Your driver can mark a no-show.' };
     const late = pk - Date.now() < LATE_MIN * 60000;
     if (!pts) return { ok: true, text: late ? 'Late cancel (within 2 hours). No points involved, but it counts toward your cancellation record.' : 'Free to cancel. No points involved.' };
@@ -95,18 +98,22 @@
     try {
       const uid = user.id;
       try { await sb.rpc('settle_due'); } catch (e) { /* older database: ignore */ }
+      try { await sb.rpc('expire_live'); } catch (e) { /* older database: ignore */ }
       const [p, w, l, t, r, m, ot, orq] = await Promise.all([
         sb.from('profiles').select('display_name').eq('id', uid).maybeSingle(),
         sb.from('wallets').select('points').eq('user_id', uid).maybeSingle(),
         sb.from('ledger').select('delta,reason,created_at').order('created_at', { ascending: false }).limit(10),
-        sb.from('trips').select('*').eq('user_id', uid).eq('active', true).order('created_at', { ascending: false }).limit(1),
-        sb.from('ride_requests').select('*').eq('user_id', uid).eq('active', true).order('created_at', { ascending: false }).limit(1),
+        sb.from('trips').select('*').eq('user_id', uid).eq('active', true).order('created_at', { ascending: false }).limit(6),
+        sb.from('ride_requests').select('*').eq('user_id', uid).eq('active', true).order('created_at', { ascending: false }).limit(6),
         sb.from('matches').select('*').order('created_at', { ascending: false }).limit(60),
         sb.from('trips').select('*').eq('active', true).neq('user_id', uid).limit(100),
         sb.from('ride_requests').select('*').eq('active', true).neq('user_id', uid).limit(100),
       ]);
       me = { name: (p.data && p.data.display_name) || '', points: (w.data && w.data.points) || 0 };
-      ledger = l.data || []; myTrip = (t.data || [])[0] || null; myReq = (r.data || [])[0] || null;
+      const stillLive = (x) => x.live && x.expires_at && Date.parse(x.expires_at) > Date.now();
+      ledger = l.data || [];
+      myLiveTrip = (t.data || []).find(stillLive) || null; myTrip = (t.data || []).find((x) => !x.live) || null; curTrip = myLiveTrip || myTrip;
+      myLiveReq = (r.data || []).find(stillLive) || null; myReq = (r.data || []).find((x) => !x.live) || null; curReq = myLiveReq || myReq;
       matches = m.data || []; otherTrips = ot.data || []; otherReqs = orq.data || [];
       const tIds = [...new Set(matches.map((x) => x.trip_id))], rIds = [...new Set(matches.map((x) => x.request_id))];
       const [et, er] = await Promise.all([
@@ -118,6 +125,7 @@
       const n = await sb.from('profiles').select('id,display_name').in('id', [...ids]);
       (n.data || []).forEach((x) => { names[x.id] = x.display_name; });
       const rl = await sb.from('reliability').select('*'); rel = {}; (rl.data || []).forEach((x) => { rel[x.user_id] = x; });
+      const pp = await sb.from('driver_positions').select('*'); positions = {}; (pp.data || []).forEach((x) => { positions[x.driver_id] = x; });
     } catch (e) { fail(e); } finally { busy = false; }
     render();
   }
@@ -159,23 +167,104 @@
   // ---------- "what do I do next" cards at the top of the driving and riding tabs ----------
   const goTo = (id) => `<button class="btn ghost" data-scroll="${id}">`;
   function driverTop() {
-    if (!myTrip || !known(myTrip)) return card('Start here', `<p><b>1.</b> Fill in the form below: where you drive from and to, the date and time.</p><p><b>2.</b> Tap <b>Review trip</b>, then <b>Confirm and post</b>.</p><p><b>3.</b> Riders who ask for a seat will appear on this page for you to accept.</p><p>${goTo('ld-form')}Go to the form</button></p>`);
-    const dates = RSD.nextOccurrences(myTrip.trip_date, myTrip.repeat_days, new Date(), 7), d = pickView(viewD, dates);
+    if (!curTrip || !known(curTrip)) return card('Start here', `<p><b>1.</b> Fill in the form below: where you drive from and to, the date and time.</p><p><b>2.</b> Tap <b>Review trip</b>, then <b>Confirm and post</b>.</p><p><b>3.</b> Riders who ask for a seat will appear on this page for you to accept.</p><p>${goTo('ld-form')}Go to the form</button></p>`);
+    const dates = RSD.nextOccurrences(curTrip.trip_date, curTrip.repeat_days, new Date(), 7), d = pickView(viewD, dates);
     const mine = d ? matches.filter((x) => x.driver_id === user.id && x.ride_date === d) : [];
     const asks = mine.filter((x) => x.status === 'requested').length, acc = mine.filter((x) => x.status === 'accepted').length;
     const isToday = d === todayStr();
     const line = asks ? `<b>${asks} rider${asks > 1 ? 's' : ''} asked for a seat.</b> Tap <b>See riders</b> to accept.` : acc ? `<b>${acc} rider${acc > 1 ? 's' : ''} accepted.</b> ${isToday ? 'Tap <b>Start my trip</b> when you set off.' : 'You can start on the day of the trip.'}` : 'No riders yet. They will show up here when they ask for a seat.';
-    return card('Your trip', `<p><b>${esc(myTrip.origin)}</b> to <b>${esc(myTrip.dest)}</b></p><p class="mut">${whenText(myTrip.trip_date, myTrip.depart_min, myTrip.repeat_days)}</p><p>${line}</p>
+    return card('Your trip', `<p><b>${esc(curTrip.origin)}</b> to <b>${esc(curTrip.dest)}</b></p><p class="mut">${whenText(curTrip.trip_date, curTrip.depart_min, curTrip.repeat_days)}</p><p>${line}</p>
       <div class="row2">${isToday ? '<button class="btn" data-startnav="1">Start my trip</button> ' : ''}${goTo('ld-lists')}See riders</button> ${goTo('ld-form')}Edit trip</button></div>`);
   }
   function riderTop() {
-    if (!myReq || !known(myReq)) return card('Start here', `<p><b>1.</b> Fill in the form below: where you want to be picked up and dropped off, the date and when you are ready.</p><p><b>2.</b> Tap <b>Review request</b>, then <b>Confirm and post</b>.</p><p><b>3.</b> Pick a driver from the list and tap <b>Request</b>.</p><p>${goTo('lr-form')}Go to the form</button></p>`);
-    const dates = RSD.nextOccurrences(myReq.ride_date, myReq.repeat_days, new Date(), 7), d = pickView(viewR, dates);
-    const mine = d ? matches.filter((x) => x.rider_id === user.id && x.request_id === myReq.id && x.ride_date === d) : [];
+    if (!curReq || !known(curReq)) return card('Start here', `<p><b>1.</b> Fill in the form below: where you want to be picked up and dropped off, the date and when you are ready.</p><p><b>2.</b> Tap <b>Review request</b>, then <b>Confirm and post</b>.</p><p><b>3.</b> Pick a driver from the list and tap <b>Request</b>.</p><p>${goTo('lr-form')}Go to the form</button></p>`);
+    const dates = RSD.nextOccurrences(curReq.ride_date, curReq.repeat_days, new Date(), 7), d = pickView(viewR, dates);
+    const mine = d ? matches.filter((x) => x.rider_id === user.id && x.request_id === curReq.id && x.ride_date === d) : [];
     const acc = mine.find((x) => x.status === 'accepted' || x.status === 'completed'), pend = mine.some((x) => x.status === 'requested');
     const line = acc ? `<b>${esc(STEP_LABEL[stageOf(acc)])}.</b> Tap <b>See my ride</b> for live updates.` : pend ? 'You asked a driver for a seat. Waiting for them to accept.' : 'Pick a driver below and tap <b>Request</b>.';
-    return card('Your ride', `<p><b>${esc(myReq.pickup)}</b> to <b>${esc(myReq.dropoff)}</b></p><p class="mut">${esc(RSD.label(myReq.ride_date))}, ready ${RS.clock(myReq.ready_from)} to ${RS.clock(myReq.ready_to)}</p><p>${line}</p>
+    return card('Your ride', `<p><b>${esc(curReq.pickup)}</b> to <b>${esc(curReq.dropoff)}</b></p><p class="mut">${esc(RSD.label(curReq.ride_date))}, ready ${RS.clock(curReq.ready_from)} to ${RS.clock(curReq.ready_to)}</p><p>${line}</p>
       <div class="row2">${goTo('lr-lists')}${acc ? 'See my ride' : 'See drivers'}</button> ${goTo('lr-form')}Edit request</button></div>`);
+  }
+
+
+  // ---------- Leave now (driver) and I need a ride now (rider) ----------
+  const nearestArea = (lat, lng) => areas.map((a) => ({ a, km: RS.haversineKm({ lat, lng }, LOC[a]) })).sort((x, y) => x.km - y.km)[0];
+  const minsLeft = (iso) => Math.max(0, Math.round((Date.parse(iso) - Date.now()) / 60000));
+  function driverNow() {
+    const share = sharingCard();
+    if (myLiveTrip) return share + card('You are live', `<p><b>${esc(myLiveTrip.origin)}</b> to <b>${esc(myLiveTrip.dest)}</b></p><p class="mut">Leaving about ${RS.clock(myLiveTrip.depart_min)} &middot; visible to riders for ${minsLeft(myLiveTrip.expires_at)} more minutes.</p><p><button class="btn ghost" data-stoplive="trip">Stop</button></p>`);
+    const o = nowSel['ln-o'] || (myTrip && myTrip.origin) || 'Surrey Central', d = nowSel['ln-d'] || (myTrip && myTrip.dest) || 'BCIT / Willingdon (Burnaby)';
+    return share + card('Leave now', `<p class="mut">One tap, no date or time. You leave in about 5 minutes and riders can see you for 30 minutes.</p>
+      <label>From</label><select id="ln-o">${opts(o)}</select> <button type="button" class="btn ghost" id="ln-loc" style="margin-top:6px">Use my location</button>
+      <label>To</label><select id="ln-d">${opts(d)}</select>
+      <div style="margin-top:10px"><button class="btn" id="ln-go" style="width:100%;padding:12px;font-size:16px">Leave now</button></div><p class="warn" id="ln-msg" role="alert"></p>`);
+  }
+  function riderNow() {
+    if (myLiveReq) return card('You are looking for a ride now', `<p><b>${esc(myLiveReq.pickup)}</b> to <b>${esc(myLiveReq.dropoff)}</b></p><p class="mut">Visible to drivers for ${minsLeft(myLiveReq.expires_at)} more minutes.</p><p><button class="btn ghost" data-stoplive="req">Stop</button></p>`);
+    const p = nowSel['rn-p'] || (myReq && myReq.pickup) || 'Whalley (Surrey)', d = nowSel['rn-d'] || (myReq && myReq.dropoff) || 'Brentwood (Burnaby)', pay = nowSel['rn-pay'] || 'points';
+    return card('I need a ride now', `<p class="mut">One tap, no date or time. You are ready now and drivers can see you for 20 minutes.</p>
+      <label>Pick me up near</label><select id="rn-p">${opts(p)}</select> <button type="button" class="btn ghost" id="rn-loc" style="margin-top:6px">Use my location</button>
+      <label>Drop me near</label><select id="rn-d">${opts(d)}</select>
+      <label>I'll pay with</label><select id="rn-pay"><option value="points" ${pay === 'points' ? 'selected' : ''}>Points</option><option value="cash" ${pay === 'cash' ? 'selected' : ''}>Cash gas-share</option><option value="either" ${pay === 'either' ? 'selected' : ''}>Either</option></select>
+      <div style="margin-top:10px"><button class="btn" id="rn-go" style="width:100%;padding:12px;font-size:16px">I need a ride now</button></div><p class="warn" id="rn-msg" role="alert"></p>`);
+  }
+  function useMyLocation(selectId, msgId) {
+    if (!navigator.geolocation) { formMsg(msgId, 'This device cannot share its location'); return; }
+    formMsg(msgId, 'Finding you...');
+    navigator.geolocation.getCurrentPosition((p) => {
+      const n = nearestArea(p.coords.latitude, p.coords.longitude); $(selectId).value = n.a; nowSel[selectId] = n.a;
+      formMsg(msgId, n.km > 25 ? 'You are ' + Math.round(n.km) + ' km from the nearest area we cover (' + n.a + ').' : 'Nearest area: ' + n.a + ' (' + n.km.toFixed(1) + ' km away).');
+    }, (e) => formMsg(msgId, e && e.code === 1 ? 'Location is blocked. Allow it in your browser settings.' : 'Could not find your location'), { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 });
+  }
+
+  // ---------- driver: share my live position with the riders on my ride ----------
+  let shareWatch = null, wake = null; const shareState = { last: 0, lastOk: 0, err: '', acc: null };
+  const shouldShare = () => matches.some((x) => x.driver_id === user.id && x.status === 'accepted' && x.en_route_at);
+  async function keepAwake(on) { try { if (on && 'wakeLock' in navigator) wake = await navigator.wakeLock.request('screen'); else if (wake) { await wake.release(); wake = null; } } catch (e) {} }
+  function startShare() {
+    if (!navigator.geolocation) { shareState.err = 'This device cannot share its location.'; return; }
+    keepAwake(true);
+    shareWatch = navigator.geolocation.watchPosition((p) => {
+      shareState.err = ''; shareState.acc = p.coords.accuracy; const now = Date.now(); if (now - shareState.last < 4000) return; shareState.last = now;
+      sb.rpc('share_position', { p_lat: p.coords.latitude, p_lng: p.coords.longitude, p_speed: p.coords.speed == null ? null : p.coords.speed * 3.6, p_heading: p.coords.heading == null || isNaN(p.coords.heading) ? null : p.coords.heading, p_accuracy: p.coords.accuracy })
+        .then((r) => { if (r.error) { shareState.err = r.error.message; } else { shareState.lastOk = Date.now(); } paintSharing(); });
+    }, (e) => { shareState.err = e && e.code === 1 ? 'Location is blocked, so riders cannot see you. Allow it in your browser settings.' : 'Could not get your location.'; paintSharing(); }, { enableHighAccuracy: true, maximumAge: 2000, timeout: 20000 });
+  }
+  function stopShare(deleteRow) { if (shareWatch != null) { navigator.geolocation.clearWatch(shareWatch); shareWatch = null; } keepAwake(false); if (deleteRow) { try { sb.rpc('stop_sharing'); } catch (e) {} } }
+  function syncSharing() { if (!user) { stopShare(false); return; } if (shouldShare()) { if (shareWatch == null) startShare(); } else if (shareWatch != null) stopShare(true); }
+  const ago = (ms) => (ms ? Math.max(0, Math.round((Date.now() - ms) / 1000)) + ' s ago' : 'not yet');
+  function sharingInner() { return shareState.err ? `<p class="warn">${esc(shareState.err)}</p>` : `<p>Riders on this ride can see you on their map. Last sent: ${ago(shareState.lastOk)}.</p><p class="mut">Keep this screen open. If you use Google Maps for directions, put RideShare and Google Maps side by side (split screen) so sharing keeps working.</p>`; }
+  const sharingCard = () => (user && shouldShare() ? `<div class="card" id="share-card"><h2>Sharing your location</h2><div id="share-inner">${sharingInner()}</div></div>` : '');
+  function paintSharing() { const e = $('share-inner'); if (e) e.innerHTML = sharingInner(); }
+
+  // ---------- rider: where is my driver, and when will they arrive ----------
+  window.__carPos = null;
+  const applyCar = () => { try { window.RS_UI.setCar('map-lr', window.__carPos); } catch (e) {} };
+  function trackInfo(m, t, meO) {
+    const stg = stageOf(m), dn = nm(t.user_id), pos = positions[m.driver_id], pk = pickupMs(m);
+    window.__carPos = null;
+    let html = '';
+    if (stg === 'accepted' && pk != null && !m.arrived_at && Date.now() >= pk + (t.max_wait + 10) * 60000) {
+      return `<p class="warn"><b>${dn} is very late.</b> You can cancel and get all your points back.</p><p><button class="btn" data-cancelgo="${m.id}">Cancel, full refund</button></p>`;
+    }
+    if (stg === 'on_my_way' || stg === 'arrived' || stg === 'picked_up') {
+      const target = LOC[stg === 'picked_up' ? meO.dropoff && Object.keys(LOC).find((k) => LOC[k] === meO.dropoff) : Object.keys(LOC).find((k) => LOC[k] === meO.pickup)];
+      if (!pos) { html = `<p class="mut">Waiting for ${dn}'s location. They need to keep the app open.</p>`; }
+      else {
+        window.__carPos = { lat: pos.lat, lng: pos.lng };
+        const age = (Date.now() - Date.parse(pos.updated_at)) / 1000;
+        if (!firstSeen[m.id]) firstSeen[m.id] = { lat: pos.lat, lng: pos.lng, t: Date.now() };
+        const moved = RS.haversineKm(firstSeen[m.id], pos) * 1000, waited = (Date.now() - firstSeen[m.id].t) / 60000;
+        if (age > 120) html = `<p class="warn">We lost ${dn}'s location (last seen ${Math.round(age / 60)} min ago).</p>`;
+        else if (stg === 'on_my_way' && moved < 300 && waited > 3) html = `<p class="warn"><b>${dn} has not left yet.</b> They said they are on the way, but their position has not changed.</p>`;
+        else if (stg === 'arrived') html = `<p>${dn} is at the pickup area.</p>`;
+        else if (target) {
+          const km = RS.haversineKm(pos, target) * 1.35, kmh = Math.max(pos.speed || 0, 25), eta = Math.max(1, Math.round((km / kmh) * 60));
+          html = `<p><b>${stg === 'picked_up' ? 'About ' + eta + ' min to your drop-off' : dn + ' is about ' + eta + ' min away'}</b> <span class="mut">(${km.toFixed(1)} km, updated ${Math.round(age)} s ago)</span></p>`;
+        }
+      }
+    }
+    return html;
   }
 
   // ---------- driver tab ----------
@@ -198,11 +287,11 @@
   }
 
   function driverLists() {
-    if (!myTrip || !known(myTrip)) return card('Riders', '<p class="mut">Post your trip on the left to see riders along your route.</p>');
-    const dates = RSD.nextOccurrences(myTrip.trip_date, myTrip.repeat_days, new Date(), 7);
+    if (!curTrip || !known(curTrip)) return card('Riders', '<p class="mut">Post your trip on the left to see riders along your route.</p>');
+    const dates = RSD.nextOccurrences(curTrip.trip_date, curTrip.repeat_days, new Date(), 7);
     viewD = pickView(viewD, dates);
-    const dr = driverObj(myTrip), reqById = {}; [...otherReqs, ...extraReqs].forEach((q) => { reqById[q.id] = q; });
-    const dateCard = card('Date', dateChips('ld-dates', dates, viewD) + `<p class="mut" style="margin-top:8px">${whenText(myTrip.trip_date, myTrip.depart_min, myTrip.repeat_days)}</p>`);
+    const dr = driverObj(curTrip), reqById = {}; [...otherReqs, ...extraReqs].forEach((q) => { reqById[q.id] = q; });
+    const dateCard = card('Date', dateChips('ld-dates', dates, viewD) + `<p class="mut" style="margin-top:8px">${whenText(curTrip.trip_date, curTrip.depart_min, curTrip.repeat_days)}</p>`);
     if (!viewD) return dateCard;
     const mine = matches.filter((x) => x.driver_id === user.id && x.ride_date === viewD);
     const inc = mine.filter((x) => x.status === 'requested');
@@ -223,7 +312,7 @@
     const riding = card('Riding with me', acc.length ? acc.map((x) => { const q = reqById[x.request_id], ns = nextStep(x, esc(names[x.rider_id] || 'rider')), open = stepsOpen(x), link = mapsLink(x, q);
       return `<div style="padding:8px 0;border-top:1px solid var(--line)"><b>${nm(x.rider_id)}</b>${badge(x.rider_id, 'rider')} <span class="tag">${esc(STEP_LABEL[stageOf(x)])}</span>${x.rider_confirmed_at ? ' <span class="tag">rider confirmed</span>' : ''}<div class="mut">${x.pay_with === 'points' ? x.points + ' pts held until drop-off' : 'cash gas-share'}${q ? ' &middot; ' + esc(q.pickup) + ' to ' + esc(q.dropoff) : ''}</div>
         <div style="margin-top:6px">${open ? `<button class="btn" data-step="${x.id}|${ns.step}">${ns.label}</button>` : '<span class="mut">Steps open 2 hours before pickup.</span>'} ${link && open ? `<a class="btn ghost" style="display:inline-block;text-decoration:none" href="${link}" target="_blank" rel="noopener">Open in Google Maps</a>` : ''} ${canNoShow(x) ? `<button class="btn ghost" data-noshow="${x.id}">Mark no-show</button>` : ''}</div></div>`; }).join('') : '<p class="mut">No riders yet.</p>');
-    const near = card('People who need a ride along your route', found.length ? found.map((m) => { const q = reqById[m.rider.id]; return `<div style="padding:6px 0;border-top:1px solid var(--line)"><b>${nm(q.user_id)}</b>${badge(q.user_id, 'rider')} <span class="mut">${esc(q.pickup)} to ${esc(q.dropoff)} &middot; +${Math.round(m.addedDetour)} min detour &middot; pick up ${RS.clock(m.pickupAt)} &middot; drop ${RS.clock(m.dropAt)}</span></div>`; }).join('') : '<p class="mut">Nobody matching on this date.</p>');
+    const near = card('People who need a ride along your route', found.length ? found.map((m) => { const q = reqById[m.rider.id]; return `<div style="padding:6px 0;border-top:1px solid var(--line)"><b>${nm(q.user_id)}</b>${badge(q.user_id, 'rider')}${q.live ? ' <span class="tag">needs a ride now</span>' : ''} <span class="mut">${esc(q.pickup)} to ${esc(q.dropoff)} &middot; +${Math.round(m.addedDetour)} min detour &middot; pick up ${RS.clock(m.pickupAt)} &middot; drop ${RS.clock(m.dropAt)}</span></div>`; }).join('') : '<p class="mut">Nobody matching on this date.</p>');
     return dateCard + summary + reqs + riding + near;
   }
 
@@ -254,13 +343,13 @@
   }
 
   function riderLists() {
-    if (!myReq || !known(myReq)) return card('Drivers going your way', '<p class="mut">Post your request on the left to see drivers.</p>');
-    const dates = RSD.nextOccurrences(myReq.ride_date, myReq.repeat_days, new Date(), 7);
+    if (!curReq || !known(curReq)) return card('Drivers going your way', '<p class="mut">Post your request on the left to see drivers.</p>');
+    const dates = RSD.nextOccurrences(curReq.ride_date, curReq.repeat_days, new Date(), 7);
     viewR = pickView(viewR, dates);
-    const dateCard = card('Date', dateChips('lr-dates', dates, viewR) + `<p class="mut" style="margin-top:8px">Ready ${RS.clock(myReq.ready_from)} to ${RS.clock(myReq.ready_to)}${myReq.repeat_days.length ? ' &middot; repeats ' + RSD.repeatText(myReq.repeat_days) : ' &middot; one time'}</p>`);
+    const dateCard = card('Date', dateChips('lr-dates', dates, viewR) + `<p class="mut" style="margin-top:8px">Ready ${RS.clock(curReq.ready_from)} to ${RS.clock(curReq.ready_to)}${curReq.repeat_days.length ? ' &middot; repeats ' + RSD.repeatText(curReq.repeat_days) : ' &middot; one time'}</p>`);
     if (!viewR) return dateCard;
-    const meO = riderObj(myReq), tripById = {}; [...otherTrips, ...extraTrips].forEach((t) => { tripById[t.id] = t; });
-    const mine = matches.filter((x) => x.rider_id === user.id && x.request_id === myReq.id && x.ride_date === viewR);
+    const meO = riderObj(curReq), tripById = {}; [...otherTrips, ...extraTrips].forEach((t) => { tripById[t.id] = t; });
+    const mine = matches.filter((x) => x.rider_id === user.id && x.request_id === curReq.id && x.ride_date === viewR);
     const accepted = mine.find((x) => x.status === 'accepted' || x.status === 'completed'), accTrip = accepted && tripById[accepted.trip_id];
     let html = dateCard, mapStops = [{ loc: meO.pickup, type: 'pickup', rider: meO }, { loc: meO.dropoff, type: 'dropoff', rider: meO }];
     if (accepted && accTrip && known(accTrip)) {
@@ -269,18 +358,18 @@
       const stg = stageOf(accepted), dn = nm(accTrip.user_id);
       const live = { accepted: `${dn} accepted. They will tap <b>On my way</b> when they set off.`, on_my_way: `<b>${dn} is on the way.</b>`, arrived: `<b>${dn} has arrived.</b> Look for them at the pickup spot.`, picked_up: `<b>Ride in progress</b> with ${dn}.`, dropped_off: `<b>You have arrived.</b> Thanks for sharing the ride!` }[stg];
       const inCar = stg === 'picked_up' ? (accepted.rider_confirmed_at ? '<span class="tag">You confirmed you are in the car</span>' : `<button class="btn" data-incar="${accepted.id}">I'm in the car</button>`) : '';
-      html += card('Your ride', `<p>${live}</p><p class="mut">${esc(RSD.label(viewR))} &middot; ${accepted.pay_with === 'points' ? accepted.points + ' pts' + (stg === 'dropped_off' ? ' paid' : ' held until drop-off') : 'cash gas-share (settle with your driver)'}</p>${inCar}<p style="margin-top:8px"><button class="btn ghost" id="lr-watch">Preview route</button> <button class="btn ghost" id="lr-stop">Stop</button></p>${stg === 'accepted' || stg === 'on_my_way' ? '<p class="mut">To cancel, open the Upcoming tab.</p>' : ''}`);
+      html += card('Your ride', `<p>${live}</p>${trackInfo(accepted, accTrip, meO)}<p class="mut">${esc(RSD.label(viewR))} &middot; ${accepted.pay_with === 'points' ? accepted.points + ' pts' + (stg === 'dropped_off' ? ' paid' : ' held until drop-off') : 'cash gas-share (settle with your driver)'}</p>${inCar}<p style="margin-top:8px"><button class="btn ghost" id="lr-watch">Preview route</button> <button class="btn ghost" id="lr-stop">Stop</button></p>${stg === 'accepted' || stg === 'on_my_way' ? '<p class="mut">To cancel, open the Upcoming tab.</p>' : ''}`);
     }
     let list = '';
     otherTrips.filter((t) => known(t) && tripOn(t, viewR)).forEach((t) => {
       const dr = driverObj(t), found = RS.findMatches(dr, [meO], []); if (!found.length) return;
       const m = found[0], dollars = RS.priceRoute(m.stops, dr.cpk).riderPay.get(meO) || 0, pts = RS.toPoints(dollars);
-      const payWith = myReq.pays === 'either' ? (t.accepts === 'cash' ? 'cash' : 'points') : myReq.pays;
+      const payWith = curReq.pays === 'either' ? (t.accepts === 'cash' ? 'cash' : 'points') : curReq.pays;
       if (!(t.accepts === 'either' || t.accepts === payWith)) return;
       const st = mine.find((x) => x.trip_id === t.id);
       const price = payWith === 'points' ? pts + ' pts' : RS.money(dollars);
       const btn = st ? `<span class="tag">${esc(statusText(st.status))}</span>${st.status === 'requested' ? ` <button class="btn ghost" data-can="${st.id}">Cancel</button>` : ''}` : `<button class="btn" data-req="${t.id}" data-pay="${payWith}" data-pts="${pts}" data-date="${viewR}">Request &middot; ${price}</button>`;
-      list += `<div style="padding:8px 0;border-top:1px solid var(--line)"><b>${nm(t.user_id)}</b>${badge(t.user_id, 'driver')} <span class="mut">leaves ${RS.clock(t.depart_min)} &middot; picks you up ${RS.clock(m.pickupAt)} &middot; drops ${RS.clock(m.dropAt)} &middot; adds ${Math.round(m.addedDetour)} min for them</span><div style="margin-top:6px">${btn}</div></div>`;
+      list += `<div style="padding:8px 0;border-top:1px solid var(--line)"><b>${nm(t.user_id)}</b>${badge(t.user_id, 'driver')}${t.live ? ' <span class="tag">leaving now</span>' : ''} <span class="mut">leaves ${RS.clock(t.depart_min)} &middot; picks you up ${RS.clock(m.pickupAt)} &middot; drops ${RS.clock(m.dropAt)} &middot; adds ${Math.round(m.addedDetour)} min for them</span><div style="margin-top:6px">${btn}</div></div>`;
     });
     html += card('Drivers going your way on ' + esc(RSD.label(viewR)), list || '<p class="mut">No drivers match on this date. Check back soon.</p>');
     const sig = routeSig(mapStops) + viewR; if (mapSig.r !== sig) { mapSig.r = sig; window.RS_UI.drawMap('map-lr', mapStops); }
@@ -290,10 +379,10 @@
   // ---------- upcoming tab ----------
   function upcomingMain() {
     const t0 = todayStr(), tripById = {}, reqById = {};
-    [...otherTrips, ...extraTrips].concat(myTrip ? [myTrip] : []).forEach((t) => { tripById[t.id] = t; });
-    [...otherReqs, ...extraReqs].concat(myReq ? [myReq] : []).forEach((q) => { reqById[q.id] = q; });
-    const mineTrip = myTrip ? `<div style="padding:6px 0"><b>${esc(myTrip.origin)} to ${esc(myTrip.dest)}</b><div class="mut">${whenText(myTrip.trip_date, myTrip.depart_min, myTrip.repeat_days)}</div><div style="margin-top:6px"><button class="btn ghost" data-go="t-driver">Edit</button> <button class="btn ghost" data-offtrip="${myTrip.id}">Take it down</button></div></div>` : '<p class="mut">No trip posted. Use <b>I\'m driving</b>.</p>';
-    const mineReq = myReq ? `<div style="padding:6px 0"><b>${esc(myReq.pickup)} to ${esc(myReq.dropoff)}</b><div class="mut">${esc(RSD.label(myReq.ride_date))}, ready ${RS.clock(myReq.ready_from)} to ${RS.clock(myReq.ready_to)}${myReq.repeat_days.length ? ' &middot; repeats ' + RSD.repeatText(myReq.repeat_days) : ' &middot; one time'}</div><div style="margin-top:6px"><button class="btn ghost" data-go="t-rider">Edit</button> <button class="btn ghost" data-offreq="${myReq.id}">Take it down</button></div></div>` : '<p class="mut">No ride requested. Use <b>I need a ride</b>.</p>';
+    [...otherTrips, ...extraTrips].concat(curTrip ? [curTrip] : []).forEach((t) => { tripById[t.id] = t; });
+    [...otherReqs, ...extraReqs].concat(curReq ? [curReq] : []).forEach((q) => { reqById[q.id] = q; });
+    const mineTrip = curTrip ? `<div style="padding:6px 0"><b>${esc(curTrip.origin)} to ${esc(curTrip.dest)}</b><div class="mut">${whenText(curTrip.trip_date, curTrip.depart_min, curTrip.repeat_days)}</div><div style="margin-top:6px"><button class="btn ghost" data-go="t-driver">Edit</button> <button class="btn ghost" data-offtrip="${curTrip.id}">Take it down</button></div></div>` : '<p class="mut">No trip posted. Use <b>I\'m driving</b>.</p>';
+    const mineReq = curReq ? `<div style="padding:6px 0"><b>${esc(curReq.pickup)} to ${esc(curReq.dropoff)}</b><div class="mut">${esc(RSD.label(curReq.ride_date))}, ready ${RS.clock(curReq.ready_from)} to ${RS.clock(curReq.ready_to)}${curReq.repeat_days.length ? ' &middot; repeats ' + RSD.repeatText(curReq.repeat_days) : ' &middot; one time'}</div><div style="margin-top:6px"><button class="btn ghost" data-go="t-rider">Edit</button> <button class="btn ghost" data-offreq="${curReq.id}">Take it down</button></div></div>` : '<p class="mut">No ride requested. Use <b>I need a ride</b>.</p>';
     const live = matches.filter((x) => (x.status === 'requested' || x.status === 'accepted') && x.ride_date >= t0).sort((a, b) => (a.ride_date < b.ride_date ? -1 : 1));
     const asRider = live.filter((x) => x.rider_id === user.id), asDriver = live.filter((x) => x.driver_id === user.id);
     const when = (x) => { const t = tripBy(x.trip_id); return esc(RSD.label(x.ride_date)) + (t ? ' at ' + RS.clock(t.depart_min) : ''); };
@@ -341,11 +430,13 @@
     const sig = JSON.stringify([myTrip, myReq, me.points, pending]);
     const typing = document.activeElement && /^(lt|lr|lv)-/.test(document.activeElement.id || '') && document.activeElement.tagName !== 'BUTTON' && !pending;
     if (!typing && sig !== formSig) { formSig = sig; $('ld-form').innerHTML = guard('trip form', driverForm); $('lr-form').innerHTML = guard('ride form', riderForm); $('lw-main').innerHTML = guard('points', walletMain); }
-    $('ld-top').innerHTML = guard('driver summary', driverTop);
-    $('lr-top').innerHTML = guard('rider summary', riderTop);
+    const busyIn = (id) => { const a = document.activeElement; return a && /SELECT|INPUT/.test(a.tagName) && a.closest && a.closest('#' + id); };
+    if (!busyIn('ld-top')) $('ld-top').innerHTML = guard('leave now', driverNow) + guard('driver summary', driverTop);
+    if (!busyIn('lr-top')) $('lr-top').innerHTML = guard('ride now', riderNow) + guard('rider summary', riderTop);
     $('ld-lists').innerHTML = guard('riders list', driverLists);
     $('lr-lists').innerHTML = guard('drivers list', riderLists);
     $('lu-main').innerHTML = guard('upcoming', upcomingMain);
+    applyCar(); syncSharing();
     try { wire(); } catch (e) { console.error('wire', e); showErr('buttons: ' + (e && e.message || e)); }
   }
 
@@ -399,6 +490,20 @@
     const each = (sel, fn) => document.querySelectorAll(['#v-ldriver', '#v-lrider', '#v-lupcoming'].map((r) => r + ' ' + sel).join(', ')).forEach((b) => (b.onclick = () => fn(b)));
     each('[data-startnav]', () => startNav());
     each('[data-scroll]', (b) => { const e = $(b.dataset.scroll); if (e) e.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+    document.querySelectorAll('#ln-o, #ln-d, #rn-p, #rn-d, #rn-pay').forEach((e) => { e.onchange = () => { nowSel[e.id] = e.value; }; });
+    on('ln-loc', () => useMyLocation('ln-o', 'ln-msg'));
+    on('rn-loc', () => useMyLocation('rn-p', 'rn-msg'));
+    on('ln-go', async () => {
+      const o = $('ln-o').value, d = $('ln-d').value; if (o === d) { formMsg('ln-msg', 'Pick two different places'); return; }
+      const f = myTrip || {}; const ok = await run(sb.rpc('go_live_trip', { p_origin: o, p_dest: d, p_max_detour: f.max_detour == null ? 10 : f.max_detour, p_max_wait: f.max_wait == null ? 5 : f.max_wait, p_accepts: f.accepts || 'either', p_cost_per_km: 0.2 }), 'You are live for 30 minutes');
+      if (ok) { viewD = null; mapSig = {}; }
+    });
+    on('rn-go', async () => {
+      const p = $('rn-p').value, d = $('rn-d').value; if (p === d) { formMsg('rn-msg', 'Pick two different places'); return; }
+      const ok = await run(sb.rpc('go_live_request', { p_pickup: p, p_dropoff: d, p_pays: $('rn-pay').value }), 'Drivers can see you for 20 minutes');
+      if (ok) { viewR = null; mapSig = {}; }
+    });
+    each('[data-stoplive]', (b) => { const isTrip = b.dataset.stoplive === 'trip', row = isTrip ? myLiveTrip : myLiveReq; if (row) run(sb.from(isTrip ? 'trips' : 'ride_requests').update({ active: false }).eq('id', row.id), 'Stopped'); });
     each('#ld-dates button', (b) => { viewD = b.dataset.date; mapSig = {}; render(); });
     each('#lr-dates button', (b) => { viewR = b.dataset.date; mapSig = {}; render(); });
     each('[data-req]', (b) => run(sb.rpc('request_seat', { p_trip: b.dataset.req, p_request: myReq.id, p_pay_with: b.dataset.pay, p_points: +b.dataset.pts, p_date: b.dataset.date }), 'Seat requested'));
@@ -453,6 +558,9 @@
   sb.auth.onAuthStateChange((_e, session) => setTimeout(() => start(session), 0));
   sb.auth.getSession().then(({ data }) => start(data.session));
   sb.channel('rs-matches').on('postgres_changes', { event: '*', schema: 'public', table: 'matches' }, () => loadAll()).subscribe();
+  let liveTimer = 0; const soon = () => { clearTimeout(liveTimer); liveTimer = setTimeout(loadAll, 800); };
+  sb.channel('rs-live').on('postgres_changes', { event: '*', schema: 'public', table: 'trips' }, soon).on('postgres_changes', { event: '*', schema: 'public', table: 'ride_requests' }, soon)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'driver_positions' }, (p) => { if (p.new && p.new.driver_id) positions[p.new.driver_id] = p.new; else if (p.old && p.old.driver_id) delete positions[p.old.driver_id]; render(); }).subscribe();
   window.addEventListener('rs-google-ready', () => { mapSig = {}; render(); if (lastPos) applyMe(false); });
   ['t-driver', 't-rider', 't-upcoming', 't-wallet'].forEach((id) => $(id).addEventListener('click', () => { mapSig = {}; render(); loadAll(); }));
 })();

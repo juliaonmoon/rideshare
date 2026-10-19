@@ -537,7 +537,18 @@ function setMe(id,p,center){
     if(center) lm.panTo([p.lat,p.lng]);
   }
 }
-window.RS_UI={drawMap,startSim,stopSim,setMe};
+function setCar(id,p){
+  const gm=gmaps[id], lm=maps[id];
+  if(gm){
+    if(!p){ if(gm.car){ gm.car.setMap(null); gm.car=null; } return; }
+    const ll={lat:p.lat,lng:p.lng};
+    if(!gm.car) gm.car=new google.maps.Marker({map:gm.map,position:ll,zIndex:950,title:'Your driver',icon:{path:google.maps.SymbolPath.CIRCLE,scale:0},label:{text:'\u{1F697}',fontSize:'28px'}}); else gm.car.setPosition(ll);
+  } else if(lm && typeof L!=='undefined'){
+    if(!p){ if(lm.car){ lm.car.remove(); lm.car=null; } return; }
+    if(!lm.car) lm.car=L.marker([p.lat,p.lng],{icon:L.divIcon({html:'\u{1F697}',className:'car',iconSize:[28,28],iconAnchor:[14,14]}),zIndexOffset:1000}).addTo(lm); else lm.car.setLatLng([p.lat,p.lng]);
+  }
+}
+window.RS_UI={drawMap,startSim,stopSim,setMe,setCar};
 $('lw-slot').appendChild($('map-card'));
 renderAll(); renderMapStatus(); loadGoogle();
 })();
