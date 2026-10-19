@@ -72,6 +72,7 @@ input[type=range]{width:100%;accent-color:var(--acc)}
   <button role="tab" id="t-rider" aria-selected="false">I need a ride</button>
   <button role="tab" id="t-upcoming" aria-selected="false">Upcoming</button>
   <button role="tab" id="t-wallet" aria-selected="false">Points</button>
+  <button role="tab" id="t-settings" aria-selected="false">Settings</button>
 </nav>
 <div id="auth-bar" style="max-width:1100px;margin:0 auto;padding:16px 16px 0"></div>
 
@@ -153,6 +154,10 @@ input[type=range]{width:100%;accent-color:var(--acc)}
 <main id="v-lwallet" class="hide">
   <section id="lw-main"></section>
   <section id="lw-slot"></section>
+</main>
+
+<main id="v-lsettings" class="hide">
+  <section id="ls-main" style="max-width:640px"></section>
 </main>
 
 <main id="v-wallet" class="hide" aria-hidden="true">
@@ -520,7 +525,7 @@ dayButtons('d-days',S.driver.days,renderSched); dayButtons('r-days',S.rider.days
 let resetArmed=false;
 $('w-reset').onclick=()=>{ if(!resetArmed){ resetArmed=true; $('w-reset').textContent='Tap again to reset all demo data'; setTimeout(()=>{resetArmed=false;$('w-reset').textContent='Reset demo';},4000); return; }
   S=JSON.parse(JSON.stringify(DEFAULT)); save(); location.reload(); };
-const tabs={driver:'v-ldriver',rider:'v-lrider',upcoming:'v-lupcoming',wallet:'v-lwallet'};
+const tabs={driver:'v-ldriver',rider:'v-lrider',upcoming:'v-lupcoming',wallet:'v-lwallet',settings:'v-lsettings'};
 Object.keys(tabs).forEach(k=>$('t-'+k).onclick=()=>{
   Object.keys(tabs).forEach(j=>{ $(tabs[j]).classList.toggle('hide',j!==k); $('t-'+j).setAttribute('aria-selected',j===k); });
   renderAll(); setTimeout(()=>{ Object.values(maps).forEach(m=>m.invalidateSize()); Object.values(gmaps).forEach(g=>{ google.maps.event.trigger(g.map,'resize'); if(g.bounds) g.map.fitBounds(g.bounds,40); }); },60); });

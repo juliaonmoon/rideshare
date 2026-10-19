@@ -41,7 +41,19 @@
   const sb = window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseKey);
   let user = null, me = { name: '', points: 0 }, myTrip = null, myReq = null, ledger = [], matches = [];
   let otherTrips = [], otherReqs = [], extraTrips = [], extraReqs = [], names = {}, timer = null, busy = false, formSig = '', mapSig = {};
-  let pending = null, viewD = null, viewR = null, askCancel = null, rel = {};
+  let pending = null, viewD = null, viewR = null, askCancel = null, rel = {}, mySet = null, styles = {};
+  // Personal settings: defaults for new trips and requests (every trip can still be changed before posting).
+  const SD = { d_detour: 10, d_wait: 5, d_accepts: 'either', d_seats: 3, d_auto_accept: false, d_chat: 'some', d_pets: true, r_pays: 'points', r_chat: 'some', r_pets: false };
+  const S_ = () => Object.assign({}, SD, mySet || {});
+  // Ride-style tags next to a name (quiet ride, no pets...). Only shown when they differ from the usual.
+  const tagsFor = (id, role) => {
+    const x = styles[id]; if (!x) return '';
+    const p = role === 'driver' ? 'd_' : 'r_', out = [];
+    if (x[p + 'chat'] === 'quiet') out.push('quiet ride'); else if (x[p + 'chat'] === 'chatty') out.push('likes to chat');
+    if (role === 'driver' && x.d_pets === false) out.push('no pets'); if (role === 'rider' && x.r_pets) out.push('has a pet');
+    if (role === 'driver' && x.auto_accept) out.push('instant accept');
+    return out.map((t) => ' <span class="tag">' + t + '</span>').join('');
+  };
   let myLiveTrip = null, myLiveReq = null, curTrip = null, curReq = null, positions = {}, nowSel = {}, firstSeen = {};
   const fail = (e) => toast(e && e.message ? e.message : 'Something went wrong');
   const nm = (id) => esc(names[id] || 'Someone');
@@ -124,6 +136,7 @@
       const ids = new Set([uid, ...otherTrips.map((x) => x.user_id), ...otherReqs.map((x) => x.user_id), ...extraTrips.map((x) => x.user_id), ...extraReqs.map((x) => x.user_id), ...matches.flatMap((x) => [x.driver_id, x.rider_id])]);
       const n = await sb.from('profiles').select('id,display_name').in('id', [...ids]);
       (n.data || []).forEach((x) => { names[x.id] = x.display_name; });
+      try { const st = await sb.from('user_settings').select('*').eq('user_id', uid).maybeSingle(); mySet = st.data || null; const sr = await sb.rpc('ride_styles', { p_ids: [...ids] }); styles = {}; (sr.data || []).forEach((x) => { styles[x.user_id] = x; }); } catch (e) { /* older database without settings: ignore */ }
       const rl = await sb.from('reliability').select('*'); rel = {}; (rl.data || []).forEach((x) => { rel[x.user_id] = x; });
       const pp = await sb.from('driver_positions').select('*'); positions = {}; (pp.data || []).forEach((x) => { positions[x.driver_id] = x; });
     } catch (e) { fail(e); } finally { busy = false; }
@@ -287,7 +300,7 @@
         <p class="mut">Max detour ${r.max_detour} min &middot; max wait ${r.max_wait} min &middot; accepts ${r.accepts === 'either' ? 'points or cash' : r.accepts === 'points' ? 'points only' : 'cash gas-share only'}</p>
         <div style="margin-top:10px"><button class="btn" id="lt-confirm">${myTrip ? 'Confirm and update' : 'Confirm and post'}</button> <button class="btn ghost" id="lt-back">Back</button></div>`);
     }
-    const t = myTrip || { origin: 'Surrey Central', dest: 'BCIT / Willingdon (Burnaby)', depart_min: 450, max_detour: 10, max_wait: 5, accepts: 'either', trip_date: todayStr(), repeat_days: [] };
+    const t = myTrip || { origin: 'Surrey Central', dest: 'BCIT / Willingdon (Burnaby)', depart_min: 450, max_detour: S_().d_detour, max_wait: S_().d_wait, accepts: S_().d_accepts, trip_date: todayStr(), repeat_days: [] };
     const date = defaultDate(t.trip_date, t.depart_min);
     return card(myTrip ? 'My trip' : 'Post a trip', `<label>From</label><select id="lt-o">${opts(t.origin)}</select><label>To</label><select id="lt-d">${opts(t.dest)}</select>
       <div class="row"><div><label>Date</label><input type="date" id="lt-date" min="${todayStr()}" max="${maxDate()}" value="${date}"></div><div><label>Leave at</label><input type="time" id="lt-t" value="${hmIn(t.depart_min)}"></div></div>
@@ -324,7 +337,7 @@
     const riding = card('Riding with me', acc.length ? acc.map((x) => { const q = reqById[x.request_id], ns = nextStep(x, esc(names[x.rider_id] || 'rider')), open = stepsOpen(x), link = mapsLink(x, q);
       return `<div style="padding:8px 0;border-top:1px solid var(--line)"><b>${nm(x.rider_id)}</b>${badge(x.rider_id, 'rider')} <span class="tag">${esc(STEP_LABEL[stageOf(x)])}</span>${x.rider_confirmed_at ? ' <span class="tag">rider confirmed</span>' : ''}<div class="mut">${x.pay_with === 'points' ? x.points + ' pts held until drop-off' : 'cash gas-share'}${q ? ' &middot; ' + esc(q.pickup) + ' to ' + esc(q.dropoff) : ''}</div>
         <div style="margin-top:6px">${open ? `<button class="btn" data-step="${x.id}|${ns.step}">${ns.label}</button>` : '<span class="mut">Steps open 2 hours before pickup.</span>'} ${link && open ? `<a class="btn ghost" style="display:inline-block;text-decoration:none" href="${link}" target="_blank" rel="noopener">Open in Google Maps</a>` : ''} ${canNoShow(x) ? `<button class="btn ghost" data-noshow="${x.id}">Mark no-show</button>` : ''}</div></div>`; }).join('') : '<p class="mut">No riders yet.</p>');
-    const near = card('People who need a ride along your route', found.length ? found.map((m) => { const q = reqById[m.rider.id]; return `<div style="padding:6px 0;border-top:1px solid var(--line)"><b>${nm(q.user_id)}</b>${badge(q.user_id, 'rider')}${q.live ? ' <span class="tag">needs a ride now</span>' : ''} <span class="mut">${esc(q.pickup)} to ${esc(q.dropoff)} &middot; +${Math.round(m.addedDetour)} min detour &middot; pick up ${RS.clock(m.pickupAt)} &middot; drop ${RS.clock(m.dropAt)}</span></div>`; }).join('') : '<p class="mut">Nobody matching on this date.</p>');
+    const near = card('People who need a ride along your route', found.length ? found.map((m) => { const q = reqById[m.rider.id]; return `<div style="padding:6px 0;border-top:1px solid var(--line)"><b>${nm(q.user_id)}</b>${badge(q.user_id, 'rider')}${tagsFor(q.user_id, 'rider')}${q.live ? ' <span class="tag">needs a ride now</span>' : ''} <span class="mut">${esc(q.pickup)} to ${esc(q.dropoff)} &middot; +${Math.round(m.addedDetour)} min detour &middot; pick up ${RS.clock(m.pickupAt)} &middot; drop ${RS.clock(m.dropAt)}</span></div>`; }).join('') : '<p class="mut">Nobody matching on this date.</p>');
     return dateCard + summary + reqs + riding + near;
   }
 
@@ -343,7 +356,7 @@
         <p class="mut">Paying with ${r.pays === 'either' ? 'points or cash' : r.pays === 'points' ? 'points' : 'cash gas-share'}</p>
         <div style="margin-top:10px"><button class="btn" id="lr-confirm">${myReq ? 'Confirm and update' : 'Confirm and post'}</button> <button class="btn ghost" id="lr-back">Back</button></div>`);
     }
-    const r = myReq || { pickup: 'Whalley (Surrey)', dropoff: 'Brentwood (Burnaby)', ready_from: 440, ready_to: 470, pays: 'points', ride_date: todayStr(), repeat_days: [] };
+    const r = myReq || { pickup: 'Whalley (Surrey)', dropoff: 'Brentwood (Burnaby)', ready_from: 440, ready_to: 470, pays: S_().r_pays, ride_date: todayStr(), repeat_days: [] };
     const date = defaultDate(r.ride_date, r.ready_from);
     return card(myReq ? 'My ride' : 'Where to?', `<label>Pick me up near</label><select id="lr-p">${opts(r.pickup)}</select><label>Drop me near</label><select id="lr-d">${opts(r.dropoff)}</select>
       <label>Date</label><input type="date" id="lr-date" min="${todayStr()}" max="${maxDate()}" value="${date}">
@@ -381,7 +394,7 @@
       const st = mine.find((x) => x.trip_id === t.id);
       const price = payWith === 'points' ? pts + ' pts' : RS.money(dollars);
       const btn = st ? `<span class="tag">${esc(statusText(st.status))}</span>${st.status === 'requested' ? ` <button class="btn ghost" data-can="${st.id}">Cancel</button>` : ''}` : `<button class="btn" data-req="${t.id}" data-pay="${payWith}" data-pts="${pts}" data-date="${viewR}">Request &middot; ${price}</button>`;
-      list += `<div style="padding:8px 0;border-top:1px solid var(--line)"><b>${nm(t.user_id)}</b>${badge(t.user_id, 'driver')}${t.live ? ' <span class="tag">leaving now</span>' : ''} <span class="mut">leaves ${RS.clock(t.depart_min)} &middot; picks you up ${RS.clock(m.pickupAt)} &middot; drops ${RS.clock(m.dropAt)} &middot; adds ${Math.round(m.addedDetour)} min for them</span><div style="margin-top:6px">${btn}</div></div>`;
+      list += `<div style="padding:8px 0;border-top:1px solid var(--line)"><b>${nm(t.user_id)}</b>${badge(t.user_id, 'driver')}${tagsFor(t.user_id, 'driver')}${t.live ? ' <span class="tag">leaving now</span>' : ''} <span class="mut">leaves ${RS.clock(t.depart_min)} &middot; picks you up ${RS.clock(m.pickupAt)} &middot; drops ${RS.clock(m.dropAt)} &middot; adds ${Math.round(m.addedDetour)} min for them</span><div style="margin-top:6px">${btn}</div></div>`;
     });
     html += card('Drivers going your way on ' + esc(RSD.label(viewR)), list || '<p class="mut">No drivers match on this date. Check back soon.</p>');
     const sig = routeSig(mapStops) + viewR; if (mapSig.r !== sig) { mapSig.r = sig; window.RS_UI.drawMap('map-lr', mapStops); }
@@ -423,6 +436,36 @@
     return card('My trip', mineTrip) + card('My ride request', mineReq) + card('Upcoming rides (as a rider)', riderRows) + card('Upcoming passengers (as a driver)', driverRows) + card('Recent', pastRows) + card('Cancellation rules', policy);
   }
 
+  // ---------- settings tab ----------
+  const CHAT = [['quiet', 'Quiet ride (prefer not to talk)'], ['some', 'A bit of chat is fine'], ['chatty', 'Happy to chat']];
+  function settingsMain() {
+    const x = S_(), sel = (id, list, cur) => '<select id="' + id + '" style="' + INPUT + '">' + list.map(([v, l]) => '<option value="' + v + '"' + (v === cur ? ' selected' : '') + '>' + l + '</option>').join('') + '</select>';
+    const chk = (id, on, text) => '<label style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="' + id + '"' + (on ? ' checked' : '') + '> ' + text + '</label>';
+    const num = (id, v, max) => '<input type="number" id="' + id + '" min="0" max="' + max + '" value="' + v + '" style="' + INPUT + '">';
+    return card('Driver settings', '<p class="mut">These fill in each new trip for you. You can still change them on any trip before you post it. Once a rider is accepted, a trip cannot be changed.</p>'
+      + '<label>Most extra minutes I will drive to pick someone up</label>' + num('ls-detour', x.d_detour, 60)
+      + '<label>Longest I will wait at a pickup (min)</label>' + num('ls-wait', x.d_wait, 60)
+      + '<label>I accept</label>' + sel('ls-accepts', [['either', 'Points or cash'], ['points', 'Points only'], ['cash', 'Cash gas-share only']], x.d_accepts)
+      + '<label>Free seats</label>' + sel('ls-seats', [1, 2, 3, 4, 5, 6].map((n) => [n, String(n)]), x.d_seats)
+      + chk('ls-auto', x.d_auto_accept, 'Accept requests automatically (while I have seats left, and the rider can pay)')
+      + '<label>My ride style</label>' + sel('ls-dchat', CHAT, x.d_chat)
+      + chk('ls-dpets', x.d_pets, 'Pets are welcome in my car')
+      + '<div style="margin-top:12px"><button class="btn" id="ls-save-d">Save driver settings</button></div>')
+      + card('Rider settings', '<p class="mut">These fill in each new ride request for you.</p>'
+      + '<label>I usually pay with</label>' + sel('ls-pays', [['points', 'Points'], ['cash', 'Cash gas-share']], x.r_pays)
+      + '<label>My ride style</label>' + sel('ls-rchat', CHAT, x.r_chat)
+      + chk('ls-rpets', x.r_pets, 'I travel with a pet')
+      + '<div style="margin-top:12px"><button class="btn" id="ls-save-r">Save rider settings</button></div>')
+      + card('Good to know', '<p class="mut">Driver and rider settings are separate, so you can be both at the same time. Other people only see your ride style (like "quiet ride") and whether you accept automatically. Nothing else in here is shared.</p>');
+  }
+  const saveSettings = () => {
+    const g = (id) => $(id), n = (id, max) => Math.max(0, Math.min(max, Math.round(+g(id).value || 0)));
+    const base = S_(), row = Object.assign({}, base, { user_id: user.id, updated_at: new Date().toISOString() });
+    if (g('ls-detour')) Object.assign(row, { d_detour: n('ls-detour', 60), d_wait: n('ls-wait', 60), d_accepts: g('ls-accepts').value, d_seats: Math.max(1, Math.min(6, +g('ls-seats').value || 1)), d_auto_accept: g('ls-auto').checked, d_chat: g('ls-dchat').value, d_pets: g('ls-dpets').checked });
+    if (g('ls-pays')) Object.assign(row, { r_pays: g('ls-pays').value, r_chat: g('ls-rchat').value, r_pets: g('ls-rpets').checked });
+    return row;
+  };
+
   // ---------- points tab ----------
   function walletMain() {
     const sum = (list) => list.reduce((a, x) => a + x.points, 0), heldList = matches.filter((x) => x.status === 'accepted' && !x.settled && x.pay_with === 'points');
@@ -439,10 +482,10 @@
   // ---------- render + wiring ----------
   function render() {
     renderAuth();
-    if (!user) { ['ld-top', 'lr-top'].forEach((id) => { $(id).innerHTML = ''; }); ['ld-form', 'ld-lists', 'lr-form', 'lr-lists', 'lu-main', 'lw-main'].forEach((id) => { $(id).innerHTML = /form|main/.test(id) ? hint : ''; }); return; }
-    const sig = JSON.stringify([myTrip, myReq, me.points, pending]);
-    const typing = document.activeElement && /^(lt|lr|lv)-/.test(document.activeElement.id || '') && document.activeElement.tagName !== 'BUTTON' && !pending;
-    if (!typing && sig !== formSig) { formSig = sig; $('ld-form').innerHTML = guard('trip form', driverForm); $('lr-form').innerHTML = guard('ride form', riderForm); $('lw-main').innerHTML = guard('points', walletMain); }
+    if (!user) { ['ld-top', 'lr-top'].forEach((id) => { $(id).innerHTML = ''; }); ['ld-form', 'ld-lists', 'lr-form', 'lr-lists', 'lu-main', 'lw-main', 'ls-main'].forEach((id) => { $(id).innerHTML = /form|main/.test(id) ? hint : ''; }); return; }
+    const sig = JSON.stringify([myTrip, myReq, me.points, pending, mySet]);
+    const typing = document.activeElement && /^(lt|lr|lv|ls)-/.test(document.activeElement.id || '') && document.activeElement.tagName !== 'BUTTON' && !pending;
+    if (!typing && sig !== formSig) { formSig = sig; $('ld-form').innerHTML = guard('trip form', driverForm); $('lr-form').innerHTML = guard('ride form', riderForm); $('lw-main').innerHTML = guard('points', walletMain); $('ls-main').innerHTML = guard('settings', settingsMain); }
     const busyIn = (id) => { const a = document.activeElement; return a && /SELECT|INPUT/.test(a.tagName) && a.closest && a.closest('#' + id); };
     if (!busyIn('ld-top')) $('ld-top').innerHTML = guard('leave now', driverNow) + guard('driver summary', driverTop);
     if (!busyIn('lr-top')) $('lr-top').innerHTML = guard('ride now', riderNow) + guard('rider summary', riderTop);
@@ -492,6 +535,7 @@
       if (r.error) { formMsg('del-msg', r.error.message); return; }
       toast('Your account and data were deleted.'); try { await sb.auth.signOut(); } catch (e) {}
     });
+    ['ls-save-d', 'ls-save-r'].forEach((id) => on(id, () => run(sb.from('user_settings').upsert(saveSettings()), 'Settings saved')));
     on('lv-savename', () => { const v = $('lv-name').value.trim(); if (!v) { toast('Enter a name'); return; } run(sb.from('profiles').update({ display_name: v }).eq('id', user.id), 'Name saved'); });
     const startNav = async () => {
       const stops = window.__ldStops || [];
@@ -524,7 +568,7 @@
     on('rn-loc', () => useMyLocation('rn-p', 'rn-msg'));
     on('ln-go', async () => {
       const o = $('ln-o').value, d = $('ln-d').value; if (o === d) { formMsg('ln-msg', 'Pick two different places'); return; }
-      const f = myTrip || {}; const ok = await run(sb.rpc('go_live_trip', { p_origin: o, p_dest: d, p_max_detour: f.max_detour == null ? 10 : f.max_detour, p_max_wait: f.max_wait == null ? 5 : f.max_wait, p_accepts: f.accepts || 'either', p_cost_per_km: 0.2 }), 'You are live for 30 minutes');
+      const f = myTrip || {}; const ok = await run(sb.rpc('go_live_trip', { p_origin: o, p_dest: d, p_max_detour: f.max_detour == null ? S_().d_detour : f.max_detour, p_max_wait: f.max_wait == null ? S_().d_wait : f.max_wait, p_accepts: f.accepts || S_().d_accepts, p_cost_per_km: 0.2 }), 'You are live for 30 minutes');
       if (ok) { viewD = null; mapSig = {}; }
     });
     on('rn-go', async () => {
