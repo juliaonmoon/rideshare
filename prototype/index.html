@@ -56,6 +56,8 @@ input[type=range]{width:100%;accent-color:var(--acc)}
 .toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:9px 16px;border-radius:999px;font-size:13px;opacity:0;transition:.2s;pointer-events:none}
 .toast.show{opacity:1}
 .hide{display:none}
+.row2{display:flex;gap:8px;flex-wrap:wrap}
+.row2 .btn{flex:1 1 130px;text-align:center}
 </style>
 </head>
 <body>
@@ -94,7 +96,7 @@ input[type=range]{width:100%;accent-color:var(--acc)}
   </section>
   <section>
     <div id="map-d"></div>
-    <div class="card" id="sim-d"><span class="mut">Live trip</span><div class="status" id="sim-d-status">Not started. Press &ldquo;Start trip&rdquo; to watch the car move.</div></div>
+    <div class="card" id="sim-d"><span class="mut">Live trip</span><div class="status" id="sim-d-status">Preview route: press the button to watch a car drive your route (a simulation, not real GPS).</div></div>
     <div class="card" id="d-summary"></div>
     <div class="card"><h2>Riders along your route</h2><div id="d-matches"></div></div>
     <div class="card"><h2>Riding with me</h2><div id="d-accepted"></div></div>
@@ -125,19 +127,21 @@ input[type=range]{width:100%;accent-color:var(--acc)}
 </main>
 
 <main id="v-ldriver">
+  <div id="ld-top" style="grid-column:1/-1"></div>
   <section id="ld-form"></section>
   <section>
     <div id="map-ld"></div>
-    <div class="card" id="sim-ld"><span class="mut">Live trip</span><div class="status" id="sim-ld-status">Not started. Press &ldquo;Start trip&rdquo; to watch the car move.</div><div style="margin-top:8px"><button class="btn ghost" id="loc-ld">Show my location</button> <span class="mut">Stays on this device. Not sent to RideShare.</span></div></div>
+    <div class="card" id="sim-ld"><span class="mut">Live trip</span><div class="status" id="sim-ld-status">Preview route: press the button to watch a car drive your route (a simulation, not real GPS).</div><div style="margin-top:8px"><button class="btn ghost" id="loc-ld">Show my location</button> <span class="mut">Stays on this device. Not sent to RideShare.</span></div></div>
     <div id="ld-lists"></div>
   </section>
 </main>
 
 <main id="v-lrider" class="hide">
+  <div id="lr-top" style="grid-column:1/-1"></div>
   <section id="lr-form"></section>
   <section>
     <div id="map-lr"></div>
-    <div class="card" id="sim-lr"><span class="mut">Live ride</span><div class="status" id="sim-lr-status">Get accepted by a driver, then press &ldquo;Watch my ride&rdquo;.</div><div style="margin-top:8px"><button class="btn ghost" id="loc-lr">Show my location</button> <span class="mut">Stays on this device. Not sent to RideShare.</span></div></div>
+    <div class="card" id="sim-lr"><span class="mut">Live ride</span><div class="status" id="sim-lr-status">Once a driver accepts you, you will see their progress here.</div><div style="margin-top:8px"><button class="btn ghost" id="loc-lr">Show my location</button> <span class="mut">Stays on this device. Not sent to RideShare.</span></div></div>
     <div id="lr-lists"></div>
   </section>
 </main>
