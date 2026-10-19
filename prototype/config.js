@@ -5,6 +5,6 @@ window.RS_CONFIG = {
   version: '2026-10-19 #14',
   // The app's own Google Maps key, so users never have to paste one. Paste it between the quotes (GitHub: open this file, pencil icon, edit, Commit).
   // It is safe in a public file ONLY because it is restricted in Google Cloud to this website and to the Maps JavaScript + Routes APIs, with daily quotas.
-  googleMapsKey: '',
+  googleMapsKey: 'AIzaSyDmzaFne73RH5gQq6EkjJWRZ-vPTfkQPmY',
   supabaseKey: 'sb_publishable_d4Mpkaisb73OxiJ46XHlkA_-uTP1g1p',
 };
