@@ -226,12 +226,12 @@
   const minsLeft = (iso) => Math.max(0, Math.round((Date.parse(iso) - Date.now()) / 60000));
   function driverNow() {
     const share = sharingCard();
-    if (myLiveTrip) return share + card('You are live', `<p><b>${esc(myLiveTrip.origin)}</b> to <b>${esc(myLiveTrip.dest)}</b></p><p class="mut">Leaving about ${RS.clock(myLiveTrip.depart_min)} &middot; visible to riders for ${minsLeft(myLiveTrip.expires_at)} more minutes.</p><p><button class="btn ghost" data-stoplive="trip">Stop</button></p>`);
+    if (myLiveTrip) return share + card('Offer a ride now: ON', `<p><b>${esc(myLiveTrip.origin)}</b> to <b>${esc(myLiveTrip.dest)}</b></p><p class="mut">Leaving about ${RS.clock(myLiveTrip.depart_min)} &middot; riders can see you until you switch it off.</p><p><button class="btn ghost" data-stoplive="trip">Switch OFF</button></p>`);
     const o = nowSel['ln-o'] || (myTrip && myTrip.origin) || 'Surrey Central', d = nowSel['ln-d'] || (myTrip && myTrip.dest) || 'BCIT / Willingdon (Burnaby)';
-    return share + card('Not on a schedule? Offer a ride now', `<p class="mut">For a spur-of-the-moment drive: no date or time. Riders nearby can ask for a seat for the next 30 minutes. If you already posted a trip, use <b>Start my trip</b> below instead.</p>
+    return share + card('Not on a schedule? Offer a ride now', `<p class="mut">For a spur-of-the-moment drive: no date or time. Switch it on and riders along your route can ask for a seat. It stays on until you switch it off (it turns itself off after 12 hours, just in case). If you already posted a trip, use <b>Start my trip</b> below instead.</p>
       <label>From</label><select id="ln-o">${opts(o)}</select> <button type="button" class="btn ghost" id="ln-loc" style="margin-top:6px">Use my location</button>
       <label>To</label><select id="ln-d">${opts(d)}</select>
-      <div style="margin-top:10px"><button class="btn" id="ln-go" style="width:100%;padding:12px;font-size:16px">Offer a ride now</button></div><p class="warn" id="ln-msg" role="alert"></p>`);
+      <div style="margin-top:10px"><button class="btn" id="ln-go" style="width:100%;padding:12px;font-size:16px">Switch ON: offer a ride now</button></div><p class="warn" id="ln-msg" role="alert"></p>`);
   }
   function riderNow() {
     if (myLiveReq) return card('You are looking for a ride now', `<p><b>${esc(myLiveReq.pickup)}</b> to <b>${esc(myLiveReq.dropoff)}</b></p><p class="mut">Visible to drivers for ${minsLeft(myLiveReq.expires_at)} more minutes.</p><p><button class="btn ghost" data-stoplive="req">Stop</button></p>`);
@@ -589,7 +589,7 @@
     on('rn-loc', () => useMyLocation('rn-p', 'rn-msg'));
     on('ln-go', async () => {
       const o = $('ln-o').value, d = $('ln-d').value; if (o === d) { formMsg('ln-msg', 'Pick two different places'); return; }
-      const f = myTrip || {}; const ok = await run(sb.rpc('go_live_trip', { p_origin: o, p_dest: d, p_max_detour: f.max_detour == null ? S_().d_detour : f.max_detour, p_max_wait: f.max_wait == null ? S_().d_wait : f.max_wait, p_accepts: f.accepts || S_().d_accepts, p_cost_per_km: 0.2 }), 'You are live for 30 minutes');
+      const f = myTrip || {}; const ok = await run(sb.rpc('go_live_trip', { p_origin: o, p_dest: d, p_max_detour: f.max_detour == null ? S_().d_detour : f.max_detour, p_max_wait: f.max_wait == null ? S_().d_wait : f.max_wait, p_accepts: f.accepts || S_().d_accepts, p_cost_per_km: 0.2, p_minutes: 720 }), 'You are live for 30 minutes');
       if (ok) { viewD = null; mapSig = {}; }
     });
     on('rn-go', async () => {
