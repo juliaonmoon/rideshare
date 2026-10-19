@@ -156,6 +156,28 @@
   }
   function pickView(cur, dates) { return dates.includes(cur) ? cur : dates[0] || null; }
 
+  // ---------- "what do I do next" cards at the top of the driving and riding tabs ----------
+  const goTo = (id) => `<button class="btn ghost" data-scroll="${id}">`;
+  function driverTop() {
+    if (!myTrip || !known(myTrip)) return card('Start here', `<p><b>1.</b> Fill in the form below: where you drive from and to, the date and time.</p><p><b>2.</b> Tap <b>Review trip</b>, then <b>Confirm and post</b>.</p><p><b>3.</b> Riders who ask for a seat will appear on this page for you to accept.</p><p>${goTo('ld-form')}Go to the form</button></p>`);
+    const dates = RSD.nextOccurrences(myTrip.trip_date, myTrip.repeat_days, new Date(), 7), d = pickView(viewD, dates);
+    const mine = d ? matches.filter((x) => x.driver_id === user.id && x.ride_date === d) : [];
+    const asks = mine.filter((x) => x.status === 'requested').length, acc = mine.filter((x) => x.status === 'accepted').length;
+    const isToday = d === todayStr();
+    const line = asks ? `<b>${asks} rider${asks > 1 ? 's' : ''} asked for a seat.</b> Tap <b>See riders</b> to accept.` : acc ? `<b>${acc} rider${acc > 1 ? 's' : ''} accepted.</b> ${isToday ? 'Tap <b>Start my trip</b> when you set off.' : 'You can start on the day of the trip.'}` : 'No riders yet. They will show up here when they ask for a seat.';
+    return card('Your trip', `<p><b>${esc(myTrip.origin)}</b> to <b>${esc(myTrip.dest)}</b></p><p class="mut">${whenText(myTrip.trip_date, myTrip.depart_min, myTrip.repeat_days)}</p><p>${line}</p>
+      <div class="row2">${isToday ? '<button class="btn" data-startnav="1">Start my trip</button> ' : ''}${goTo('ld-lists')}See riders</button> ${goTo('ld-form')}Edit trip</button></div>`);
+  }
+  function riderTop() {
+    if (!myReq || !known(myReq)) return card('Start here', `<p><b>1.</b> Fill in the form below: where you want to be picked up and dropped off, the date and when you are ready.</p><p><b>2.</b> Tap <b>Review request</b>, then <b>Confirm and post</b>.</p><p><b>3.</b> Pick a driver from the list and tap <b>Request</b>.</p><p>${goTo('lr-form')}Go to the form</button></p>`);
+    const dates = RSD.nextOccurrences(myReq.ride_date, myReq.repeat_days, new Date(), 7), d = pickView(viewR, dates);
+    const mine = d ? matches.filter((x) => x.rider_id === user.id && x.request_id === myReq.id && x.ride_date === d) : [];
+    const acc = mine.find((x) => x.status === 'accepted' || x.status === 'completed'), pend = mine.some((x) => x.status === 'requested');
+    const line = acc ? `<b>${esc(STEP_LABEL[stageOf(acc)])}.</b> Tap <b>See my ride</b> for live updates.` : pend ? 'You asked a driver for a seat. Waiting for them to accept.' : 'Pick a driver below and tap <b>Request</b>.';
+    return card('Your ride', `<p><b>${esc(myReq.pickup)}</b> to <b>${esc(myReq.dropoff)}</b></p><p class="mut">${esc(RSD.label(myReq.ride_date))}, ready ${RS.clock(myReq.ready_from)} to ${RS.clock(myReq.ready_to)}</p><p>${line}</p>
+      <div class="row2">${goTo('lr-lists')}${acc ? 'See my ride' : 'See drivers'}</button> ${goTo('lr-form')}Edit request</button></div>`);
+  }
+
   // ---------- driver tab ----------
   function driverForm() {
     if (pending && pending.kind === 'trip') {
@@ -190,11 +212,12 @@
     const waiting = otherReqs.filter((q) => known(q) && reqOn(q, viewD)).map(riderObj);
     const found = RS.findMatches(dr, waiting, accObjs);
     drawDriverMap(stops, waiting.filter((w) => !found.some((f) => f.rider.id === w.id)), viewD);
-    window.__ldStops = stops;
+    window.__ldStops = stops; window.__ldAcc = acc;
     const pr = RS.priceRoute(stops, dr.cpk);
     const summary = card(RSD.label(viewD) + '\'s trip', `<div class="stat"><div><span class="mut">Cost if driving alone</span><b>${RS.money(RS.priceRoute(RS.buildRoute(dr, []), dr.cpk).total)}</b></div><div><span class="mut">Your share now</span><b>${RS.money(pr.driverShare)}</b></div></div>
       <p class="mut">${RS.km(stops).toFixed(1)} km total &middot; riders pay only their share, never more.</p>
-      <button class="btn ghost" id="ld-start">Preview route (watch the car)</button> <button class="btn ghost" id="ld-stop">Stop</button>`);
+      <button class="btn" id="ld-go" ${viewD === todayStr() ? '' : 'disabled'}>Start my trip</button> <button class="btn ghost" id="ld-start">Preview route (watch the car)</button> <button class="btn ghost" id="ld-stop">Stop</button>
+      <p class="mut" style="margin-top:8px">${viewD === todayStr() ? 'Start my trip opens Google Maps with your destination and your riders as stops, and tells your riders you are on the way.' : 'Start my trip is available on the day of the trip.'}</p>`);
     const reqs = card('Seat requests for you', inc.length ? inc.map((x) => `<div style="padding:8px 0;border-top:1px solid var(--line)"><b>${nm(x.rider_id)}</b>${badge(x.rider_id, 'rider')} <span class="mut">pays ${x.pay_with === 'points' ? x.points + ' pts' : 'cash gas-share'}</span>
         <div style="margin-top:6px"><button class="btn" data-acc="${x.id}">Accept</button> <button class="btn ghost" data-dec="${x.id}">Decline</button></div></div>`).join('') : '<p class="mut">None yet. Riders ask you for a seat; you accept here.</p>');
     const riding = card('Riding with me', acc.length ? acc.map((x) => { const q = reqById[x.request_id], ns = nextStep(x, esc(names[x.rider_id] || 'rider')), open = stepsOpen(x), link = mapsLink(x, q);
@@ -314,10 +337,12 @@
   // ---------- render + wiring ----------
   function render() {
     renderAuth();
-    if (!user) { ['ld-form', 'ld-lists', 'lr-form', 'lr-lists', 'lu-main', 'lw-main'].forEach((id) => { $(id).innerHTML = /form|main/.test(id) ? hint : ''; }); return; }
+    if (!user) { ['ld-top', 'lr-top'].forEach((id) => { $(id).innerHTML = ''; }); ['ld-form', 'ld-lists', 'lr-form', 'lr-lists', 'lu-main', 'lw-main'].forEach((id) => { $(id).innerHTML = /form|main/.test(id) ? hint : ''; }); return; }
     const sig = JSON.stringify([myTrip, myReq, me.points, pending]);
     const typing = document.activeElement && /^(lt|lr|lv)-/.test(document.activeElement.id || '') && document.activeElement.tagName !== 'BUTTON' && !pending;
     if (!typing && sig !== formSig) { formSig = sig; $('ld-form').innerHTML = guard('trip form', driverForm); $('lr-form').innerHTML = guard('ride form', riderForm); $('lw-main').innerHTML = guard('points', walletMain); }
+    $('ld-top').innerHTML = guard('driver summary', driverTop);
+    $('lr-top').innerHTML = guard('rider summary', riderTop);
     $('ld-lists').innerHTML = guard('riders list', driverLists);
     $('lr-lists').innerHTML = guard('drivers list', riderLists);
     $('lu-main').innerHTML = guard('upcoming', upcomingMain);
@@ -357,11 +382,23 @@
       if (ok) { pending = null; viewR = null; mapSig = {}; formSig = ''; render(); }
     });
     on('lv-savename', () => { const v = $('lv-name').value.trim(); if (!v) { toast('Enter a name'); return; } run(sb.from('profiles').update({ display_name: v }).eq('id', user.id), 'Name saved'); });
+    const startNav = () => {
+      const stops = window.__ldStops || [];
+      if (stops.length < 2) { toast('Nothing to navigate yet'); return; }
+      const pt = (x) => x.loc.lat + ',' + x.loc.lng, mid = stops.slice(1, -1).map(pt);
+      const url = 'https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=' + pt(stops[stops.length - 1]) + (mid.length ? '&waypoints=' + encodeURIComponent(mid.join('|')) : '');
+      window.open(url, '_blank', 'noopener');
+      const todo = (window.__ldAcc || []).filter((x) => stageOf(x) === 'accepted' && stepsOpen(x));
+      if (todo.length) { Promise.all(todo.map((x) => sb.rpc('ride_step', { p_match: x.id, p_step: 'on_my_way' }))).then(() => loadAll()); toast('Your riders can see you are on the way'); }
+    };
+    on('ld-go', startNav);
     on('ld-start', () => { if (window.__ldStops) window.RS_UI.startSim('ld', 'map-ld', window.__ldStops, 'You', 'driver'); });
     on('ld-stop', () => window.RS_UI.stopSim('ld'));
     on('lr-watch', () => { if (window.__lrStops) window.RS_UI.startSim('lr', 'map-lr', window.__lrStops, window.__lrDriver, 'rider', window.__lrMe); });
     on('lr-stop', () => window.RS_UI.stopSim('lr'));
     const each = (sel, fn) => document.querySelectorAll(['#v-ldriver', '#v-lrider', '#v-lupcoming'].map((r) => r + ' ' + sel).join(', ')).forEach((b) => (b.onclick = () => fn(b)));
+    each('[data-startnav]', () => startNav());
+    each('[data-scroll]', (b) => { const e = $(b.dataset.scroll); if (e) e.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
     each('#ld-dates button', (b) => { viewD = b.dataset.date; mapSig = {}; render(); });
     each('#lr-dates button', (b) => { viewR = b.dataset.date; mapSig = {}; render(); });
     each('[data-req]', (b) => run(sb.rpc('request_seat', { p_trip: b.dataset.req, p_request: myReq.id, p_pay_with: b.dataset.pay, p_points: +b.dataset.pts, p_date: b.dataset.date }), 'Seat requested'));
