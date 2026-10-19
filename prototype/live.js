@@ -39,6 +39,21 @@
     return;
   }
   const sb = window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseKey);
+  // Android app: sign-in happens in a Chrome tab and returns here through this link (it must also be listed in Supabase > Authentication > URL Configuration > Redirect URLs).
+  const APP_AUTH = 'ca.rideshare.app://auth';
+  const nativePlug = (n) => (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform() && window.Capacitor.Plugins && window.Capacitor.Plugins[n]) || null;
+  if (nativePlug('App')) {
+    nativePlug('App').addListener('appUrlOpen', async (ev) => {
+      if (!ev || !ev.url || ev.url.indexOf(APP_AUTH) !== 0) return;
+      try { if (nativePlug('Browser')) await nativePlug('Browser').close(); } catch (e) { /* tab already closed */ }
+      const p = new URLSearchParams(ev.url.split('#')[1] || ev.url.split('?')[1] || '');
+      if (p.get('error_description') || p.get('error')) { toast((p.get('error_description') || p.get('error')).split('+').join(' ')); return; }
+      if (p.get('access_token') && p.get('refresh_token')) {
+        const { error } = await sb.auth.setSession({ access_token: p.get('access_token'), refresh_token: p.get('refresh_token') });
+        if (error) toast(error.message);
+      }
+    });
+  }
   let user = null, me = { name: '', points: 0 }, myTrip = null, myReq = null, ledger = [], matches = [];
   let otherTrips = [], otherReqs = [], extraTrips = [], extraReqs = [], names = {}, timer = null, busy = false, formSig = '', mapSig = {};
   let pending = null, viewD = null, viewR = null, askCancel = null, rel = {}, mySet = null, styles = {};
@@ -157,13 +172,19 @@
       <div style="display:flex;gap:8px;flex-wrap:wrap"><input type="email" id="lv-email" autocomplete="email" placeholder="you@example.com" style="${INPUT};flex:1;min-width:200px"><button class="btn" id="lv-send">Email me a sign-in link</button></div>
       <p class="mut" id="lv-note"></p></div>`;
     $('lv-google').onclick = async () => {
+      if (nativePlug('Browser')) { // Android app: Google does not allow sign-in inside an app's built-in page, so use a Chrome tab that lists your Google accounts
+        const { data, error } = await sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: APP_AUTH, skipBrowserRedirect: true, queryParams: { prompt: 'select_account' } } });
+        if (error || !data || !data.url) { toast((error && error.message) || 'Could not start sign-in'); return; }
+        try { await nativePlug('Browser').open({ url: data.url }); } catch (e) { toast('Could not open the sign-in page'); }
+        return;
+      }
       const { error } = await sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin + location.pathname } });
       if (error) toast(error.message);
     };
     $('lv-send').onclick = async () => {
       const email = $('lv-email').value.trim(); if (!/^\S+@\S+\.\S+$/.test(email)) { toast('Enter a valid email'); return; }
       $('lv-send').disabled = true;
-      const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: location.origin + location.pathname } });
+      const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: nativePlug('Browser') ? APP_AUTH : location.origin + location.pathname } });
       $('lv-send').disabled = false;
       if (error) { toast(error.message); return; }
       $('lv-note').textContent = 'Check your email and click the link. It opens this page signed in. Open the link on the same device you want to use.';
