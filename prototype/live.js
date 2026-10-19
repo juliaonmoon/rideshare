@@ -419,6 +419,7 @@
       <div style="margin-top:8px"><button class="btn ghost" id="lv-savename">Save name</button></div>
       <div class="stat" style="margin-top:12px"><div><span class="mut">Points balance</span><b>${me.points}</b></div><div><span class="mut">On hold (your rides)</span><b>${heldAsRider}</b></div><div><span class="mut">Coming to you</span><b>${pendingAsDriver}</b></div><div><span class="mut">Value</span><b>1 pt = $0.10</b></div></div>
       <p class="mut">Earn points by driving riders who pay in points. Spend them when you ride. Points can't be cashed out or transferred, and they never exceed the real cost of the trip, so nobody profits.</p>`)
+      + card('Your data', '<p class="mut">We store your first name, email, the neighbourhood-level areas you post, your rides and your points. Your live location is shared only while you are driving a ride, and deleted when it ends. <a href="privacy.html">Privacy policy</a> &middot; <a href="terms.html">Terms</a></p><label>To erase your account and all your data, type DELETE</label><input type="text" id="del-confirm" autocomplete="off" style="' + INPUT + '"><div style="margin-top:8px"><button class="btn ghost" id="del-go" disabled>Delete my account</button></div><p class="warn" id="del-msg" role="alert"></p>')
       + card('Track yourself', '<p class="mut">Walk or drive and watch yourself move on the map, with speed, distance and a trail. Your location stays on this device.</p><a class="btn" href="gps.html" style="display:inline-block;text-decoration:none">Open GPS test</a>')
       + card('History', ledger.length ? ledger.map((x) => `<div style="padding:4px 0">${(x.delta > 0 ? '+' : '') + x.delta} pts <span class="mut">${esc(x.reason)}</span></div>`).join('') : '<p class="mut">Nothing yet.</p>');
   }
@@ -471,6 +472,13 @@
     on('lr-confirm', async () => {
       const row = pending.row; const ok = await run(myReq ? sb.from('ride_requests').update(row).eq('id', myReq.id) : sb.from('ride_requests').insert(row), 'Request saved');
       if (ok) { pending = null; viewR = null; mapSig = {}; formSig = ''; render(); }
+    });
+    if ($('del-confirm')) $('del-confirm').oninput = () => { $('del-go').disabled = $('del-confirm').value.trim() !== 'DELETE'; };
+    on('del-go', async () => {
+      if ($('del-confirm').value.trim() !== 'DELETE') return;
+      const r = await sb.rpc('delete_my_account');
+      if (r.error) { formMsg('del-msg', r.error.message); return; }
+      toast('Your account and data were deleted.'); try { await sb.auth.signOut(); } catch (e) {}
     });
     on('lv-savename', () => { const v = $('lv-name').value.trim(); if (!v) { toast('Enter a name'); return; } run(sb.from('profiles').update({ display_name: v }).eq('id', user.id), 'Name saved'); });
     const startNav = () => {
