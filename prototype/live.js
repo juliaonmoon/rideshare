@@ -228,10 +228,10 @@
     const share = sharingCard();
     if (myLiveTrip) return share + card('You are live', `<p><b>${esc(myLiveTrip.origin)}</b> to <b>${esc(myLiveTrip.dest)}</b></p><p class="mut">Leaving about ${RS.clock(myLiveTrip.depart_min)} &middot; visible to riders for ${minsLeft(myLiveTrip.expires_at)} more minutes.</p><p><button class="btn ghost" data-stoplive="trip">Stop</button></p>`);
     const o = nowSel['ln-o'] || (myTrip && myTrip.origin) || 'Surrey Central', d = nowSel['ln-d'] || (myTrip && myTrip.dest) || 'BCIT / Willingdon (Burnaby)';
-    return share + card('Leave now', `<p class="mut">One tap, no date or time. You leave in about 5 minutes and riders can see you for 30 minutes.</p>
+    return share + card('Not on a schedule? Offer a ride now', `<p class="mut">For a spur-of-the-moment drive: no date or time. Riders nearby can ask for a seat for the next 30 minutes. If you already posted a trip, use <b>Start my trip</b> below instead.</p>
       <label>From</label><select id="ln-o">${opts(o)}</select> <button type="button" class="btn ghost" id="ln-loc" style="margin-top:6px">Use my location</button>
       <label>To</label><select id="ln-d">${opts(d)}</select>
-      <div style="margin-top:10px"><button class="btn" id="ln-go" style="width:100%;padding:12px;font-size:16px">Leave now</button></div><p class="warn" id="ln-msg" role="alert"></p>`);
+      <div style="margin-top:10px"><button class="btn" id="ln-go" style="width:100%;padding:12px;font-size:16px">Offer a ride now</button></div><p class="warn" id="ln-msg" role="alert"></p>`);
   }
   function riderNow() {
     if (myLiveReq) return card('You are looking for a ride now', `<p><b>${esc(myLiveReq.pickup)}</b> to <b>${esc(myLiveReq.dropoff)}</b></p><p class="mut">Visible to drivers for ${minsLeft(myLiveReq.expires_at)} more minutes.</p><p><button class="btn ghost" data-stoplive="req">Stop</button></p>`);
@@ -351,8 +351,8 @@
     const pr = RS.priceRoute(stops, dr.cpk);
     const summary = card(RSD.label(viewD) + '\'s trip', `<div class="stat"><div><span class="mut">Cost if driving alone</span><b>${RS.money(RS.priceRoute(RS.buildRoute(dr, []), dr.cpk).total)}</b></div><div><span class="mut">Your share now</span><b>${RS.money(pr.driverShare)}</b></div></div>
       <p class="mut">${RS.km(stops).toFixed(1)} km total &middot; riders pay only their share, never more.</p>
-      <button class="btn" id="ld-go" ${viewD === todayStr() ? '' : 'disabled'}>Start my trip</button> <button class="btn ghost" id="ld-start">Preview route (watch the car)</button> <button class="btn ghost" id="ld-stop">Stop</button>
-      <p class="mut" style="margin-top:8px">${viewD === todayStr() ? 'Start my trip opens Google Maps with your destination and your riders as stops, and tells your riders you are on the way.' : 'Start my trip is available on the day of the trip.'}</p>`);
+      <button class="btn ghost" id="ld-start">Preview route (watch the car)</button> <button class="btn ghost" id="ld-stop">Stop</button>
+      <p class="mut" style="margin-top:8px">${viewD === todayStr() ? 'When you set off, tap Start my trip at the top. It opens Google Maps with your destination and your riders as stops, and tells your riders you are on the way.' : 'Start my trip is available on the day of the trip.'}</p>`);
     const reqs = card('Seat requests for you', inc.length ? inc.map((x) => `<div style="padding:8px 0;border-top:1px solid var(--line)"><b>${nm(x.rider_id)}</b>${badge(x.rider_id, 'rider')} <span class="mut">pays ${x.pay_with === 'points' ? x.points + ' pts' : 'cash gas-share'}</span>
         <div style="margin-top:6px"><button class="btn" data-acc="${x.id}">Accept</button> <button class="btn ghost" data-dec="${x.id}">Decline</button></div></div>`).join('') : '<p class="mut">None yet. Riders ask you for a seat; you accept here.</p>');
     const riding = card('Riding with me', acc.length ? acc.map((x) => { const q = reqById[x.request_id], ns = nextStep(x, esc(names[x.rider_id] || 'rider')), open = stepsOpen(x), link = mapsLink(x, q);
