@@ -56,6 +56,7 @@ button.on{outline:3px solid var(--acc2)}
   <p class="mut" style="margin-top:10px">Your location stays on this device. Nothing is sent to RideShare or saved. Keep this page open and the screen on while you walk.</p>
   <p class="mut" id="s-map"></p>
 </div>
+<script src="config.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
 <script>
 (function () {
@@ -63,6 +64,7 @@ button.on{outline:3px solid var(--acc2)}
   const $ = (id) => document.getElementById(id);
   const KEYNAME = 'rs-gmaps-key';
   let key = ''; try { key = localStorage.getItem(KEYNAME) || ''; } catch (e) {}
+  if (!key) key = (window.RS_CONFIG && window.RS_CONFIG.googleMapsKey) || '';
   const state = { watchId: null, sim: null, follow: true, trail: [], dist: 0, t0: 0, last: null, timer: 0, wake: null };
 
   // ---------- map adapter (Google if a key is saved, else OpenStreetMap) ----------

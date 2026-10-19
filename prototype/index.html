@@ -246,7 +246,8 @@ function svgCar(id,pos){
 // ---------- Google Maps (optional, uses the user's own API key) ----------
 const GKEY='rs-gmaps-key';
 const gmaps={}; let gReady=false, gFailed=false, gLoading=false;
-function getKey(){ try{ return localStorage.getItem(GKEY)||''; }catch(e){ return ''; } }
+// A key saved on this device wins (handy for testing); otherwise use the app's own Google Maps key from config.js, so real users never need one.
+function getKey(){ let k=''; try{ k=localStorage.getItem(GKEY)||''; }catch(e){} return k || ((window.RS_CONFIG&&window.RS_CONFIG.googleMapsKey)||''); }
 function loadGoogle(){
   const key=getKey(); if(!key||gReady||gLoading||gFailed) return;
   gLoading=true;
