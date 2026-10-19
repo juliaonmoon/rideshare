@@ -1,1 +1,1 @@
-{"name":"rideshare-android","version":"0.1.0","private":true,"description":"Android wrapper for RideShare (loads the live website, adds background location)","dependencies":{"@capacitor/android":"^8.5.3","@capacitor/cli":"^8.5.3","@capacitor/core":"^8.5.3"}}
+{"name":"rideshare-android","version":"0.1.0","private":true,"description":"Android wrapper for RideShare (loads the live website, adds background location)","dependencies":{"@capacitor/android":"^8.5.3","@capacitor/app":"^8.1.2","@capacitor/browser":"^8.0.5","@capacitor/cli":"^8.5.3","@capacitor/core":"^8.5.3"}}
