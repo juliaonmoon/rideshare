@@ -37,6 +37,8 @@
     return { ok, timeline, totalMin: t - departMin };
   }
 
+  // The most extra minutes ALL pickups together may add. If the driver set no separate total, it is the same as max detour.
+  const totalCap = (driver) => (driver.maxTotal == null ? driver.maxDetour : Math.max(driver.maxTotal, driver.maxDetour));
   // Cheapest feasible insertion of a rider's pickup+dropoff into an existing route.
   function bestInsertion(stops, rider, driver) {
     const directMin = minutes(driver.origin, driver.dest);
@@ -48,7 +50,7 @@
         next.splice(i, 0, { loc: rider.pickup, type: 'pickup', rider });
         const ev = evaluate(next, driver.departMin, driver.maxWait);
         const detour = ev.totalMin - directMin;
-        if (ev.ok && detour <= driver.maxDetour + 1e-9 && (!best || detour < best.detour)) {
+        if (ev.ok && detour <= totalCap(driver) + 1e-9 && (!best || detour < best.detour)) {
           best = { stops: next, ev, detour };
         }
       }
@@ -75,7 +77,10 @@
     driverAccepts === 'either' || driverAccepts === riderPays;
 
   // Candidates who fit within the driver's max detour / max wait, given riders already accepted.
+  // Three driver limits: how many pickups (maxPickups), the most extra minutes for ONE pickup (maxDetour),
+  // and the most extra minutes for ALL pickups together (maxTotal).
   function findMatches(driver, riders, accepted) {
+    if (driver.maxPickups != null && accepted.length >= driver.maxPickups) return [];
     const current = buildRoute(driver, accepted);
     if (!current) return [];
     const baseDetour = evaluate(current, driver.departMin, driver.maxWait).totalMin -
@@ -85,6 +90,7 @@
       if (accepted.includes(r) || !compatible(driver.accepts, r.pays)) continue;
       const b = bestInsertion(current, r, driver);
       if (!b) continue;
+      if (b.detour - baseDetour > driver.maxDetour + 1e-9) continue;   // this one pickup costs more time than the driver allows
       const pick = b.ev.timeline.find((x) => x.stop.type === 'pickup' && x.stop.rider === r);
       const drop = b.ev.timeline.find((x) => x.stop.type === 'dropoff' && x.stop.rider === r);
       out.push({ rider: r, stops: b.stops, detour: b.detour, addedDetour: b.detour - baseDetour,

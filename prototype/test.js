@@ -110,4 +110,27 @@ t('dates: Vancouver pickup time handles summer and winter time', () => {
   assert.strictEqual(D.vanMonth(Date.UTC(2026, 9, 31, 20, 0)), '2026-10');
   assert.strictEqual(D.vanMonth(Date.UTC(2026, 10, 1, 3, 0)), '2026-10');            // 20:00 on Oct 31 in Vancouver
 });
+
+// ---- driver limits: how many pickups, time for one pickup, time for all pickups together ----
+const P1 = { lat: 49.2000, lng: -122.9000 }, P2 = { lat: 49.2150, lng: -122.8800 };
+const wide = (id, p) => ({ id, pickup: p, dropoff: L.B, readyFrom: 440, readyTo: 520, pays: 'cash' });
+const dd = { origin: L.A, dest: L.B, departMin: 450, maxDetour: 30, maxWait: 30, accepts: 'either' };
+t('single pickup only: no second rider is offered', () => {
+  assert.strictEqual(RS.findMatches({ ...dd, maxPickups: 1 }, [wide('r2', P2)], [wide('r1', P1)]).length, 0);
+});
+t('two pickups allowed: a second rider is offered', () => {
+  assert.strictEqual(RS.findMatches({ ...dd, maxPickups: 2 }, [wide('r2', P2)], [wide('r1', P1)]).length, 1);
+});
+t('time for ONE pickup: a rider costing more than the per-pickup limit is refused', () => {
+  assert.strictEqual(RS.findMatches({ ...dd, maxDetour: 3, maxTotal: 20 }, [wide('r2', P2)], [wide('r1', P1)]).length, 0);
+  assert.strictEqual(RS.findMatches({ ...dd, maxDetour: 5, maxTotal: 20 }, [wide('r2', P2)], [wide('r1', P1)]).length, 1);
+});
+t('time for ALL pickups together: refused once the total is used up', () => {
+  assert.strictEqual(RS.findMatches({ ...dd, maxDetour: 4.1, maxTotal: 4.2 }, [wide('r2', P2)], [wide('r1', P1)]).length, 0);
+  assert.strictEqual(RS.findMatches({ ...dd, maxDetour: 4.1, maxTotal: 4.5 }, [wide('r2', P2)], [wide('r1', P1)]).length, 1);
+});
+t('with no separate total, max detour still caps the whole route (old behaviour)', () => {
+  assert.strictEqual(RS.findMatches({ ...dd, maxDetour: 4.1 }, [wide('r2', P2)], [wide('r1', P1)]).length, 0);
+});
+
 console.log(`\n${n} tests passed`);
