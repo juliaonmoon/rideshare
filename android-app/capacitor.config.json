@@ -1,0 +1,11 @@
+{
+  "appId": "ca.rideshare.app",
+  "appName": "RideShare",
+  "webDir": "www",
+  "server": {
+    "url": "https://juliaonmoon.github.io/rideshare/prototype/",
+    "cleartext": false,
+    "allowNavigation": ["juliaonmoon.github.io", "*.supabase.co", "accounts.google.com", "*.google.com", "*.googleapis.com", "*.gstatic.com", "cdnjs.cloudflare.com", "cdn.jsdelivr.net", "tile.openstreetmap.org"]
+  },
+  "android": { "allowMixedContent": false }
+}

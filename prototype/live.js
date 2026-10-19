@@ -221,7 +221,19 @@
   let shareWatch = null, wake = null; const shareState = { last: 0, lastOk: 0, err: '', acc: null };
   const shouldShare = () => matches.some((x) => x.driver_id === user.id && x.status === 'accepted' && x.en_route_at);
   async function keepAwake(on) { try { if (on && 'wakeLock' in navigator) wake = await navigator.wakeLock.request('screen'); else if (wake) { await wake.release(); wake = null; } } catch (e) {} }
+  // In the Android app, a native background helper keeps sending the position while Google Maps is on screen.
+  const nativeLoc = () => (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform() && window.Capacitor.Plugins && window.Capacitor.Plugins.RideShareLocation) || null;
+  async function startNativeShare(nat) {
+    try {
+      const r = await sb.rpc('start_tracking');
+      if (r.error || !r.data) { shareState.err = (r.error && r.error.message) || 'Could not start location sharing.'; return false; }
+      await nat.start({ url: CFG.supabaseUrl, key: CFG.supabaseKey, token: r.data });
+      shareWatch = 'native'; shareState.err = ''; shareState.lastOk = Date.now(); return true;
+    } catch (e) { shareState.err = (e && e.message) || 'Location permission was not granted, so riders cannot see you.'; return false; }
+  }
   function startShare() {
+    const nat = nativeLoc();
+    if (nat) { shareWatch = 'native-pending'; startNativeShare(nat).then((ok) => { if (!ok) shareWatch = null; paintSharing(); }); return; }
     if (!navigator.geolocation) { shareState.err = 'This device cannot share its location.'; return; }
     keepAwake(true);
     shareWatch = navigator.geolocation.watchPosition((p) => {
@@ -230,10 +242,10 @@
         .then((r) => { if (r.error) { shareState.err = r.error.message; } else { shareState.lastOk = Date.now(); } paintSharing(); });
     }, (e) => { shareState.err = e && e.code === 1 ? 'Location is blocked, so riders cannot see you. Allow it in your browser settings.' : 'Could not get your location.'; paintSharing(); }, { enableHighAccuracy: true, maximumAge: 2000, timeout: 20000 });
   }
-  function stopShare(deleteRow) { if (shareWatch != null) { navigator.geolocation.clearWatch(shareWatch); shareWatch = null; } keepAwake(false); if (deleteRow) { try { sb.rpc('stop_sharing'); } catch (e) {} } }
+  function stopShare(deleteRow) { const nat = nativeLoc(); if (nat) { try { nat.stop(); } catch (e) {} } if (shareWatch != null && shareWatch !== 'native' && shareWatch !== 'native-pending') { navigator.geolocation.clearWatch(shareWatch); } shareWatch = null; keepAwake(false); if (deleteRow) { try { sb.rpc('stop_sharing'); } catch (e) {} } }
   function syncSharing() { if (!user) { stopShare(false); return; } if (shouldShare()) { if (shareWatch == null) startShare(); } else if (shareWatch != null) stopShare(true); }
   const ago = (ms) => (ms ? Math.max(0, Math.round((Date.now() - ms) / 1000)) + ' s ago' : 'not yet');
-  function sharingInner() { return shareState.err ? `<p class="warn">${esc(shareState.err)}</p>` : `<p>Riders on this ride can see you on their map. Last sent: ${ago(shareState.lastOk)}.</p><p class="mut">Keep this screen open. If you use Google Maps for directions, put RideShare and Google Maps side by side (split screen) so sharing keeps working.</p>`; }
+  function sharingInner() { if (!shareState.err && nativeLoc()) return `<p>Riders on this ride can see you on their map, even while Google Maps is open.</p><p class="mut">Android shows a small "RideShare is sharing your location" notification while this is on. It stops by itself when the ride ends.</p>`; return shareState.err ? `<p class="warn">${esc(shareState.err)}</p>` : `<p>Riders on this ride can see you on their map. Last sent: ${ago(shareState.lastOk)}.</p><p class="mut">Keep this screen open. If you use Google Maps for directions, put RideShare and Google Maps side by side (split screen) so sharing keeps working.</p>`; }
   const sharingCard = () => (user && shouldShare() ? `<div class="card" id="share-card"><h2>Sharing your location</h2><div id="share-inner">${sharingInner()}</div></div>` : '');
   function paintSharing() { const e = $('share-inner'); if (e) e.innerHTML = sharingInner(); }
 
@@ -481,14 +493,23 @@
       toast('Your account and data were deleted.'); try { await sb.auth.signOut(); } catch (e) {}
     });
     on('lv-savename', () => { const v = $('lv-name').value.trim(); if (!v) { toast('Enter a name'); return; } run(sb.from('profiles').update({ display_name: v }).eq('id', user.id), 'Name saved'); });
-    const startNav = () => {
+    const startNav = async () => {
       const stops = window.__ldStops || [];
       if (stops.length < 2) { toast('Nothing to navigate yet'); return; }
       const pt = (x) => x.loc.lat + ',' + x.loc.lng, mid = stops.slice(1, -1).map(pt);
-      const url = 'https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=' + pt(stops[stops.length - 1]) + (mid.length ? '&waypoints=' + encodeURIComponent(mid.join('|')) : '');
-      window.open(url, '_blank', 'noopener');
+      const url = 'https://www.google.com/maps/dir/?api=1&travelmode=driving&dir_action=navigate&destination=' + pt(stops[stops.length - 1]) + (mid.length ? '&waypoints=' + encodeURIComponent(mid.join('|')) : '');
       const todo = (window.__ldAcc || []).filter((x) => stageOf(x) === 'accepted' && stepsOpen(x));
-      if (todo.length) { Promise.all(todo.map((x) => sb.rpc('ride_step', { p_match: x.id, p_step: 'on_my_way' }))).then(() => loadAll()); toast('Your riders can see you are on the way'); }
+      const nat = nativeLoc();
+      if (!nat) {
+        window.open(url, '_blank', 'noopener');
+        if (todo.length) { Promise.all(todo.map((x) => sb.rpc('ride_step', { p_match: x.id, p_step: 'on_my_way' }))).then(() => loadAll()); toast('Your riders can see you are on the way'); }
+        return;
+      }
+      // Android app: tell the riders, start background sharing, THEN hand over to Google Maps for voice directions.
+      if (todo.length) { await Promise.all(todo.map((x) => sb.rpc('ride_step', { p_match: x.id, p_step: 'on_my_way' }))); toast('Your riders can see you are on the way'); }
+      if (todo.length || (window.__ldAcc || []).some((x) => x.en_route_at)) { shareWatch = 'native-pending'; const ok = await startNativeShare(nat); if (!ok) shareWatch = null; paintSharing(); }
+      try { await nat.openUrl({ url }); } catch (e) { window.open(url, '_blank', 'noopener'); }
+      loadAll();
     };
     on('ld-go', startNav);
     on('ld-start', () => { if (window.__ldStops) window.RS_UI.startSim('ld', 'map-ld', window.__ldStops, 'You', 'driver'); });
