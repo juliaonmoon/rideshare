@@ -50,3 +50,4 @@ Picking this up in Claude Code on the owner's own computer? Read this first.
 - Do not commit API keys or any secrets.
 - Keep trading-bot code out of this repo (separate project).
 - Docs ship with code changes; update `docs/` when behavior changes.
+- **Settings (2026-10-19, migration 009):** new Settings tab with separate Driver and Rider sections (defaults for new trips/requests, seats, auto-accept with seat cap, ride style tags). DB: `user_settings`, `ride_styles()`, and an after-insert trigger on `matches` for auto-accept. Run `supabase/migrations/009_settings.sql` once. Benchmark notes: docs/BENCHMARK.md.
