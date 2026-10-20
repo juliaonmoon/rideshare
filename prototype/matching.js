@@ -15,15 +15,39 @@
     return 2 * R * Math.asin(Math.sqrt(h));
   }
   const roadKm = (a, b) => haversineKm(a, b) * CIRCUITY;
-  const minutes = (a, b) => (roadKm(a, b) / AVG_KMH) * 60;
+  const guessMinutes = (a, b) => (roadKm(a, b) / AVG_KMH) * 60;   // fallback only, when Google times are missing for a place
+  // Google drive times between the neighbourhood centres (traffic.js). Four tables by time of day.
+  let TRAFFIC = null; const AT = new Map();
+  const keyOf = (p) => p.lat.toFixed(4) + '|' + p.lng.toFixed(4);
+  function setTraffic(T, locs) {
+    TRAFFIC = T; AT.clear();
+    if (!T || !locs) return;
+    T.names.forEach((n, i) => { if (locs[n]) AT.set(keyOf(locs[n]), i); });
+  }
+  // Which table to use: weekends and evenings use "off"; weekdays use morning, midday or afternoon.
+  function bucketFor(atMin, dow) {
+    if (dow === 0 || dow === 6) return 'off';
+    if (atMin >= 330 && atMin < 600) return 'wk_am';
+    if (atMin >= 600 && atMin < 900) return 'wk_mid';
+    if (atMin >= 900 && atMin < 1140) return 'wk_pm';
+    return 'off';
+  }
+  // Minutes to drive from a to b: Google's typical-traffic time for that time of day, else the rough estimate.
+  function minutes(a, b, atMin, dow) {
+    if (TRAFFIC && AT.size) {
+      const i = AT.get(keyOf(a)), j = AT.get(keyOf(b));
+      if (i != null && j != null) { const v = TRAFFIC[bucketFor(atMin == null ? 480 : ((atMin % 1440) + 1440) % 1440, dow)][i][j]; if (v != null) return v; }
+    }
+    return guessMinutes(a, b);
+  }
 
   // stops: [{loc, type:'origin'|'pickup'|'dropoff'|'dest', rider?}]
   // Walks the route; returns timing per stop, total minutes, and feasibility.
-  function evaluate(stops, departMin, maxWait) {
+  function evaluate(stops, departMin, maxWait, dow) {
     let t = departMin, ok = true;
     const timeline = [];
     for (let i = 0; i < stops.length; i++) {
-      if (i > 0) t += minutes(stops[i - 1].loc, stops[i].loc);
+      if (i > 0) t += minutes(stops[i - 1].loc, stops[i].loc, t, dow);
       const s = stops[i];
       let wait = 0;
       if (s.type === 'pickup') {
@@ -41,14 +65,14 @@
   const totalCap = (driver) => (driver.maxTotal == null ? driver.maxDetour : Math.max(driver.maxTotal, driver.maxDetour));
   // Cheapest feasible insertion of a rider's pickup+dropoff into an existing route.
   function bestInsertion(stops, rider, driver) {
-    const directMin = minutes(driver.origin, driver.dest);
+    const directMin = minutes(driver.origin, driver.dest, driver.departMin, driver.dow);
     let best = null;
     for (let i = 1; i < stops.length; i++) {
       for (let j = i; j < stops.length; j++) {
         const next = stops.slice();
         next.splice(j, 0, { loc: rider.dropoff, type: 'dropoff', rider });
         next.splice(i, 0, { loc: rider.pickup, type: 'pickup', rider });
-        const ev = evaluate(next, driver.departMin, driver.maxWait);
+        const ev = evaluate(next, driver.departMin, driver.maxWait, driver.dow);
         const detour = ev.totalMin - directMin;
         if (ev.ok && detour <= totalCap(driver) + 1e-9 && (!best || detour < best.detour)) {
           best = { stops: next, ev, detour };
@@ -83,8 +107,8 @@
     if (driver.maxPickups != null && accepted.length >= driver.maxPickups) return [];
     const current = buildRoute(driver, accepted);
     if (!current) return [];
-    const baseDetour = evaluate(current, driver.departMin, driver.maxWait).totalMin -
-      minutes(driver.origin, driver.dest);
+    const baseDetour = evaluate(current, driver.departMin, driver.maxWait, driver.dow).totalMin -
+      minutes(driver.origin, driver.dest, driver.departMin, driver.dow);
     const out = [];
     for (const r of riders) {
       if (accepted.includes(r) || !compatible(driver.accepts, r.pays)) continue;
@@ -126,7 +150,7 @@
     return String(h).padStart(2, '0') + ':' + String(mm).padStart(2, '0');
   };
 
-  const RS = { haversineKm, roadKm, minutes, evaluate, bestInsertion, buildRoute, findMatches,
+  const RS = { setTraffic, haversineKm, roadKm, minutes, evaluate, bestInsertion, buildRoute, findMatches,
     priceRoute, compatible, km, toPoints, money, clock, POINT_VALUE };
   if (typeof module !== 'undefined' && module.exports) module.exports = RS;
   else root.RS = RS;

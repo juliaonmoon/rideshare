@@ -182,6 +182,7 @@ input[type=range]{width:100%;accent-color:var(--acc)}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
 <script src="matching.js"></script>
 <script src="data.js"></script>
+<script src="traffic.js"></script>
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.58.0/dist/umd/supabase.min.js"></script>
 <script>
@@ -366,7 +367,7 @@ function renderDriver(){
   if(!stops){ S.acceptedIds=[]; S.regular={}; acc=[]; stops=RS.buildRoute(dr,[]); toast('Your limits changed: riders no longer fit, list cleared'); }
   const solo=RS.roadKm(dr.origin,dr.dest)*dr.cpk;
   const p=RS.priceRoute(stops,dr.cpk);
-  const ev=RS.evaluate(stops,dr.departMin,dr.maxWait), direct=RS.minutes(dr.origin,dr.dest);
+  const ev=RS.evaluate(stops,dr.departMin,dr.maxWait,dr.dow), direct=RS.minutes(dr.origin,dr.dest,dr.departMin,dr.dow);
   $('d-summary').innerHTML=`<h2>Today's trip</h2><div class="stat">
     <div><span class="mut">Arrive</span><b>${hmStr(dr.departMin+ev.totalMin)}</b></div>
     <div><span class="mut">Extra time</span><b>${Math.max(0,Math.round(ev.totalMin-direct))} min</b></div>
