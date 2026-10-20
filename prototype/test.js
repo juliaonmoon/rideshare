@@ -1,5 +1,6 @@
 // Run: node prototype/test.js
 const assert = require('assert');
+const fs = require('fs');
 const RS = require('./matching.js');
 const L = {
   A: { lat: 49.1890, lng: -122.8490 },   // Surrey Central
@@ -131,6 +132,41 @@ t('time for ALL pickups together: refused once the total is used up', () => {
 });
 t('with no separate total, max detour still caps the whole route (old behaviour)', () => {
   assert.strictEqual(RS.findMatches({ ...dd, maxDetour: 4.1 }, [wide('r2', P2)], [wide('r1', P1)]).length, 0);
+});
+
+
+// ---- Google drive times (traffic.js) ----
+const T = require('./traffic.js');
+const W = {}; new Function('window', fs.readFileSync(__dirname + '/data.js', 'utf8'))(W);
+const LOCS = W.DEMO.locations;
+t('Google times: all 19 neighbourhoods have a full table with no gaps', () => {
+  assert.strictEqual(T.names.length, 19);
+  T.names.forEach((n) => assert.ok(LOCS[n], 'unknown area ' + n));
+  ['wk_am', 'wk_mid', 'wk_pm', 'off'].forEach((k) => T[k].forEach((row, i) => { assert.strictEqual(row.length, 19); assert.strictEqual(row[i], 0); row.forEach((v) => assert.ok(v >= 0 && v < 90)); }));
+});
+t('Google times: the app uses the Google number for the time of day', () => {
+  RS.setTraffic(T, LOCS);
+  const a = LOCS['Surrey Central'], b = LOCS['BCIT / Willingdon (Burnaby)'], i = T.names.indexOf('Surrey Central'), j = T.names.indexOf('BCIT / Willingdon (Burnaby)');
+  assert.strictEqual(RS.minutes(a, b, 7 * 60 + 45, 2), T.wk_am[i][j]);
+  assert.strictEqual(RS.minutes(a, b, 12 * 60, 2), T.wk_mid[i][j]);
+  assert.strictEqual(RS.minutes(a, b, 17 * 60, 2), T.wk_pm[i][j]);
+  assert.strictEqual(RS.minutes(a, b, 8 * 60, 6), T.off[i][j]);   // Saturday
+  assert.strictEqual(RS.minutes(a, b, 23 * 60, 2), T.off[i][j]);  // late evening
+  assert.ok(T.wk_pm[i][j] > T.wk_mid[i][j], 'rush hour is slower than midday');
+});
+t('Google times: a place that is not in the table falls back to the rough estimate', () => {
+  const odd = { lat: 49.3, lng: -122.9 };
+  assert.ok(RS.minutes(LOCS['Surrey Central'], odd, 480, 2) > 0);
+});
+t('Google times change who matches: the same pickup costs a different detour at midday and in rush hour', () => {
+  RS.setTraffic(T, LOCS);
+  const o = LOCS['Surrey Central'], d = LOCS['BCIT / Willingdon (Burnaby)'], p = LOCS['Production Way (Burnaby)'];
+  const r = { id: 'x', pickup: p, dropoff: d, readyFrom: 0, readyTo: 1439, pays: 'cash' };
+  const mid = RS.findMatches({ origin: o, dest: d, departMin: 12 * 60, maxDetour: 60, maxWait: 60, accepts: 'either', dow: 2 }, [r], []);
+  const pm = RS.findMatches({ origin: o, dest: d, departMin: 17 * 60, maxDetour: 60, maxWait: 60, accepts: 'either', dow: 2 }, [r], []);
+  assert.strictEqual(mid.length, 1); assert.strictEqual(pm.length, 1);
+  assert.notStrictEqual(Math.round(mid[0].detour * 10), Math.round(pm[0].detour * 10), 'detour differs by time of day');
+  RS.setTraffic(null);
 });
 
 console.log(`\n${n} tests passed`);

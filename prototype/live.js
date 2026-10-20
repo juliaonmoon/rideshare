@@ -114,7 +114,8 @@
   }
   const statusText = (s) => ({ requested: 'requested', accepted: 'accepted', completed: 'completed', cancelled: 'cancelled', declined: 'declined', no_show: 'no-show' }[s] || s);
 
-  const driverObj = (t) => ({ origin: LOC[t.origin], dest: LOC[t.dest], departMin: t.depart_min, maxDetour: t.max_detour, maxTotal: t.max_total_detour == null ? null : t.max_total_detour, maxPickups: t.max_pickups == null ? null : t.max_pickups, maxWait: t.max_wait, accepts: t.accepts, cpk: Number(t.cost_per_km) || 0.2, name: names[t.user_id] || 'Driver' });
+  const dowOf = (d) => { const x = d && new Date(d + 'T12:00:00'); return x && !isNaN(x) ? x.getDay() : undefined; };
+  const driverObj = (t, date) => ({ dow: dowOf(date || t.trip_date), origin: LOC[t.origin], dest: LOC[t.dest], departMin: t.depart_min, maxDetour: t.max_detour, maxTotal: t.max_total_detour == null ? null : t.max_total_detour, maxPickups: t.max_pickups == null ? null : t.max_pickups, maxWait: t.max_wait, accepts: t.accepts, cpk: Number(t.cost_per_km) || 0.2, name: names[t.user_id] || 'Driver' });
   const riderObj = (r) => ({ id: r.id, name: names[r.user_id] || 'Rider', pickup: LOC[r.pickup], dropoff: LOC[r.dropoff], readyFrom: r.ready_from, readyTo: r.ready_to, pays: r.pays });
   const known = (x) => LOC[x.origin || x.pickup] && LOC[x.dest || x.dropoff];
   const tripOn = (t, d) => RSD.occursOn(t.trip_date, t.repeat_days, d);
@@ -338,7 +339,7 @@
     if (!curTrip || !known(curTrip)) return card('Riders', '<p class="mut">Post your trip on the left to see riders along your route.</p>');
     const dates = RSD.nextOccurrences(curTrip.trip_date, curTrip.repeat_days, new Date(), 7);
     viewD = pickView(viewD, dates);
-    const dr = driverObj(curTrip), reqById = {}; [...otherReqs, ...extraReqs].forEach((q) => { reqById[q.id] = q; });
+    const dr = driverObj(curTrip, viewD), reqById = {}; [...otherReqs, ...extraReqs].forEach((q) => { reqById[q.id] = q; });
     const dateCard = card('Date', dateChips('ld-dates', dates, viewD) + `<p class="mut" style="margin-top:8px">${whenText(curTrip.trip_date, curTrip.depart_min, curTrip.repeat_days)}</p>`);
     if (!viewD) return dateCard;
     const mine = matches.filter((x) => x.driver_id === user.id && x.ride_date === viewD);
@@ -401,7 +402,7 @@
     const accepted = mine.find((x) => x.status === 'accepted' || x.status === 'completed'), accTrip = accepted && tripById[accepted.trip_id];
     let html = dateCard, mapStops = [{ loc: meO.pickup, type: 'pickup', rider: meO }, { loc: meO.dropoff, type: 'dropoff', rider: meO }];
     if (accepted && accTrip && known(accTrip)) {
-      const stops = RS.buildRoute(driverObj(accTrip), [meO]);
+      const stops = RS.buildRoute(driverObj(accTrip, accepted.ride_date), [meO]);
       if (stops) { mapStops = stops; window.__lrStops = stops; window.__lrDriver = names[accTrip.user_id] || 'Your driver'; window.__lrMe = meO; }
       const stg = stageOf(accepted), dn = nm(accTrip.user_id);
       const live = { accepted: `${dn} accepted. They will tap <b>On my way</b> when they set off.`, on_my_way: `<b>${dn} is on the way.</b>`, arrived: `<b>${dn} has arrived.</b> Look for them at the pickup spot.`, picked_up: `<b>Ride in progress</b> with ${dn}.`, dropped_off: `<b>You have arrived.</b> Thanks for sharing the ride!` }[stg];
@@ -410,7 +411,7 @@
     }
     let list = '';
     otherTrips.filter((t) => known(t) && tripOn(t, viewR)).forEach((t) => {
-      const dr = driverObj(t), found = RS.findMatches(dr, [meO], []); if (!found.length) return;
+      const dr = driverObj(t, viewR), found = RS.findMatches(dr, [meO], []); if (!found.length) return;
       const m = found[0], dollars = RS.priceRoute(m.stops, dr.cpk).riderPay.get(meO) || 0, pts = RS.toPoints(dollars);
       const payWith = curReq.pays === 'either' ? (t.accepts === 'cash' ? 'cash' : 'points') : curReq.pays;
       if (!(t.accepts === 'either' || t.accepts === payWith)) return;
