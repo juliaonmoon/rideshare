@@ -56,7 +56,7 @@
   }
   let user = null, me = { name: '', points: 0 }, myTrip = null, myReq = null, ledger = [], matches = [];
   let otherTrips = [], otherReqs = [], extraTrips = [], extraReqs = [], names = {}, timer = null, busy = false, formSig = '', mapSig = {};
-  let pending = null, viewD = null, viewR = null, askCancel = null, rel = {}, mySet = null, styles = {};
+  let pending = null, viewD = null, viewR = null, askCancel = null, rel = {}, mySet = null, styles = {}, isTest = false, testMode = false;
   // Personal settings: defaults for new trips and requests (every trip can still be changed before posting).
   const SD = { d_detour: 10, d_total_detour: 15, d_wait: 5, d_accepts: 'either', d_seats: 1, d_auto_accept: false, d_chat: 'some', d_pets: true, r_pays: 'points', r_chat: 'some', r_pets: false };
   const S_ = () => Object.assign({}, SD, mySet || {});
@@ -152,6 +152,7 @@
       const ids = new Set([uid, ...otherTrips.map((x) => x.user_id), ...otherReqs.map((x) => x.user_id), ...extraTrips.map((x) => x.user_id), ...extraReqs.map((x) => x.user_id), ...matches.flatMap((x) => [x.driver_id, x.rider_id])]);
       const n = await sb.from('profiles').select('id,display_name').in('id', [...ids]);
       (n.data || []).forEach((x) => { names[x.id] = x.display_name; });
+      try { const ta = await sb.from('test_accounts').select('user_id,test_mode').eq('user_id', uid).maybeSingle(); isTest = !!ta.data; testMode = !!(ta.data && ta.data.test_mode); } catch (e) { isTest = false; testMode = false; }
       try { const st = await sb.from('user_settings').select('*').eq('user_id', uid).maybeSingle(); mySet = st.data || null; const sr = await sb.rpc('ride_styles', { p_ids: [...ids] }); styles = {}; (sr.data || []).forEach((x) => { styles[x.user_id] = x; }); } catch (e) { /* older database without settings: ignore */ }
       const rl = await sb.from('reliability').select('*'); rel = {}; (rl.data || []).forEach((x) => { rel[x.user_id] = x; });
       const pp = await sb.from('driver_positions').select('*'); positions = {}; (pp.data || []).forEach((x) => { positions[x.driver_id] = x; });
@@ -258,7 +259,9 @@
   async function keepAwake(on) { try { if (on && 'wakeLock' in navigator) wake = await navigator.wakeLock.request('screen'); else if (wake) { await wake.release(); wake = null; } } catch (e) {} }
   // Driving mode (Android app): the background helper stays on while you drive, sends your position during a ride, and alerts you when a rider asks for a seat.
   let driveSession = false;
-  const driveCard = () => (user && driveSession && !shouldShare() ? `<div class="card"><h2>Driving mode is on</h2><p>You will get a phone alert if a rider asks for a seat. Open the alert to accept or decline.</p><p class="mut">It switches itself off when your trips for the day are over.</p><p><button class="btn ghost" data-stopdrive="1">Stop driving mode</button></p></div>` : '');
+  // Test tools (only for accounts listed in test_accounts): a made-up rider asks for a seat on my latest trip, now or after a delay.
+  const testBtns = () => (isTest ? '<p class="mut">Test tools (only you see this)' + (testMode ? ': <b>Test mode is ON</b>, a made-up rider will ask for a seat about every 2 minutes.' : ':') + '</p><p><button class="btn ghost" data-testsend="30">Test request in 30 s</button> <button class="btn ghost" data-testsend="0">Test request now</button></p>' : '');
+  const driveCard = () => (user && driveSession && !shouldShare() ? `<div class="card"><h2>Driving mode is on</h2><p>You will get a phone alert if a rider asks for a seat. Open the alert to accept or decline.</p><p class="mut">It switches itself off when your trips for the day are over.</p><p><button class="btn ghost" data-stopdrive="1">Stop driving mode</button></p>${testBtns()}</div>` : '');
   // In the Android app, a native background helper keeps sending the position while Google Maps is on screen.
   const nativeLoc = () => (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform() && window.Capacitor.Plugins && window.Capacitor.Plugins.RideShareLocation) || null;
   async function startNativeShare(nat) {
@@ -489,6 +492,7 @@
       + '<label>My ride style</label>' + sel('ls-rchat', CHAT, x.r_chat)
       + chk('ls-rpets', x.r_pets, 'I travel with a pet')
       + '<div style="margin-top:12px"><button class="btn" id="ls-save-r">Save rider settings</button></div>')
+      + (isTest ? card('Admin and test tools (only you see this)', '<p><b>Test mode: ' + (testMode ? 'ON' : 'OFF') + '</b></p><p class="mut">While test mode is ON and driving mode is running (after Start my trip), a made-up rider asks for a seat on your trip about every 2 minutes, so you get alerts while you navigate.</p><p><button class="btn' + (testMode ? ' ghost' : '') + '" id="ts-mode">' + (testMode ? 'Turn test mode OFF' : 'Turn test mode ON') + '</button></p><hr style="border:0;border-top:1px solid var(--line);margin:12px 0"><p class="mut">Or send one test request by hand. Pick a delay if you want to start driving first.</p><label>Send it</label><select id="ts-delay" style="' + INPUT + '"><option value="0">Right now</option><option value="30" selected>In 30 seconds</option><option value="60">In 1 minute</option><option value="120">In 2 minutes</option></select><div style="margin-top:10px"><button class="btn" id="ts-send">Send a test request</button> <button class="btn ghost" id="ts-clear">Remove test requests</button></div>') : '')
       + card('Good to know', '<p class="mut">Driver and rider settings are separate, so you can be both at the same time. Other people only see your ride style (like "quiet ride") and whether you accept automatically. Nothing else in here is shared.</p>');
   }
   const saveSettings = () => {
@@ -516,7 +520,7 @@
   function render() {
     renderAuth();
     if (!user) { ['ld-top', 'lr-top'].forEach((id) => { $(id).innerHTML = ''; }); ['ld-form', 'ld-lists', 'lr-form', 'lr-lists', 'lu-main', 'lw-main', 'ls-main'].forEach((id) => { $(id).innerHTML = /form|main/.test(id) ? hint : ''; }); return; }
-    const sig = JSON.stringify([myTrip, myReq, me.points, pending, mySet]);
+    const sig = JSON.stringify([myTrip, myReq, me.points, pending, mySet, isTest, testMode]);
     const typing = document.activeElement && /^(lt|lr|lv|ls)-/.test(document.activeElement.id || '') && document.activeElement.tagName !== 'BUTTON' && !pending;
     if (!typing && sig !== formSig) { formSig = sig; $('ld-form').innerHTML = guard('trip form', driverForm); $('lr-form').innerHTML = guard('ride form', riderForm); $('lw-main').innerHTML = guard('points', walletMain); $('ls-main').innerHTML = guard('settings', settingsMain); }
     const busyIn = (id) => { const a = document.activeElement; return a && /SELECT|INPUT/.test(a.tagName) && a.closest && a.closest('#' + id); };
@@ -590,12 +594,17 @@
       loadAll();
     };
     on('ld-go', startNav);
-    each('[data-stopdrive]', () => { stopShare(true); toast('Driving mode is off'); render(); });
     on('ld-start', () => { if (window.__ldStops) window.RS_UI.startSim('ld', 'map-ld', window.__ldStops, 'You', 'driver'); });
     on('ld-stop', () => window.RS_UI.stopSim('ld'));
     on('lr-watch', () => { if (window.__lrStops) window.RS_UI.startSim('lr', 'map-lr', window.__lrStops, window.__lrDriver, 'rider', window.__lrMe); });
     on('lr-stop', () => window.RS_UI.stopSim('lr'));
     const each = (sel, fn) => document.querySelectorAll(['#v-ldriver', '#v-lrider', '#v-lupcoming'].map((r) => r + ' ' + sel).join(', ')).forEach((b) => (b.onclick = () => fn(b)));
+    const sendTest = (d) => run(sb.rpc('send_test_request', { p_delay: d }), d ? 'A test rider will ask for a seat in ' + d + ' seconds' : 'A test rider just asked for a seat');
+    each('[data-testsend]', (b) => sendTest(+b.dataset.testsend));
+    on('ts-send', () => sendTest(+$('ts-delay').value));
+    on('ts-mode', () => run(sb.rpc('set_test_mode', { p_on: !testMode }), testMode ? 'Test mode is off' : 'Test mode is on. Start my trip, then watch your phone.'));
+    on('ts-clear', () => run(sb.rpc('clear_test_requests'), 'Test requests removed'));
+    each('[data-stopdrive]', () => { stopShare(true); toast('Driving mode is off'); render(); });
     each('[data-startnav]', () => startNav());
     each('[data-scroll]', (b) => { const e = $(b.dataset.scroll); if (e) e.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
     document.querySelectorAll('#ln-o, #ln-d, #rn-p, #rn-d, #rn-pay').forEach((e) => { e.onchange = () => { nowSel[e.id] = e.value; }; });
