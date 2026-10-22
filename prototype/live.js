@@ -226,7 +226,7 @@
   const nearestArea = (lat, lng) => areas.map((a) => ({ a, km: RS.haversineKm({ lat, lng }, LOC[a]) })).sort((x, y) => x.km - y.km)[0];
   const minsLeft = (iso) => Math.max(0, Math.round((Date.parse(iso) - Date.now()) / 60000));
   function driverNow() {
-    const share = sharingCard();
+    const share = sharingCard() + driveCard();
     if (myLiveTrip) return share + card('Offer a ride now: ON', `<p><b>${esc(myLiveTrip.origin)}</b> to <b>${esc(myLiveTrip.dest)}</b></p><p class="mut">Leaving about ${RS.clock(myLiveTrip.depart_min)} &middot; riders can see you until you switch it off.</p><p><button class="btn ghost" data-stoplive="trip">Switch OFF</button></p>`);
     const o = nowSel['ln-o'] || (myTrip && myTrip.origin) || 'Surrey Central', d = nowSel['ln-d'] || (myTrip && myTrip.dest) || 'BCIT / Willingdon (Burnaby)';
     return share + card('Not on a schedule? Offer a ride now', `<p class="mut">For a spur-of-the-moment drive: no date or time. Switch it on and riders along your route can ask for a seat. It stays on until you switch it off (it turns itself off after 12 hours, just in case). If you already posted a trip, use <b>Start my trip</b> below instead.</p>
@@ -256,6 +256,9 @@
   let shareWatch = null, wake = null; const shareState = { last: 0, lastOk: 0, err: '', acc: null };
   const shouldShare = () => matches.some((x) => x.driver_id === user.id && x.status === 'accepted' && x.en_route_at);
   async function keepAwake(on) { try { if (on && 'wakeLock' in navigator) wake = await navigator.wakeLock.request('screen'); else if (wake) { await wake.release(); wake = null; } } catch (e) {} }
+  // Driving mode (Android app): the background helper stays on while you drive, sends your position during a ride, and alerts you when a rider asks for a seat.
+  let driveSession = false;
+  const driveCard = () => (user && driveSession && !shouldShare() ? `<div class="card"><h2>Driving mode is on</h2><p>You will get a phone alert if a rider asks for a seat. Open the alert to accept or decline.</p><p class="mut">It switches itself off when your trips for the day are over.</p><p><button class="btn ghost" data-stopdrive="1">Stop driving mode</button></p></div>` : '');
   // In the Android app, a native background helper keeps sending the position while Google Maps is on screen.
   const nativeLoc = () => (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform() && window.Capacitor.Plugins && window.Capacitor.Plugins.RideShareLocation) || null;
   async function startNativeShare(nat) {
@@ -277,8 +280,13 @@
         .then((r) => { if (r.error) { shareState.err = r.error.message; } else { shareState.lastOk = Date.now(); } paintSharing(); });
     }, (e) => { shareState.err = e && e.code === 1 ? 'Location is blocked, so riders cannot see you. Allow it in your browser settings.' : 'Could not get your location.'; paintSharing(); }, { enableHighAccuracy: true, maximumAge: 2000, timeout: 20000 });
   }
-  function stopShare(deleteRow) { const nat = nativeLoc(); if (nat) { try { nat.stop(); } catch (e) {} } if (shareWatch != null && shareWatch !== 'native' && shareWatch !== 'native-pending') { navigator.geolocation.clearWatch(shareWatch); } shareWatch = null; keepAwake(false); if (deleteRow) { try { sb.rpc('stop_sharing'); } catch (e) {} } }
-  function syncSharing() { if (!user) { stopShare(false); return; } if (shouldShare()) { if (shareWatch == null) startShare(); } else if (shareWatch != null) stopShare(true); }
+  function stopShare(deleteRow) { driveSession = false; const nat = nativeLoc(); if (nat) { try { nat.stop(); } catch (e) {} } if (shareWatch != null && shareWatch !== 'native' && shareWatch !== 'native-pending') { navigator.geolocation.clearWatch(shareWatch); } shareWatch = null; keepAwake(false); if (deleteRow) { try { sb.rpc('stop_sharing'); } catch (e) {} } }
+  function syncSharing() {
+    if (!user) { stopShare(false); return; }
+    const nat = nativeLoc();
+    if (driveSession && nat) { nat.status().then((r) => { if (!r.running && driveSession) { driveSession = false; if (shareWatch === 'native') shareWatch = null; render(); } }).catch(() => {}); }
+    if (shouldShare()) { if (shareWatch == null) startShare(); } else if (shareWatch != null && !(shareWatch === 'native-pending' || (driveSession && shareWatch === 'native'))) stopShare(true);
+  }
   const ago = (ms) => (ms ? Math.max(0, Math.round((Date.now() - ms) / 1000)) + ' s ago' : 'not yet');
   function sharingInner() { if (!shareState.err && nativeLoc()) return `<p>Riders on this ride can see you on their map, even while Google Maps is open.</p><p class="mut">Android shows a small "RideShare is sharing your location" notification while this is on. It stops by itself when the ride ends.</p>`; return shareState.err ? `<p class="warn">${esc(shareState.err)}</p>` : `<p>Riders on this ride can see you on their map. Last sent: ${ago(shareState.lastOk)}.</p><p class="mut">Keep this screen open. If you use Google Maps for directions, put RideShare and Google Maps side by side (split screen) so sharing keeps working.</p>`; }
   const sharingCard = () => (user && shouldShare() ? `<div class="card" id="share-card"><h2>Sharing your location</h2><div id="share-inner">${sharingInner()}</div></div>` : '');
@@ -577,11 +585,12 @@
       }
       // Android app: tell the riders, start background sharing, THEN hand over to Google Maps for voice directions.
       if (todo.length) { await Promise.all(todo.map((x) => sb.rpc('ride_step', { p_match: x.id, p_step: 'on_my_way' }))); toast('Your riders can see you are on the way'); }
-      if (todo.length || (window.__ldAcc || []).some((x) => x.en_route_at)) { shareWatch = 'native-pending'; const ok = await startNativeShare(nat); if (!ok) shareWatch = null; paintSharing(); }
+      shareWatch = 'native-pending'; const ok = await startNativeShare(nat); if (!ok) shareWatch = null; else driveSession = true; paintSharing();
       try { await nat.openUrl({ url }); } catch (e) { window.open(url, '_blank', 'noopener'); }
       loadAll();
     };
     on('ld-go', startNav);
+    each('[data-stopdrive]', () => { stopShare(true); toast('Driving mode is off'); render(); });
     on('ld-start', () => { if (window.__ldStops) window.RS_UI.startSim('ld', 'map-ld', window.__ldStops, 'You', 'driver'); });
     on('ld-stop', () => window.RS_UI.stopSim('ld'));
     on('lr-watch', () => { if (window.__lrStops) window.RS_UI.startSim('lr', 'map-lr', window.__lrStops, window.__lrDriver, 'rider', window.__lrMe); });

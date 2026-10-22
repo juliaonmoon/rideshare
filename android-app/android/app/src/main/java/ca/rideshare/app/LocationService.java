@@ -23,6 +23,7 @@ import com.google.android.gms.location.LocationResult;
 import com.google.android.gms.location.LocationServices;
 import com.google.android.gms.location.Priority;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
@@ -32,17 +33,22 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * Keeps reading the phone's GPS while RideShare is not on screen (for example while Google Maps is giving voice
- * directions) and sends each position to the RideShare database with a short-lived tracking token.
+ * Keeps running while RideShare is not on screen (for example while Google Maps is giving voice directions):
+ * it sends the driver's position to the RideShare database (only while a ride is in progress) and shows a phone
+ * notification when a rider asks for a seat. Both use a short-lived tracking token.
  * Android requires the permanent notification below for any app that reads location in the background.
- * The service stops by itself when the server says the ride is over.
+ * The service stops by itself when the token expires or the driver has nothing on for today.
  */
 public class LocationService extends Service {
     static final String CHANNEL = "rideshare_tracking";
+    static final String ALERT_CHANNEL = "rideshare_requests";
+    private static final long POLL_MS = 15000;
     static volatile boolean running = false;
     static volatile long lastOk = 0;
     static volatile String lastError = "";
@@ -52,6 +58,17 @@ public class LocationService extends Service {
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private final Handler main = new Handler(Looper.getMainLooper());
     private String url = "", key = "", token = "";
+    private volatile boolean ride = false;        // a ride is in progress, so positions are sent
+    private boolean firstPoll = true;             // requests already waiting when we start are not announced
+    private int inactive = 0;
+    private final Set<String> notified = new HashSet<>();
+    private boolean polling = false;
+    private final Runnable poller = new Runnable() {
+        @Override public void run() {
+            if (!io.isShutdown()) io.execute(LocationService.this::pollAlerts);
+            main.postDelayed(this, POLL_MS);
+        }
+    };
 
     @Override
     public IBinder onBind(Intent intent) {
@@ -76,8 +93,8 @@ public class LocationService extends Service {
         Intent open = new Intent(this, MainActivity.class).setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_NEW_TASK);
         PendingIntent pi = PendingIntent.getActivity(this, 0, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
         Notification n = new NotificationCompat.Builder(this, CHANNEL)
-                .setContentTitle("RideShare is sharing your location")
-                .setContentText("Riders on your trip can see where you are. Tap to open RideShare.")
+                .setContentTitle("RideShare is on while you drive")
+                .setContentText("Riders on a ride with you can see where you are, and you get an alert if someone asks for a seat.")
                 .setSmallIcon(android.R.drawable.ic_menu_mylocation)
                 .setOngoing(true)
                 .setContentIntent(pi)
@@ -89,6 +106,7 @@ public class LocationService extends Service {
             startForeground(1, n);
         }
         startUpdates();
+        if (!polling) { polling = true; main.post(poller); }
         running = true;
         return START_STICKY;
     }
@@ -114,6 +132,7 @@ public class LocationService extends Service {
     }
 
     private void post(Location loc) {
+        if (!ride) return;   // no ride in progress: nothing is sent
         HttpURLConnection c = null;
         try {
             JSONObject body = new JSONObject();
@@ -149,8 +168,9 @@ public class LocationService extends Service {
                     }
                 }
                 lastError = "HTTP " + code + " " + msg;
-                // The ride is over (or the token expired): stop sharing by ourselves.
-                if (msg.contains("No ride in progress") || msg.contains("Invalid or expired")) {
+                if (msg.contains("No ride in progress")) { ride = false; lastError = ""; }
+                // The token expired or was revoked: switch off by ourselves.
+                if (msg.contains("Invalid or expired")) {
                     main.post(this::stopSelf);
                 }
             }
@@ -161,7 +181,82 @@ public class LocationService extends Service {
         }
     }
 
+    /** Asks the server about this driver: ride in progress? still on duty? any new seat requests? */
+    private void pollAlerts() {
+        HttpURLConnection c = null;
+        try {
+            c = (HttpURLConnection) new URL(url + "/rest/v1/rpc/driver_alerts_token").openConnection();
+            c.setRequestMethod("POST");
+            c.setConnectTimeout(8000);
+            c.setReadTimeout(8000);
+            c.setDoOutput(true);
+            c.setRequestProperty("Content-Type", "application/json");
+            c.setRequestProperty("apikey", key);
+            try (OutputStream os = c.getOutputStream()) {
+                os.write(new JSONObject().put("p_token", token).toString().getBytes(StandardCharsets.UTF_8));
+            }
+            int code = c.getResponseCode();
+            InputStream is = code >= 200 && code < 300 ? c.getInputStream() : c.getErrorStream();
+            StringBuilder sb = new StringBuilder();
+            if (is != null) {
+                try (BufferedReader br = new BufferedReader(new InputStreamReader(is))) {
+                    String line;
+                    while ((line = br.readLine()) != null && sb.length() < 8000) sb.append(line);
+                }
+            }
+            String body = sb.toString();
+            if (code < 200 || code >= 300) {
+                if (body.contains("Invalid or expired")) main.post(this::stopSelf);
+                else if (code == 404) ride = true;   // older database without alerts: send positions the old way (the server refuses them when there is no ride)
+                return;   // no network or an error: try again next time
+            }
+            JSONObject o = new JSONObject(body);
+            ride = o.optBoolean("ride", false);
+            if (o.optBoolean("active", false)) inactive = 0;
+            else if (++inactive >= 4) { main.post(this::stopSelf); return; }   // nothing on today: about a minute of quiet, then off
+            JSONArray pend = o.optJSONArray("pending");
+            if (pend != null) {
+                for (int i = 0; i < pend.length(); i++) {
+                    JSONObject p = pend.getJSONObject(i);
+                    String id = p.optString("id");
+                    if (id.isEmpty() || !notified.add(id)) continue;
+                    if (!firstPoll) announce(id, p.optString("name", "A rider"), p.optString("pickup"), p.optString("dropoff"));
+                }
+            }
+            firstPoll = false;
+        } catch (Exception e) {
+            // no network right now: try again next time
+        } finally {
+            if (c != null) c.disconnect();
+        }
+    }
+
+    private void announce(String id, String name, String pickup, String dropoff) {
+        Intent open = new Intent(this, MainActivity.class).setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_NEW_TASK);
+        PendingIntent pi = PendingIntent.getActivity(this, 1, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+        Notification n = new NotificationCompat.Builder(this, ALERT_CHANNEL)
+                .setContentTitle(name + " asked for a seat")
+                .setContentText(pickup + " to " + dropoff + ". Tap to open RideShare and accept or decline.")
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setDefaults(Notification.DEFAULT_ALL)
+                .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+                .setAutoCancel(true)
+                .setContentIntent(pi)
+                .build();
+        try {
+            getSystemService(NotificationManager.class).notify(1000 + (id.hashCode() & 0xffff), n);
+        } catch (Exception e) {
+            // notifications are blocked: the alert is lost, the request is still waiting in the app
+        }
+    }
+
     private void createChannel() {
+        if (Build.VERSION.SDK_INT >= 26) {
+            NotificationChannel al = new NotificationChannel(ALERT_CHANNEL, "Seat requests", NotificationManager.IMPORTANCE_HIGH);
+            al.setDescription("An alert when a rider asks for a seat while you are driving");
+            getSystemService(NotificationManager.class).createNotificationChannel(al);
+        }
         if (Build.VERSION.SDK_INT >= 26) {
             NotificationChannel ch = new NotificationChannel(CHANNEL, "Location sharing", NotificationManager.IMPORTANCE_LOW);
             ch.setDescription("Shown while RideShare shares your location during a trip");
@@ -172,6 +267,8 @@ public class LocationService extends Service {
     @Override
     public void onDestroy() {
         running = false;
+        main.removeCallbacks(poller);
+        polling = false;
         if (client != null && callback != null) client.removeLocationUpdates(callback);
         callback = null;
         io.shutdown();
