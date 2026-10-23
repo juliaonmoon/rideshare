@@ -9,6 +9,7 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.ServiceInfo;
 import android.location.Location;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
@@ -49,6 +50,8 @@ public class LocationService extends Service {
     static final String CHANNEL = "rideshare_tracking";
     static final String ALERT_CHANNEL = "rideshare_requests";
     private static final long POLL_MS = 15000;
+    static final String ACTION_ACCEPT = "ca.rideshare.app.ACCEPT";
+    static final String ACTION_DECLINE = "ca.rideshare.app.DECLINE";
     static volatile boolean running = false;
     static volatile long lastOk = 0;
     static volatile String lastError = "";
@@ -108,6 +111,7 @@ public class LocationService extends Service {
         startUpdates();
         if (!polling) { polling = true; main.post(poller); }
         running = true;
+        if (intent != null && intent.getAction() != null) handleAnswer(intent);   // Accept / Decline pressed on a seat-request alert
         return START_STICKY;
     }
 
@@ -231,7 +235,13 @@ public class LocationService extends Service {
         }
     }
 
+    private PendingIntent answerIntent(String action, String id, String name, int nid) {
+        Intent i = new Intent(this, LocationService.class).setAction(action).putExtra("match", id).putExtra("name", name).putExtra("nid", nid);
+        return PendingIntent.getService(this, nid * 2 + (ACTION_ACCEPT.equals(action) ? 1 : 2), i, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+    }
+
     private void announce(String id, String name, String pickup, String dropoff) {
+        final int nid = 1000 + (id.hashCode() & 0xffff);
         Intent open = new Intent(this, MainActivity.class).setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_NEW_TASK);
         PendingIntent pi = PendingIntent.getActivity(this, 1, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
         Notification n = new NotificationCompat.Builder(this, ALERT_CHANNEL)
@@ -243,12 +253,88 @@ public class LocationService extends Service {
                 .setCategory(NotificationCompat.CATEGORY_MESSAGE)
                 .setAutoCancel(true)
                 .setContentIntent(pi)
+                .addAction(0, "Accept", answerIntent(ACTION_ACCEPT, id, name, nid))
+                .addAction(0, "Decline", answerIntent(ACTION_DECLINE, id, name, nid))
                 .build();
         try {
-            getSystemService(NotificationManager.class).notify(1000 + (id.hashCode() & 0xffff), n);
+            getSystemService(NotificationManager.class).notify(nid, n);
         } catch (Exception e) {
             // notifications are blocked: the alert is lost, the request is still waiting in the app
         }
+    }
+
+    private void handleAnswer(Intent intent) {
+        final boolean accept = ACTION_ACCEPT.equals(intent.getAction());
+        final String id = intent.getStringExtra("match");
+        final String name = intent.getStringExtra("name") == null ? "The rider" : intent.getStringExtra("name");
+        final int nid = intent.getIntExtra("nid", 0);
+        if (id == null || io.isShutdown()) return;
+        io.execute(() -> answer(id, name, accept, nid));
+    }
+
+    /** Accepts or declines a request with the same rules as the app. */
+    private void answer(String id, String name, boolean accept, int nid) {
+        HttpURLConnection c = null;
+        NotificationManager nm = getSystemService(NotificationManager.class);
+        try {
+            c = (HttpURLConnection) new URL(url + "/rest/v1/rpc/respond_match_token").openConnection();
+            c.setRequestMethod("POST");
+            c.setConnectTimeout(8000);
+            c.setReadTimeout(8000);
+            c.setDoOutput(true);
+            c.setRequestProperty("Content-Type", "application/json");
+            c.setRequestProperty("apikey", key);
+            try (OutputStream os = c.getOutputStream()) {
+                os.write(new JSONObject().put("p_token", token).put("p_match", id).put("p_accept", accept).toString().getBytes(StandardCharsets.UTF_8));
+            }
+            int code = c.getResponseCode();
+            InputStream is = code >= 200 && code < 300 ? c.getInputStream() : c.getErrorStream();
+            StringBuilder sb = new StringBuilder();
+            if (is != null) {
+                try (BufferedReader br = new BufferedReader(new InputStreamReader(is))) {
+                    String line;
+                    while ((line = br.readLine()) != null && sb.length() < 4000) sb.append(line);
+                }
+            }
+            if (code >= 200 && code < 300) {
+                nm.cancel(nid);
+                if (accept) routeAlert(name);
+            } else {
+                String msg = "Please open RideShare and try there.";
+                try { msg = new JSONObject(sb.toString()).optString("message", msg); } catch (Exception ignore) { }
+                nm.cancel(nid);
+                post2("Could not answer " + name, msg, 2000 + (nid & 0xfff));
+            }
+        } catch (Exception e) {
+            post2("Could not answer " + name, "No connection. Open RideShare to answer.", 2000 + (nid & 0xfff));
+        } finally {
+            if (c != null) c.disconnect();
+        }
+    }
+
+    /** After an accept: one tap re-opens Google Maps with the new stop (RideShare keeps counting the drive time and distance). */
+    private void routeAlert(String name) {
+        Intent link = new Intent(Intent.ACTION_VIEW, Uri.parse("ca.rideshare.app://update-route"))
+                .setClass(this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        PendingIntent pi = PendingIntent.getActivity(this, 7, link, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+        Notification n = new NotificationCompat.Builder(this, ALERT_CHANNEL)
+                .setContentTitle(name + " is added to your trip")
+                .setContentText("Tap to update your route in Google Maps. Your drive time and distance keep counting.")
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setDefaults(Notification.DEFAULT_ALL)
+                .setAutoCancel(true)
+                .setContentIntent(pi)
+                .addAction(0, "Update route", pi)
+                .build();
+        try { getSystemService(NotificationManager.class).notify(3000, n); } catch (Exception ignore) { }
+    }
+
+    private void post2(String title, String text, int id) {
+        Notification n = new NotificationCompat.Builder(this, ALERT_CHANNEL)
+                .setContentTitle(title).setContentText(text).setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setPriority(NotificationCompat.PRIORITY_HIGH).setAutoCancel(true).build();
+        try { getSystemService(NotificationManager.class).notify(id, n); } catch (Exception ignore) { }
     }
 
     private void createChannel() {
