@@ -44,6 +44,7 @@
   const nativePlug = (n) => (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform() && window.Capacitor.Plugins && window.Capacitor.Plugins[n]) || null;
   if (nativePlug('App')) {
     nativePlug('App').addListener('appUrlOpen', async (ev) => {
+      if (ev && ev.url && ev.url.indexOf('ca.rideshare.app://update-route') === 0) { await loadAll(); setTimeout(() => { if (window.__startNav) window.__startNav(); }, 600); return; }
       if (!ev || !ev.url || ev.url.indexOf(APP_AUTH) !== 0) return;
       try { if (nativePlug('Browser')) await nativePlug('Browser').close(); } catch (e) { /* tab already closed */ }
       const p = new URLSearchParams(ev.url.split('#')[1] || ev.url.split('?')[1] || '');
@@ -56,7 +57,7 @@
   }
   let user = null, me = { name: '', points: 0 }, myTrip = null, myReq = null, ledger = [], matches = [];
   let otherTrips = [], otherReqs = [], extraTrips = [], extraReqs = [], names = {}, timer = null, busy = false, formSig = '', mapSig = {};
-  let pending = null, viewD = null, viewR = null, askCancel = null, rel = {}, mySet = null, styles = {}, isTest = false, testMode = false;
+  let pending = null, viewD = null, viewR = null, askCancel = null, rel = {}, mySet = null, styles = {}, isTest = false, testMode = false, drives = [];
   // Personal settings: defaults for new trips and requests (every trip can still be changed before posting).
   const SD = { d_detour: 10, d_total_detour: 15, d_wait: 5, d_accepts: 'either', d_seats: 1, d_auto_accept: false, d_chat: 'some', d_pets: true, r_pays: 'points', r_chat: 'some', r_pets: false };
   const S_ = () => Object.assign({}, SD, mySet || {});
@@ -153,6 +154,7 @@
       const n = await sb.from('profiles').select('id,display_name').in('id', [...ids]);
       (n.data || []).forEach((x) => { names[x.id] = x.display_name; });
       try { const ta = await sb.from('test_accounts').select('user_id,test_mode').eq('user_id', uid).maybeSingle(); isTest = !!ta.data; testMode = !!(ta.data && ta.data.test_mode); } catch (e) { isTest = false; testMode = false; }
+      try { const ds = await sb.from('drive_sessions').select('*').order('started_at', { ascending: false }).limit(5); drives = ds.data || []; } catch (e) { drives = []; }
       try { const st = await sb.from('user_settings').select('*').eq('user_id', uid).maybeSingle(); mySet = st.data || null; const sr = await sb.rpc('ride_styles', { p_ids: [...ids] }); styles = {}; (sr.data || []).forEach((x) => { styles[x.user_id] = x; }); } catch (e) { /* older database without settings: ignore */ }
       const rl = await sb.from('reliability').select('*'); rel = {}; (rl.data || []).forEach((x) => { rel[x.user_id] = x; });
       const pp = await sb.from('driver_positions').select('*'); positions = {}; (pp.data || []).forEach((x) => { positions[x.driver_id] = x; });
@@ -259,6 +261,20 @@
   async function keepAwake(on) { try { if (on && 'wakeLock' in navigator) wake = await navigator.wakeLock.request('screen'); else if (wake) { await wake.release(); wake = null; } } catch (e) {} }
   // Driving mode (Android app): the background helper stays on while you drive, sends your position during a ride, and alerts you when a rider asks for a seat.
   let driveSession = false;
+  // The story of each drive: time and distance, kept by RideShare itself (so restarting Google Maps to add a stop loses nothing).
+  const fmtMin = (m) => { m = Math.max(0, Math.round(m)); return m >= 60 ? Math.floor(m / 60) + ' h ' + (m % 60) + ' min' : m + ' min'; };
+  const driveLogCard = () => {
+    if (!user || !drives.length) return '';
+    const rows = drives.slice(0, 3).map((d) => {
+      const start = Date.parse(d.started_at), end = Date.parse(d.ended_at || d.last_at), live = !d.ended_at && Date.now() - Date.parse(d.last_at) < 30 * 60000;
+      const riders = matches.filter((x) => x.driver_id === user.id && x.picked_up_at && Date.parse(x.picked_up_at) >= start - 60000 && Date.parse(x.picked_up_at) <= end + 300000).length;
+      const t = d.trip_id && tripBy(d.trip_id); let plan = '';
+      if (t && LOC[t.origin] && LOC[t.dest]) plan = ' &middot; without stops about ' + fmtMin(RS.minutes(LOC[t.origin], LOC[t.dest], t.depart_min, dowOf(d.ride_date)));
+      return '<div style="padding:6px 0;border-top:1px solid var(--line)"><b>' + (live ? 'Drive in progress' : esc(RSD.label(d.ride_date))) + '</b> ' + fmtMin((end - start) / 60000) + ' &middot; ' + (+d.distance_km).toFixed(1) + ' km' + (riders ? ' &middot; ' + riders + ' rider' + (riders > 1 ? 's' : '') : '') + plan + '</div>';
+    }).join('');
+    return card('Your drives', rows + '<p class="mut">Time includes pickups and waiting. Distance is counted while your phone shares its location during a ride.</p>');
+  };
+  const rideStats = (m) => (m.picked_up_at && m.dropped_off_at ? '<p>Your ride: ' + fmtMin((Date.parse(m.dropped_off_at) - Date.parse(m.picked_up_at)) / 60000) + (+m.ride_km > 0 ? ' &middot; ' + (+m.ride_km).toFixed(1) + ' km' : '') + '</p>' : '');
   // Test tools (only for accounts listed in test_accounts): a made-up rider asks for a seat on my latest trip, now or after a delay.
   const testBtns = () => (isTest ? '<p class="mut">Test tools (only you see this)' + (testMode ? ': <b>Test mode is ON</b>, a made-up rider will ask for a seat about every 2 minutes.' : ':') + '</p><p><button class="btn ghost" data-testsend="30">Test request in 30 s</button> <button class="btn ghost" data-testsend="0">Test request now</button></p>' : '');
   const driveCard = () => (user && driveSession && !shouldShare() ? `<div class="card"><h2>Driving mode is on</h2><p>You will get a phone alert if a rider asks for a seat. Open the alert to accept or decline.</p><p class="mut">It switches itself off when your trips for the day are over.</p><p><button class="btn ghost" data-stopdrive="1">Stop driving mode</button></p>${testBtns()}</div>` : '');
@@ -418,7 +434,7 @@
       const stg = stageOf(accepted), dn = nm(accTrip.user_id);
       const live = { accepted: `${dn} accepted. They will tap <b>On my way</b> when they set off.`, on_my_way: `<b>${dn} is on the way.</b>`, arrived: `<b>${dn} has arrived.</b> Look for them at the pickup spot.`, picked_up: `<b>Ride in progress</b> with ${dn}.`, dropped_off: `<b>You have arrived.</b> Thanks for sharing the ride!` }[stg];
       const inCar = stg === 'picked_up' ? (accepted.rider_confirmed_at ? '<span class="tag">You confirmed you are in the car</span>' : `<button class="btn" data-incar="${accepted.id}">I'm in the car</button>`) : '';
-      html += card('Your ride', `<p>${live}</p>${trackInfo(accepted, accTrip, meO)}<p class="mut">${esc(RSD.label(viewR))} &middot; ${accepted.pay_with === 'points' ? accepted.points + ' pts' + (stg === 'dropped_off' ? ' paid' : ' held until drop-off') : 'cash gas-share (settle with your driver)'}</p>${inCar}<p style="margin-top:8px"><button class="btn ghost" id="lr-watch">Preview route</button> <button class="btn ghost" id="lr-stop">Stop</button></p>${stg === 'accepted' || stg === 'on_my_way' ? '<p class="mut">To cancel, open the Upcoming tab.</p>' : ''}`);
+      html += card('Your ride', `<p>${live}</p>${trackInfo(accepted, accTrip, meO)}${rideStats(accepted)}<p class="mut">${esc(RSD.label(viewR))} &middot; ${accepted.pay_with === 'points' ? accepted.points + ' pts' + (stg === 'dropped_off' ? ' paid' : ' held until drop-off') : 'cash gas-share (settle with your driver)'}</p>${inCar}<p style="margin-top:8px"><button class="btn ghost" id="lr-watch">Preview route</button> <button class="btn ghost" id="lr-stop">Stop</button></p>${stg === 'accepted' || stg === 'on_my_way' ? '<p class="mut">To cancel, open the Upcoming tab.</p>' : ''}`);
     }
     let list = '';
     otherTrips.filter((t) => known(t) && tripOn(t, viewR)).forEach((t) => {
@@ -524,7 +540,7 @@
     const typing = document.activeElement && /^(lt|lr|lv|ls)-/.test(document.activeElement.id || '') && document.activeElement.tagName !== 'BUTTON' && !pending;
     if (!typing && sig !== formSig) { formSig = sig; $('ld-form').innerHTML = guard('trip form', driverForm); $('lr-form').innerHTML = guard('ride form', riderForm); $('lw-main').innerHTML = guard('points', walletMain); $('ls-main').innerHTML = guard('settings', settingsMain); }
     const busyIn = (id) => { const a = document.activeElement; return a && /SELECT|INPUT/.test(a.tagName) && a.closest && a.closest('#' + id); };
-    if (!busyIn('ld-top')) $('ld-top').innerHTML = guard('leave now', driverNow) + guard('driver summary', driverTop);
+    if (!busyIn('ld-top')) $('ld-top').innerHTML = guard('leave now', driverNow) + guard('driver summary', driverTop) + guard('drive log', driveLogCard);
     if (!busyIn('lr-top')) $('lr-top').innerHTML = guard('ride now', riderNow) + guard('rider summary', riderTop);
     $('ld-lists').innerHTML = guard('riders list', driverLists);
     $('lr-lists').innerHTML = guard('drivers list', riderLists);
@@ -594,6 +610,7 @@
       loadAll();
     };
     on('ld-go', startNav);
+    window.__startNav = startNav;
     on('ld-start', () => { if (window.__ldStops) window.RS_UI.startSim('ld', 'map-ld', window.__ldStops, 'You', 'driver'); });
     on('ld-stop', () => window.RS_UI.stopSim('ld'));
     on('lr-watch', () => { if (window.__lrStops) window.RS_UI.startSim('lr', 'map-lr', window.__lrStops, window.__lrDriver, 'rider', window.__lrMe); });
