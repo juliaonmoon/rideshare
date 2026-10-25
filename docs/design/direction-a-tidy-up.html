@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RideShare Direction A - Tidy up (design mockup)</title>
+<style>
+:root{color-scheme:light dark;--page:#e9eeeb;--bg:#f4f7f5;--card:#fff;--ink:#14231d;--mute:#4d5d55;--line:#d3ded8;--brand:#0b7a5b;--accent:#0b7a5b;--soft:#e1f2ea;--warn:#fff0c7;--warnink:#6b4a00;--danger:#b3261e;--mapbg:#dcece4;--maproad:#fff}
+@media (prefers-color-scheme:dark){:root{--page:#060b09;--bg:#0e1714;--card:#17231f;--ink:#e8f1ed;--mute:#a3b6ad;--line:#2b3b35;--accent:#4fd1a5;--soft:#12312a;--warn:#3a2f10;--warnink:#f3d98b;--danger:#ff9a90;--mapbg:#1b2a25;--maproad:#2c3d37}}
+*{box-sizing:border-box}
+body{margin:0;font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--page);color:var(--ink)}
+.ribbon{background:var(--warn);color:var(--warnink);text-align:center;padding:8px 12px;font-size:14px;font-weight:600}
+.pick{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;padding:10px;max-width:800px;margin:0 auto}
+.pick button{min-height:44px;padding:0 12px;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:22px;font:inherit;font-size:14px;cursor:pointer}
+.pick button[aria-pressed=true]{background:var(--brand);color:#fff;border-color:var(--brand)}
+.phone{width:390px;max-width:100%;height:800px;margin:6px auto 30px;background:var(--bg);border-radius:30px;border:8px solid #111;overflow:hidden;display:flex;flex-direction:column}
+.appbar{background:var(--brand);color:#fff;display:flex;align-items:center;gap:10px;padding:10px 14px;font-weight:700}
+.logo{width:34px;height:34px;border-radius:9px;background:rgba(255,255,255,.2);display:grid;place-items:center}
+.appbar .chip{margin-left:auto;background:#fff;color:#14231d}
+.tabs{display:flex;background:var(--card);border-bottom:1px solid var(--line)}
+.tabs button{flex:1;min-height:56px;border:0;border-bottom:3px solid transparent;background:none;color:var(--mute);font:inherit;font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;cursor:pointer;padding:0}
+.tabs button[aria-current=page]{color:var(--accent);border-bottom-color:var(--accent)}
+.phone[data-bare="1"] .chrome{display:none}
+.i{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.screen{display:none;flex:1;min-height:0;overflow:auto;padding:14px;flex-direction:column;gap:12px}
+.screen.on{display:flex}.screen>*{flex:none}
+.next{background:var(--soft);border-left:5px solid var(--brand);border-radius:12px;padding:10px 14px;font-weight:600}
+.next b{display:block;font-size:12px;letter-spacing:.07em;text-transform:uppercase;color:var(--accent)}
+.next.on{background:var(--brand);color:#fff}.next.on b{color:#d5f5e9}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px}
+.card.dash{border-style:dashed}
+h2{font-size:19px;margin:0 0 4px}h3{font-size:16px;margin:0}p{margin:4px 0}.m{color:var(--mute)}.small{font-size:14px}
+.btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;min-height:50px;border-radius:14px;border:2px solid var(--brand);background:var(--brand);color:#fff;font:inherit;font-weight:700;cursor:pointer;margin-top:10px;padding:0 14px}
+.btn.ghost{background:transparent;color:var(--accent)}
+.btn.danger{background:transparent;color:var(--danger);border-color:var(--danger)}
+.btn.half{width:calc(50% - 6px)}
+.two{display:flex;gap:12px}
+.row{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.sw{display:grid;place-items:center;min-width:56px;min-height:44px}
+.sw input{appearance:none;-webkit-appearance:none;width:52px;height:30px;border-radius:15px;background:transparent;border:2px solid var(--mute);position:relative;margin:0;cursor:pointer}
+.sw input::after{content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:var(--mute);transition:left .15s}
+.sw input:checked{background:var(--brand);border-color:var(--brand)}.sw input:checked::after{left:25px;background:#fff}
+.sw input:focus-visible,button:focus-visible{outline:3px solid #f2a900;outline-offset:2px}
+.chip{display:inline-block;padding:3px 10px;border-radius:999px;background:var(--soft);color:var(--accent);font-size:13px;font-weight:700}
+.chip.warn{background:var(--warn);color:var(--warnink)}
+.tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.av{width:44px;height:44px;border-radius:50%;background:var(--brand);color:#fff;display:grid;place-items:center;font-weight:700;flex:none}
+.map{position:relative;border-radius:14px;overflow:hidden;border:1px solid var(--line)}
+.map svg{display:block;width:100%;height:auto}
+.map .lbl{position:absolute;left:8px;top:8px;background:var(--card);color:var(--mute);font-size:12px;padding:2px 8px;border-radius:8px}
+.map .eta{position:absolute;right:8px;bottom:8px;background:var(--brand);color:#fff;font-weight:700;padding:6px 10px;border-radius:10px}
+.steps{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.steps li{display:flex;gap:10px;align-items:center;color:var(--mute)}
+.steps li::before{content:"";width:22px;height:22px;border-radius:50%;border:2px solid var(--line);flex:none}
+.steps li.done{color:var(--ink)}.steps li.done::before{content:"\2713";background:var(--brand);border-color:var(--brand);color:#fff;font-size:13px;display:grid;place-items:center}
+.steps li.now{color:var(--ink);font-weight:700}.steps li.now::before{border:6px solid var(--brand)}
+.safety{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.safety button{min-height:64px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--ink);font:inherit;font-size:13px;font-weight:600;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;cursor:pointer}
+.safety .sos{background:var(--danger);border-color:var(--danger);color:#fff}
+@media (prefers-color-scheme:dark){.safety .sos{color:#2a0805}}
+.pin{font-size:26px;letter-spacing:.2em;font-weight:800;color:var(--accent)}
+.field{display:grid;gap:4px;margin-top:10px}.field label,.lab{font-size:14px;font-weight:600}
+.field input,.field select{min-height:46px;border:1px solid var(--mute);border-radius:10px;padding:0 10px;background:var(--bg);color:var(--ink);font:inherit}
+.days{display:flex;gap:6px;margin-top:4px}
+.days button{flex:1;min-height:44px;border-radius:10px;border:1px solid var(--mute);background:var(--card);color:var(--ink);font:inherit;font-weight:700;cursor:pointer;padding:0}
+.days button[aria-pressed=true]{background:var(--brand);color:#fff;border-color:var(--brand)}
+.list{display:grid;gap:0}.list .row{padding:10px 0;border-top:1px solid var(--line)}.list .row:first-child{border-top:0}
+.big{font-size:34px;font-weight:800;line-height:1.1}
+.lock{background:linear-gradient(#1f4a3b,#0a110e);margin:-14px;padding:44px 14px 14px;flex:1;display:flex;flex-direction:column;gap:12px;color:#fff;min-height:100%}
+.lock .t{text-align:center;font-size:56px;font-weight:300}.lock .d{text-align:center;margin-bottom:12px}
+.notif{background:var(--card);color:var(--ink);border-radius:18px;padding:12px 14px}
+.notif .h{font-size:13px;color:var(--mute);display:flex;justify-content:space-between}
+.notif .two{margin-top:8px}.notif .btn{margin-top:0;min-height:46px}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+<symbol id="i-car" viewBox="0 0 24 24"><path d="M4 16v-4l2-5h12l2 5v4zM4 16v3M20 16v3M4 12h16"/><circle cx="8" cy="14" r=".6"/><circle cx="16" cy="14" r=".6"/></symbol>
+<symbol id="i-person" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></symbol>
+<symbol id="i-cal" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></symbol>
+<symbol id="i-coin" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v10M9.5 9.5h4a1.5 1.5 0 010 3h-3a1.5 1.5 0 000 3h4.5"/></symbol>
+<symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></symbol>
+<symbol id="i-share" viewBox="0 0 24 24"><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M8.2 11l7.6-4M8.2 13l7.6 4"/></symbol>
+<symbol id="i-flag" viewBox="0 0 24 24"><path d="M6 21V4M6 5h11l-2 4 2 4H6"/></symbol>
+<symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-5"/></symbol>
+<symbol id="map" viewBox="0 0 360 200"><rect width="360" height="200" style="fill:var(--mapbg)"/><path d="M0 150L360 120M0 60L360 90M90 0L120 200M240 0L220 200" style="stroke:var(--maproad);stroke-width:10;fill:none"/><path d="M40 170C100 130 120 120 160 100S250 70 320 30" style="stroke:#0b7a5b;stroke-width:5;fill:none;stroke-linecap:round"/><circle cx="40" cy="170" r="9" style="fill:#0b7a5b"/><circle cx="320" cy="30" r="9" style="fill:#14231d"/><circle cx="160" cy="100" r="8" style="fill:#fff;stroke:#0b7a5b;stroke-width:4"/><circle cx="110" cy="124" r="10" style="fill:#2563eb;stroke:#fff;stroke-width:3"/></symbol>
+</svg>
+
+<div class="ribbon">DESIGN MOCKUP, not the real app. Direction A: Tidy up. All names and numbers are made up.</div>
+<nav class="pick" aria-label="Pick a screen">
+<button data-go="s1">1 Driver: no trip</button><button data-go="s2">2 Driver: trip posted</button><button data-go="s3">3 Driving mode</button><button data-go="s4">4 Rider home</button><button data-go="s5">5 Ride in progress</button><button data-go="s6">6 Phone alerts</button><button data-go="s7">7 Settings</button><button data-go="s8">8 Your drives</button><button data-go="s9">9 Post a trip</button><button data-go="s10">10 Points</button>
+</nav>
+
+<main class="phone" id="phone">
+<div class="chrome">
+<div class="appbar"><span class="logo"><svg class="i" style="color:#fff"><use href="#i-car"/></svg></span>RideShare<span class="chip">Mockup</span></div>
+<div class="tabs" role="tablist">
+<button data-go="s1" data-tab="drive"><svg class="i"><use href="#i-car"/></svg>Driving</button>
+<button data-go="s4" data-tab="ride"><svg class="i"><use href="#i-person"/></svg>Riding</button>
+<button data-go="s8" data-tab="up"><svg class="i"><use href="#i-cal"/></svg>Upcoming</button>
+<button data-go="s10" data-tab="pts"><svg class="i"><use href="#i-coin"/></svg>Points</button>
+<button data-go="s7" data-tab="set"><svg class="i"><use href="#i-gear"/></svg>Settings</button>
+</div>
+</div>
+
+<section class="screen on" id="s1" data-tab="drive">
+<div class="next"><b>Next step</b>Post your trip so riders can find you.</div>
+<div class="card"><h2>No trip yet</h2><p class="m">Tell us when you drive. Riders on your way can ask for a seat.</p><button class="btn" data-go="s9">Post a trip</button></div>
+<div class="card"><div class="row"><div><h3>Offer a ride now</h3><p class="m small">No set time. Stays on until you turn it off.</p></div><label class="sw"><input type="checkbox" role="switch" aria-label="Offer a ride now"></label></div></div>
+<p class="m small">Points are worth about 10 cents each. You never make a profit. Points only share the gas.</p>
+</section>
+
+<section class="screen" id="s2" data-tab="drive">
+<div class="next"><b>Next step</b>Press Start my trip at 7:15 am.</div>
+<div class="card"><span class="chip">Today</span><h2 style="margin-top:6px">Whalley (Surrey) to SFU (Burnaby)</h2><p class="m">Leave 7:30 am. Mon to Fri. 3 seats.</p><p class="small"><b>1 request waiting.</b> You can answer once you start.</p><button class="btn" data-go="s3">Start my trip</button><p class="m small" style="text-align:center">Turns on Driving mode. Google Maps gives voice directions.</p><button class="btn ghost" data-go="s9">Edit trip</button></div>
+<div class="card"><div class="row"><div><h3>Offer a ride now</h3><p class="m small">A switch, not a trip. For when you leave without a plan.</p></div><label class="sw"><input type="checkbox" role="switch" aria-label="Offer a ride now"></label></div></div>
+</section>
+
+<section class="screen" id="s3" data-tab="drive">
+<div class="next on"><b>Driving mode is on</b>The helper keeps running while Google Maps talks.</div>
+<div class="map"><svg viewBox="0 0 360 200" role="img" aria-label="Map placeholder showing your route"><use href="#map"/></svg><span class="lbl">Map placeholder</span><span class="eta">Next: Rae, 7:42</span></div>
+<div class="card"><div class="row" style="justify-content:flex-start"><span class="av">R</span><div><h3>Rae asked for a seat</h3><p class="m small">Guildford. 6 extra minutes. 5 points.</p></div></div><div class="tags"><span class="chip">Verified</span><span class="chip">Quiet ride</span></div><div class="two"><button class="btn half" data-go="s6">Accept</button><button class="btn ghost half">Decline</button></div></div>
+<button class="btn ghost">Open Google Maps</button>
+<button class="btn danger">End trip</button>
+</section>
+
+<section class="screen" id="s4" data-tab="ride">
+<div class="next"><b>Next step</b>Pick a driver, then ask for a seat.</div>
+<div class="card"><div class="row"><div><h3>Guildford to SFU</h3><p class="m small">Today, between 7:30 and 8:00 am. Points or cash.</p></div><button class="btn ghost" style="width:auto;margin:0;min-height:44px">Edit</button></div></div>
+<h2 style="margin:4px 0 0">3 drivers match</h2>
+<div class="card"><div class="row" style="justify-content:flex-start"><span class="av">A</span><div><h3>Alex</h3><p class="m small">Pickup 7:42. Drop-off 8:18.</p></div><b style="margin-left:auto">5 pts</b></div><div class="tags"><span class="chip">Verified</span><span class="chip">Quiet ride</span><span class="chip">Instant accept</span></div><button class="btn" data-go="s5">Ask for a seat</button></div>
+<div class="card"><div class="row" style="justify-content:flex-start"><span class="av">J</span><div><h3>Jordan</h3><p class="m small">Pickup 7:50. Drop-off 8:30.</p></div><b style="margin-left:auto">6 pts</b></div><div class="tags"><span class="chip">Verified</span></div><button class="btn ghost">Ask for a seat</button></div>
+<div class="card"><div class="row" style="justify-content:flex-start"><span class="av">M</span><div><h3>Mei</h3><p class="m small">Pickup 7:36. Drop-off 8:24.</p></div><b style="margin-left:auto">4 pts</b></div><div class="tags"><span class="chip">Verified</span><span class="chip">Instant accept</span></div><button class="btn ghost">Ask for a seat</button></div>
+</section>
+
+<section class="screen" id="s5" data-tab="ride">
+<div class="next"><b>Next step</b>Alex is 6 minutes away. Have your PIN ready.</div>
+<div class="map"><svg viewBox="0 0 360 200" role="img" aria-label="Map placeholder showing Alex's car"><use href="#map"/></svg><span class="lbl">Map placeholder</span><span class="eta">ETA 7:42 (6 min)</span></div>
+<div class="card"><div class="row" style="justify-content:flex-start"><span class="av">A</span><div><h3>Alex <span class="chip">Verified</span></h3><p class="m small">Grey Toyota Prius. Plate 7XK 482.</p></div></div><p class="lab" style="margin-top:10px">Your ride PIN</p><div class="pin">4821</div><p class="m small">Tell Alex this when you get in.</p></div>
+<div class="card"><ul class="steps"><li class="done">Accepted</li><li class="now">Driver on the way</li><li>Arrived</li><li>Picked up</li><li>Dropped off</li></ul></div>
+<div class="safety"><button><svg class="i"><use href="#i-share"/></svg>Share my trip</button><button class="sos"><b style="font-size:18px">SOS</b>Call 911</button><button><svg class="i"><use href="#i-flag"/></svg>Report or block</button></div>
+<button class="btn danger">Cancel ride</button>
+<p class="m small">Cancelling now: your first one each month is free. After that, Alex keeps half of the points.</p>
+</section>
+
+<section class="screen" id="s6" data-bare="1">
+<div class="lock">
+<div class="t">7:38</div><div class="d">Friday, October 23</div>
+<div class="notif"><div class="h"><span>RideShare</span><span>now</span></div><h3>Rae asked for a seat</h3><p class="m small">Guildford to SFU. 6 extra minutes. 5 points.</p><div class="two"><button class="btn half">Accept</button><button class="btn ghost half">Decline</button></div></div>
+<div class="notif"><div class="h"><span>RideShare</span><span>1 min ago</span></div><h3>Rae is added to your trip</h3><p class="m small">New stop: Guildford, 7:42 am.</p><div class="two"><button class="btn">Update route</button></div><p class="m small">Opens Google Maps with the new stop.</p></div>
+<div class="notif"><div class="h"><span>RideShare, Driving mode</span><span>ongoing</span></div><p class="small" style="margin:0">Helper is running. Google Maps is giving directions.</p></div>
+<button class="btn" style="margin-top:auto;background:#fff;color:#14231d;border-color:#fff" data-go="s3">Back to the mockup</button>
+</div>
+</section>
+
+<section class="screen" id="s7" data-tab="set">
+<div class="card"><h2>Driver defaults</h2><p class="m small">Used each time you post a trip.</p>
+<div class="field"><label for="a1">Riders you can take</label><select id="a1"><option>3</option></select></div>
+<div class="field"><label for="a2">Extra minutes for ONE pickup</label><select id="a2"><option>10 min</option></select></div>
+<div class="field"><label for="a3">Extra minutes for ALL pickups</label><select id="a3"><option>20 min</option></select></div>
+<div class="field"><label for="a4">Longest wait at a pickup</label><select id="a4"><option>3 min</option></select></div>
+<div class="row" style="margin-top:8px"><div><h3>Auto-accept first rider</h3><p class="m small">Only if they fit your limits.</p></div><label class="sw"><input type="checkbox" role="switch" aria-label="Auto-accept first rider"></label></div></div>
+<div class="card"><h2>Rider defaults</h2>
+<div class="field"><label for="a5">Longest wait for a driver</label><select id="a5"><option>5 min</option></select></div>
+<div class="field"><label for="a6">Pay with</label><select id="a6"><option>Points first, then cash</option></select></div>
+<p class="lab" style="margin-top:12px">Ride style</p><div class="days" data-multi><button aria-pressed="true">Quiet</button><button aria-pressed="false">Chatty</button><button aria-pressed="false">Music ok</button></div></div>
+<div class="card"><h2>Safety <span class="chip warn">Planned</span></h2><div class="list"><div class="row"><span>Verified badge</span><span class="m small">Not yet</span></div><div class="row"><span>Car details</span><span class="m small">Not yet</span></div><div class="row"><span>Emergency contact</span><span class="m small">Not yet</span></div></div></div>
+<div class="card dash"><h3>Owner tools <span class="chip warn">Owner only</span></h3><p class="m small">Test helpers. Riders never see this.</p><button class="btn ghost">Add sample riders</button></div>
+<button class="btn">Save settings</button>
+</section>
+
+<section class="screen" id="s8" data-tab="up">
+<div class="next"><b>Next step</b>Your next drive is tomorrow at 7:30 am.</div>
+<div class="card"><h2>Your drives</h2><p class="m small">This week</p><div class="two" style="margin-top:8px"><div><div class="big">4</div><span class="m small">drives</span></div><div><div class="big">3 h 6 min</div><span class="m small">driving</span></div><div><div class="big">128 km</div><span class="m small">total</span></div></div></div>
+<div class="card"><h3>As a driver</h3><div class="list">
+<div class="row"><div><b>Thu 7:30 am</b><p class="m small">Whalley to SFU. 2 riders.</p></div><span class="small">48 min, 33 km</span></div>
+<div class="row"><div><b>Wed 7:35 am</b><p class="m small">Brentwood to Metrotown. 1 rider.</p></div><span class="small">24 min, 9 km</span></div>
+<div class="row"><div><b>Tue 7:30 am</b><p class="m small">Whalley to SFU. 3 riders.</p></div><span class="small">52 min, 33 km</span></div></div></div>
+<div class="card"><h3>As a rider</h3><div class="list"><div class="row"><div><b>Mon 7:42 am</b><p class="m small">Guildford to SFU with Alex.</p></div><span class="small">36 min, 21 km</span></div></div></div>
+</section>
+
+<section class="screen" id="s9" data-tab="drive">
+<div class="card"><h2>Post a trip</h2>
+<div class="field"><label for="p1">From</label><input id="p1" value="Whalley (Surrey)"></div>
+<div class="field"><label for="p2">To</label><input id="p2" value="SFU (Burnaby)"></div>
+<div class="field"><label for="p3">Date and time</label><input id="p3" value="Fri, Oct 23, 7:30 am"></div>
+<p class="lab" style="margin-top:12px">Repeat on</p><div class="days" data-multi><button aria-pressed="true">M</button><button aria-pressed="true">T</button><button aria-pressed="true">W</button><button aria-pressed="true">T</button><button aria-pressed="true">F</button><button aria-pressed="false">S</button><button aria-pressed="false">S</button></div>
+<p class="lab" style="margin-top:12px">Riders</p><div class="days" data-one><button aria-pressed="false">1</button><button aria-pressed="false">2</button><button aria-pressed="true">3</button><button aria-pressed="false">4</button></div>
+<div class="field"><label for="p4">Extra minutes for ONE pickup</label><select id="p4"><option>10 min</option></select></div>
+<div class="field"><label for="p5">Extra minutes for ALL pickups</label><select id="p5"><option>20 min</option></select></div>
+<div class="field"><label for="p6">Longest wait at a pickup</label><select id="p6"><option>3 min</option></select></div>
+<p class="lab" style="margin-top:12px">You accept</p><div class="days" data-multi><button aria-pressed="true">Points</button><button aria-pressed="true">Cash gas-share</button></div>
+<button class="btn" data-go="s2">Post trip</button></div>
+</section>
+
+<section class="screen" id="s10" data-tab="pts">
+<div class="card"><p class="m small" style="margin:0">Your points</p><div class="big">42</div><p class="m">About $4.20. Points only share gas costs.</p></div>
+<div class="card"><h3>History</h3><div class="list">
+<div class="row"><div><b>Thu to SFU</b><p class="m small">Rae paid you</p></div><b>+5</b></div>
+<div class="row"><div><b>Wed to Metrotown</b><p class="m small">Jordan paid you</p></div><b>+3</b></div>
+<div class="row"><div><b>Mon with Alex</b><p class="m small">You paid</p></div><b>-5</b></div>
+<div class="row"><div><b>Welcome gift</b></div><b>+20</b></div></div></div>
+<div class="next"><b>Good to know</b>Drivers never profit. Points can also be swapped for cash gas-share.</div>
+</section>
+</main>
+
+<script>
+(function(){
+var screens=[].slice.call(document.querySelectorAll('.screen')),phone=document.getElementById('phone');
+function show(id){
+  var cur=document.getElementById(id);if(!cur)return;
+  screens.forEach(function(s){s.classList.toggle('on',s===cur)});
+  phone.setAttribute('data-bare',cur.getAttribute('data-bare')||'0');
+  [].forEach.call(document.querySelectorAll('.pick button'),function(b){b.setAttribute('aria-pressed',String(b.getAttribute('data-go')===id))});
+  [].forEach.call(document.querySelectorAll('.tabs button'),function(b){if(b.getAttribute('data-tab')===cur.getAttribute('data-tab'))b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')});
+  cur.scrollTop=0;
+}
+document.addEventListener('click',function(e){
+  var g=e.target.closest('[data-go]');if(g){show(g.getAttribute('data-go'));return}
+  var d=e.target.closest('.days button');if(d){var grp=d.parentNode;
+    if(grp.hasAttribute('data-one')){[].forEach.call(grp.children,function(c){c.setAttribute('aria-pressed','false')});d.setAttribute('aria-pressed','true')}
+    else d.setAttribute('aria-pressed',String(d.getAttribute('aria-pressed')!=='true'));}
+});
+show('s1');
+})();
+</script>
+</body>
+</html>
