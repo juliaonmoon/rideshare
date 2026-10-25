@@ -91,6 +91,9 @@ html[data-ui=b] #map-ld,html[data-ui=b] #map-lr{height:240px;border-radius:16px}
 html[data-ui=b] .days button{padding:9px 13px;min-height:40px}
 .uitoggle{display:block;text-align:center;font-size:13px;color:var(--acc);padding:6px 0}
 html[data-ui=b] .uitoggle{display:none}
+.pfsug{margin-top:4px}.pfsug button{display:block;width:100%;text-align:left;padding:10px 12px;margin:0;border:1px solid var(--line);border-top:0;background:var(--card);color:var(--ink);font:inherit;cursor:pointer;min-height:44px}
+.pfsug button:first-child{border-top:1px solid var(--line);border-radius:10px 10px 0 0}.pfsug button:last-child{border-radius:0 0 10px 10px}.pfsug button:only-child{border-radius:10px}
+.pfsug button span{display:block;font-size:12px;color:var(--mut)}.pfrow{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-top:6px;font-size:13px}.pfrow a{color:var(--acc)}
 </style>
 </head>
 <body>
@@ -227,6 +230,7 @@ html[data-ui=b] .uitoggle{display:none}
 <script src="matching.js"></script>
 <script src="data.js"></script>
 <script src="traffic.js"></script>
+<script src="places.js"></script>
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.58.0/dist/umd/supabase.min.js"></script>
 <script>

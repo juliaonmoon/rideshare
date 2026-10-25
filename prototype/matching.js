@@ -17,12 +17,12 @@
   const roadKm = (a, b) => haversineKm(a, b) * CIRCUITY;
   const guessMinutes = (a, b) => (roadKm(a, b) / AVG_KMH) * 60;   // fallback only, when Google times are missing for a place
   // Google drive times between the neighbourhood centres (traffic.js). Four tables by time of day.
-  let TRAFFIC = null; const AT = new Map();
+  let TRAFFIC = null; const AT = new Map(), CENT = [], SNAP = new Map();
   const keyOf = (p) => p.lat.toFixed(4) + '|' + p.lng.toFixed(4);
   function setTraffic(T, locs) {
-    TRAFFIC = T; AT.clear();
+    TRAFFIC = T; AT.clear(); CENT.length = 0; SNAP.clear();
     if (!T || !locs) return;
-    T.names.forEach((n, i) => { if (locs[n]) AT.set(keyOf(locs[n]), i); });
+    T.names.forEach((n, i) => { if (locs[n]) { AT.set(keyOf(locs[n]), i); CENT.push({ i, lat: locs[n].lat, lng: locs[n].lng }); } });
   }
   // Which table to use: weekends and evenings use "off"; weekdays use morning, midday or afternoon.
   function bucketFor(atMin, dow) {
@@ -32,11 +32,27 @@
     if (atMin >= 900 && atMin < 1140) return 'wk_pm';
     return 'off';
   }
+  // The neighbourhood centre closest to any point on the map (remembered, because matching asks many times).
+  function snap(p) {
+    const k = keyOf(p); let s = SNAP.get(k);
+    if (!s) { s = { c: null, km: Infinity }; for (const c of CENT) { const d = haversineKm(p, c); if (d < s.km) s = { c, km: d }; } SNAP.set(k, s); }
+    return s;
+  }
   // Minutes to drive from a to b: Google's typical-traffic time for that time of day, else the rough estimate.
+  // For an address that is not a neighbourhood centre, the straight-line estimate is scaled by how much slower or faster Google says the trip
+  // between the two nearest centres is, so rush hour and bridges still count.
   function minutes(a, b, atMin, dow) {
     if (TRAFFIC && AT.size) {
+      const bk = TRAFFIC[bucketFor(atMin == null ? 480 : ((atMin % 1440) + 1440) % 1440, dow)];
       const i = AT.get(keyOf(a)), j = AT.get(keyOf(b));
-      if (i != null && j != null) { const v = TRAFFIC[bucketFor(atMin == null ? 480 : ((atMin % 1440) + 1440) % 1440, dow)][i][j]; if (v != null) return v; }
+      if (i != null && j != null) { const v = bk[i][j]; if (v != null) return v; }
+      else {
+        const sa = snap(a), sb = snap(b);
+        if (sa.c && sb.c && sa.c.i !== sb.c.i) {
+          const v = bk[sa.c.i][sb.c.i], g = guessMinutes(sa.c, sb.c);
+          if (v != null && g > 2) return guessMinutes(a, b) * Math.min(3, Math.max(0.5, v / g));
+        }
+      }
     }
     return guessMinutes(a, b);
   }
