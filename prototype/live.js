@@ -110,14 +110,14 @@
   // Opens the Google Maps app with directions to the next stop (pickup, then drop-off). Areas are neighbourhood centres, not exact addresses.
   function mapsLink(m, req) {
     if (!req) return '';
-    const spot = LOC[stageOf(m) === 'picked_up' ? req.dropoff : req.pickup]; if (!spot) return '';
+    const spot = pt(req, stageOf(m) === 'picked_up' ? 'dropoff' : 'pickup'); if (!spot) return '';
     return 'https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=' + spot.lat + ',' + spot.lng;
   }
   const statusText = (s) => ({ requested: 'requested', accepted: 'accepted', completed: 'completed', cancelled: 'cancelled', declined: 'declined', no_show: 'no-show' }[s] || s);
 
   const dowOf = (d) => { const x = d && new Date(d + 'T12:00:00'); return x && !isNaN(x) ? x.getDay() : undefined; };
-  const driverObj = (t, date) => ({ dow: dowOf(date || t.trip_date), origin: LOC[t.origin], dest: LOC[t.dest], departMin: t.depart_min, maxDetour: t.max_detour, maxTotal: t.max_total_detour == null ? null : t.max_total_detour, maxPickups: t.max_pickups == null ? null : t.max_pickups, maxWait: t.max_wait, accepts: t.accepts, cpk: Number(t.cost_per_km) || 0.2, name: names[t.user_id] || 'Driver' });
-  const riderObj = (r) => ({ id: r.id, name: names[r.user_id] || 'Rider', pickup: LOC[r.pickup], dropoff: LOC[r.dropoff], readyFrom: r.ready_from, readyTo: r.ready_to, pays: r.pays });
+  const driverObj = (t, date) => ({ dow: dowOf(date || t.trip_date), origin: pt(t, 'origin'), dest: pt(t, 'dest'), departMin: t.depart_min, maxDetour: t.max_detour, maxTotal: t.max_total_detour == null ? null : t.max_total_detour, maxPickups: t.max_pickups == null ? null : t.max_pickups, maxWait: t.max_wait, accepts: t.accepts, cpk: Number(t.cost_per_km) || 0.2, name: names[t.user_id] || 'Driver' });
+  const riderObj = (r) => ({ id: r.id, name: names[r.user_id] || 'Rider', pickup: pt(r, 'pickup'), dropoff: pt(r, 'dropoff'), readyFrom: r.ready_from, readyTo: r.ready_to, pays: r.pays });
   const known = (x) => LOC[x.origin || x.pickup] && LOC[x.dest || x.dropoff];
   const tripOn = (t, d) => RSD.occursOn(t.trip_date, t.repeat_days, d);
   const reqOn = (r, d) => RSD.occursOn(r.ride_date, r.repeat_days, d);
@@ -128,6 +128,7 @@
       const uid = user.id;
       try { await sb.rpc('settle_due'); } catch (e) { /* older database: ignore */ }
       try { await sb.rpc('expire_live'); } catch (e) { /* older database: ignore */ }
+      if (PLOK === null) PLOK = !!(window.RS_PLACES && window.RS_PLACES.available()) && !(await sb.from('trips').select('origin_lat').limit(1)).error;
       const [p, w, l, t, r, m, ot, orq] = await Promise.all([
         sb.from('profiles').select('display_name').eq('id', uid).maybeSingle(),
         sb.from('wallets').select('points').eq('user_id', uid).maybeSingle(),
@@ -211,7 +212,7 @@
     const asks = mine.filter((x) => x.status === 'requested').length, acc = mine.filter((x) => x.status === 'accepted').length;
     const isToday = d === todayStr();
     const line = asks ? `<b>${asks} rider${asks > 1 ? 's' : ''} asked for a seat.</b> Tap <b>See riders</b> to accept.` : acc ? `<b>${acc} rider${acc > 1 ? 's' : ''} accepted.</b> ${isToday ? 'Tap <b>Start my trip</b> when you set off.' : 'You can start on the day of the trip.'}` : 'No riders yet. They will show up here when they ask for a seat.';
-    return card('Your trip', `<p><b>${esc(curTrip.origin)}</b> to <b>${esc(curTrip.dest)}</b></p><p class="mut">${whenText(curTrip.trip_date, curTrip.depart_min, curTrip.repeat_days)}</p><p>${line}</p>
+    return card('Your trip', `<p><b>${esc(disp(curTrip, 'origin'))}</b> to <b>${esc(disp(curTrip, 'dest'))}</b></p><p class="mut">${whenText(curTrip.trip_date, curTrip.depart_min, curTrip.repeat_days)}</p><p>${line}</p>
       <div class="row2">${isToday ? '<button class="btn" data-startnav="1">Start my trip</button> ' : ''}${goTo('ld-lists')}See riders</button> ${goTo('ld-form')}Edit trip</button></div>`);
   }
   function riderTop() {
@@ -220,29 +221,86 @@
     const mine = d ? matches.filter((x) => x.rider_id === user.id && x.request_id === curReq.id && x.ride_date === d) : [];
     const acc = mine.find((x) => x.status === 'accepted' || x.status === 'completed'), pend = mine.some((x) => x.status === 'requested');
     const line = acc ? `<b>${esc(STEP_LABEL[stageOf(acc)])}.</b> Tap <b>See my ride</b> for live updates.` : pend ? 'You asked a driver for a seat. Waiting for them to accept.' : 'Pick a driver below and tap <b>Request</b>.';
-    return card('Your ride', `<p><b>${esc(curReq.pickup)}</b> to <b>${esc(curReq.dropoff)}</b></p><p class="mut">${esc(RSD.label(curReq.ride_date))}, ready ${RS.clock(curReq.ready_from)} to ${RS.clock(curReq.ready_to)}</p><p>${line}</p>
+    return card('Your ride', `<p><b>${esc(disp(curReq, 'pickup'))}</b> to <b>${esc(disp(curReq, 'dropoff'))}</b></p><p class="mut">${esc(RSD.label(curReq.ride_date))}, ready ${RS.clock(curReq.ready_from)} to ${RS.clock(curReq.ready_to)}</p><p>${line}</p>
       <div class="row2">${goTo('lr-lists')}${acc ? 'See my ride' : 'See drivers'}</button> ${goTo('lr-form')}Edit request</button></div>`);
   }
 
+
+  // ---------- address search (Google Places) ----------
+  // A trip or request keeps its neighbourhood in origin/dest/pickup/dropoff (prices and matching use it) and, when an address was chosen,
+  // a label and a map point as well (migration 015 rounds the point to about 100 m and drops house numbers).
+  const PL = {}; let PLOK = null;
+  const pt = (row, k) => (row && row[k + '_lat'] != null && row[k + '_lng'] != null ? { lat: +row[k + '_lat'], lng: +row[k + '_lng'] } : LOC[row[k]]);
+  const disp = (row, k) => (row && (row[k + '_label'] || row[k])) || '';
+  const plReset = (...ids) => ids.forEach((i) => { delete PL[i]; });
+  const plCols = (id, key) => {
+    if (!PLOK) return {};
+    const p = PL[id], has = p && !p.isArea;
+    return { [key + '_label']: has ? p.label : null, [key + '_lat']: has ? p.lat : null, [key + '_lng']: has ? p.lng : null };
+  };
+  const plNeed = (id, what) => (PLOK && !PL[id] ? 'Choose ' + what + ' from the suggestions (or tap Use my location)' : '');
+  const samePlace = (a, b, ia, ib) => a === b && !(PL[ia] && PL[ib] && !PL[ia].isArea && !PL[ib].isArea && RS.haversineKm(PL[ia], PL[ib]) > 0.3);
+  async function setCols(table, id, ...cols) { if (PLOK && id) { const patchRow = Object.assign({}, ...cols); const r = await sb.from(table).update(patchRow).eq('id', id); if (r.error) throw r.error; } }
+  const LOCBTN = { 'ln-o': 'ln-loc', 'rn-p': 'rn-loc' };
+  function placeField(id, label, row, k, area) {
+    if (!PLOK) return `<label>${label}</label><select id="${id}">${opts(area)}</select>` + (LOCBTN[id] ? ` <button type="button" class="btn ghost" id="${LOCBTN[id]}" style="margin-top:6px">Use my location</button>` : '');
+    if (PL[id] === undefined) PL[id] = row && row[k] ? (row[k + '_lat'] != null ? { label: row[k + '_label'] || row[k], lat: +row[k + '_lat'], lng: +row[k + '_lng'], area: row[k] } : { label: row[k], area: row[k], isArea: true }) : null;
+    const p = PL[id], a = p ? p.area : area;
+    return `<label>${label}</label><div data-pf="${id}"><input type="text" id="${id}-q" autocomplete="off" placeholder="Type an address or place" value="${esc(p ? p.label : '')}" style="${INPUT}"><div class="pfsug" id="${id}-sug"></div>
+      <div class="pfrow"><button type="button" class="btn ghost" data-ploc="${id}">Use my location</button><a href="#" data-pnb="${id}">Choose a neighbourhood instead</a></div>
+      <div class="mut" id="${id}-note" style="font-size:12px;margin-top:4px">${p && !p.isArea ? 'Neighbourhood: ' + esc(a) : ''}</div>
+      <select id="${id}" style="display:none;margin-top:6px">${opts(a)}</select></div>`;
+  }
+  function wirePlaces() {
+    document.querySelectorAll('[data-pf]').forEach((box) => {
+      const id = box.dataset.pf, q = $(id + '-q'), sug = $(id + '-sug'), sel = $(id), note = $(id + '-note');
+      let seq = 0, tm = null, list = [];
+      const setP = (p) => { PL[id] = p; sel.value = p.area; nowSel[id] = p.area; q.value = p.label; note.textContent = p.isArea ? '' : 'Neighbourhood: ' + p.area; sug.innerHTML = ''; };
+      const covered = (lat, lng) => { const n = nearestArea(lat, lng); if (n.km > 40) { note.textContent = 'That is outside the area we cover for now.'; return null; } return n; };
+      q.oninput = () => {
+        PL[id] = null; note.textContent = ''; clearTimeout(tm);
+        const v = q.value.trim(); if (v.length < 3) { sug.innerHTML = ''; return; }
+        tm = setTimeout(async () => {
+          const my = ++seq, r = await window.RS_PLACES.suggest(v); if (my !== seq) return;
+          if (!window.RS_PLACES.available()) { note.textContent = 'Address search is not switched on yet. Choose a neighbourhood instead.'; sel.style.display = ''; return; }
+          list = r;
+          sug.innerHTML = r.length ? r.map((s, i) => '<button type="button" data-i="' + i + '">' + esc(s.main) + '<span>' + esc(s.sub) + '</span></button>').join('') : '';
+          sug.querySelectorAll('button').forEach((b) => (b.onclick = async () => {
+            const s = list[+b.dataset.i]; note.textContent = 'Finding that place...';
+            try { const d = await window.RS_PLACES.details(s.id), n = covered(d.lat, d.lng); if (n) setP({ label: s.main, lat: d.lat, lng: d.lng, area: n.a }); }
+            catch (e) { note.textContent = 'Could not load that place. Try again.'; }
+          }));
+        }, 250);
+      };
+      box.querySelector('[data-ploc]').onclick = () => {
+        if (!navigator.geolocation) { note.textContent = 'This device cannot share its location'; return; }
+        note.textContent = 'Finding you...';
+        navigator.geolocation.getCurrentPosition((pos) => { const n = covered(pos.coords.latitude, pos.coords.longitude); if (n) setP({ label: 'My location', lat: pos.coords.latitude, lng: pos.coords.longitude, area: n.a }); },
+          (e) => { note.textContent = e && e.code === 1 ? 'Location is blocked. Allow it in your settings.' : 'Could not find your location'; }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 });
+      };
+      box.querySelector('[data-pnb]').onclick = (e) => { e.preventDefault(); sel.style.display = sel.style.display === 'none' ? '' : 'none'; };
+      sel.onchange = () => setP({ label: sel.value, area: sel.value, isArea: true });
+    });
+  }
 
   // ---------- Leave now (driver) and I need a ride now (rider) ----------
   const nearestArea = (lat, lng) => areas.map((a) => ({ a, km: RS.haversineKm({ lat, lng }, LOC[a]) })).sort((x, y) => x.km - y.km)[0];
   const minsLeft = (iso) => Math.max(0, Math.round((Date.parse(iso) - Date.now()) / 60000));
   function driverNow() {
     const share = sharingCard() + driveCard();
-    if (myLiveTrip) return share + card('Offer a ride now: ON', `<p><b>${esc(myLiveTrip.origin)}</b> to <b>${esc(myLiveTrip.dest)}</b></p><p class="mut">Leaving about ${RS.clock(myLiveTrip.depart_min)} &middot; riders can see you until you switch it off.</p><p><button class="btn ghost" data-stoplive="trip">Switch OFF</button></p>`);
+    if (myLiveTrip) return share + card('Offer a ride now: ON', `<p><b>${esc(disp(myLiveTrip, 'origin'))}</b> to <b>${esc(disp(myLiveTrip, 'dest'))}</b></p><p class="mut">Leaving about ${RS.clock(myLiveTrip.depart_min)} &middot; riders can see you until you switch it off.</p><p><button class="btn ghost" data-stoplive="trip">Switch OFF</button></p>`);
     const o = nowSel['ln-o'] || (myTrip && myTrip.origin) || 'Surrey Central', d = nowSel['ln-d'] || (myTrip && myTrip.dest) || 'BCIT / Willingdon (Burnaby)';
     return share + card('Not on a schedule? Offer a ride now', `<p class="mut">For a spur-of-the-moment drive: no date or time. Switch it on and riders along your route can ask for a seat. It stays on until you switch it off (or after 12 hours). Already posted a trip? Use <b>Start my trip</b> instead.</p>
-      <label>From</label><select id="ln-o">${opts(o)}</select> <button type="button" class="btn ghost" id="ln-loc" style="margin-top:6px">Use my location</button>
-      <label>To</label><select id="ln-d">${opts(d)}</select>
+      ${placeField('ln-o', 'From', myTrip, 'origin', o)}
+      ${placeField('ln-d', 'To', myTrip, 'dest', d)}
       <div style="margin-top:10px"><button class="btn" id="ln-go" style="width:100%;padding:12px;font-size:16px">Switch ON: offer a ride now</button></div><p class="warn" id="ln-msg" role="alert"></p>`);
   }
   function riderNow() {
-    if (myLiveReq) return card('You are looking for a ride now', `<p><b>${esc(myLiveReq.pickup)}</b> to <b>${esc(myLiveReq.dropoff)}</b></p><p class="mut">Visible to drivers for ${minsLeft(myLiveReq.expires_at)} more minutes.</p><p><button class="btn ghost" data-stoplive="req">Stop</button></p>`);
+    if (myLiveReq) return card('You are looking for a ride now', `<p><b>${esc(disp(myLiveReq, 'pickup'))}</b> to <b>${esc(disp(myLiveReq, 'dropoff'))}</b></p><p class="mut">Visible to drivers for ${minsLeft(myLiveReq.expires_at)} more minutes.</p><p><button class="btn ghost" data-stoplive="req">Stop</button></p>`);
     const p = nowSel['rn-p'] || (myReq && myReq.pickup) || 'Whalley (Surrey)', d = nowSel['rn-d'] || (myReq && myReq.dropoff) || 'Brentwood (Burnaby)', pay = nowSel['rn-pay'] || 'points';
     return card('I need a ride now', `<p class="mut">One tap, no date or time. You are ready now and drivers can see you for 20 minutes.</p>
-      <label>Pick me up near</label><select id="rn-p">${opts(p)}</select> <button type="button" class="btn ghost" id="rn-loc" style="margin-top:6px">Use my location</button>
-      <label>Drop me near</label><select id="rn-d">${opts(d)}</select>
+      ${placeField('rn-p', 'Pick me up at', myReq, 'pickup', p)}
+      ${placeField('rn-d', 'Drop me at', myReq, 'dropoff', d)}
       <label>I'll pay with</label><select id="rn-pay"><option value="points" ${pay === 'points' ? 'selected' : ''}>Points</option><option value="cash" ${pay === 'cash' ? 'selected' : ''}>Cash gas-share</option><option value="either" ${pay === 'either' ? 'selected' : ''}>Either</option></select>
       <div style="margin-top:10px"><button class="btn" id="rn-go" style="width:100%;padding:12px;font-size:16px">I need a ride now</button></div><p class="warn" id="rn-msg" role="alert"></p>`);
   }
@@ -269,7 +327,7 @@
       const start = Date.parse(d.started_at), end = Date.parse(d.ended_at || d.last_at), live = !d.ended_at && Date.now() - Date.parse(d.last_at) < 30 * 60000;
       const riders = matches.filter((x) => x.driver_id === user.id && x.picked_up_at && Date.parse(x.picked_up_at) >= start - 60000 && Date.parse(x.picked_up_at) <= end + 300000).length;
       const t = d.trip_id && tripBy(d.trip_id); let plan = '';
-      if (t && LOC[t.origin] && LOC[t.dest]) plan = ' &middot; without stops about ' + fmtMin(RS.minutes(LOC[t.origin], LOC[t.dest], t.depart_min, dowOf(d.ride_date)));
+      if (t && pt(t, 'origin') && pt(t, 'dest')) plan = ' &middot; without stops about ' + fmtMin(RS.minutes(pt(t, 'origin'), pt(t, 'dest'), t.depart_min, dowOf(d.ride_date)));
       return '<div style="padding:6px 0;border-top:1px solid var(--line)"><b>' + (live ? 'Drive in progress' : esc(RSD.label(d.ride_date))) + '</b> ' + fmtMin((end - start) / 60000) + ' &middot; ' + (+d.distance_km).toFixed(1) + ' km' + (riders ? ' &middot; ' + riders + ' rider' + (riders > 1 ? 's' : '') : '') + plan + '</div>';
     }).join('');
     return card('Your drives', rows + '<p class="mut">Time includes pickups and waiting. Distance is counted while your phone shares its location during a ride.</p>');
@@ -322,7 +380,7 @@
       return `<p class="warn"><b>${dn} is very late.</b> You can cancel and get all your points back.</p><p><button class="btn" data-cancelgo="${m.id}">Cancel, full refund</button></p>`;
     }
     if (stg === 'on_my_way' || stg === 'arrived' || stg === 'picked_up') {
-      const target = LOC[stg === 'picked_up' ? meO.dropoff && Object.keys(LOC).find((k) => LOC[k] === meO.dropoff) : Object.keys(LOC).find((k) => LOC[k] === meO.pickup)];
+      const target = stg === 'picked_up' ? meO.dropoff : meO.pickup;
       if (!pos) { html = `<p class="mut">Waiting for ${dn}'s location. They need to keep the app open.</p>`; }
       else {
         window.__carPos = { lat: pos.lat, lng: pos.lng };
@@ -345,13 +403,13 @@
   function driverForm() {
     if (pending && pending.kind === 'trip') {
       const r = pending.row;
-      return card('Confirm your trip', `<p><b>${esc(r.origin)}</b> to <b>${esc(r.dest)}</b></p><p>${whenText(r.trip_date, r.depart_min, r.repeat_days)}</p>
+      return card('Confirm your trip', `<p><b>${esc(disp(r, 'origin'))}</b> to <b>${esc(disp(r, 'dest'))}</b></p><p>${whenText(r.trip_date, r.depart_min, r.repeat_days)}</p>
         <p class="mut">${r.max_pickups === 1 ? 'One pickup only' : 'Up to ' + r.max_pickups + ' pickups'} &middot; max ${r.max_detour} extra min for one pickup${r.max_pickups > 1 && r.max_total_detour != null ? ' &middot; max ' + r.max_total_detour + ' extra min for all pickups together' : ''} &middot; max wait ${r.max_wait} min &middot; accepts ${r.accepts === 'either' ? 'points or cash' : r.accepts === 'points' ? 'points only' : 'cash gas-share only'}</p>
         <div style="margin-top:10px"><button class="btn" id="lt-confirm">${myTrip ? 'Confirm and update' : 'Confirm and post'}</button> <button class="btn ghost" id="lt-back">Back</button></div>`);
     }
     const t = myTrip || { origin: 'Surrey Central', dest: 'BCIT / Willingdon (Burnaby)', depart_min: 450, max_detour: S_().d_detour, max_total_detour: S_().d_total_detour, max_pickups: Math.min(4, S_().d_seats), max_wait: S_().d_wait, accepts: S_().d_accepts, trip_date: todayStr(), repeat_days: [] };
     const date = defaultDate(t.trip_date, t.depart_min);
-    return card(myTrip ? 'My trip' : 'Post a trip', `<label>From</label><select id="lt-o">${opts(t.origin)}</select><label>To</label><select id="lt-d">${opts(t.dest)}</select>
+    return card(myTrip ? 'My trip' : 'Post a trip', `${placeField('lt-o', 'From', myTrip, 'origin', t.origin)}${placeField('lt-d', 'To', myTrip, 'dest', t.dest)}
       <div class="row"><div><label>Date</label><input type="date" id="lt-date" min="${todayStr()}" max="${maxDate()}" value="${date}"></div><div><label>Leave at</label><input type="time" id="lt-t" value="${hmIn(t.depart_min)}"></div></div>
       <label>Repeat every week on <span class="mut">(optional)</span></label>${dayChips('lt-days', t.repeat_days)}
       <label>Most riders I will pick up</label><select id="lt-pk">${[1, 2, 3, 4].map((n) => '<option value="' + n + '"' + (n === (t.max_pickups || 1) ? ' selected' : '') + '>' + (n === 1 ? 'Just 1 (a single pickup)' : 'Up to ' + n) + '</option>').join('')}</select>
@@ -403,13 +461,13 @@
   function riderForm() {
     if (pending && pending.kind === 'req') {
       const r = pending.row;
-      return card('Confirm your request', `<p><b>${esc(r.pickup)}</b> to <b>${esc(r.dropoff)}</b></p><p>${RSD.label(r.ride_date)}, ready ${RS.clock(r.ready_from)} to ${RS.clock(r.ready_to)}${r.repeat_days.length ? ' &middot; repeats ' + RSD.repeatText(r.repeat_days) : ' &middot; one time'}</p>
+      return card('Confirm your request', `<p><b>${esc(disp(r, 'pickup'))}</b> to <b>${esc(disp(r, 'dropoff'))}</b></p><p>${RSD.label(r.ride_date)}, ready ${RS.clock(r.ready_from)} to ${RS.clock(r.ready_to)}${r.repeat_days.length ? ' &middot; repeats ' + RSD.repeatText(r.repeat_days) : ' &middot; one time'}</p>
         <p class="mut">Paying with ${r.pays === 'either' ? 'points or cash' : r.pays === 'points' ? 'points' : 'cash gas-share'}</p>
         <div style="margin-top:10px"><button class="btn" id="lr-confirm">${myReq ? 'Confirm and update' : 'Confirm and post'}</button> <button class="btn ghost" id="lr-back">Back</button></div>`);
     }
     const r = myReq || { pickup: 'Whalley (Surrey)', dropoff: 'Brentwood (Burnaby)', ready_from: 440, ready_to: 470, pays: S_().r_pays, ride_date: todayStr(), repeat_days: [] };
     const date = defaultDate(r.ride_date, r.ready_from);
-    return card(myReq ? 'My ride' : 'Where to?', `<label>Pick me up near</label><select id="lr-p">${opts(r.pickup)}</select><label>Drop me near</label><select id="lr-d">${opts(r.dropoff)}</select>
+    return card(myReq ? 'My ride' : 'Where to?', `${placeField('lr-p', 'Pick me up at', myReq, 'pickup', r.pickup)}${placeField('lr-d', 'Drop me at', myReq, 'dropoff', r.dropoff)}
       <label>Date</label><input type="date" id="lr-date" min="${todayStr()}" max="${maxDate()}" value="${date}">
       <div class="row"><div><label>Ready from</label><input type="time" id="lr-f" value="${hmIn(r.ready_from)}"></div><div><label>Ready until</label><input type="time" id="lr-u" value="${hmIn(r.ready_to)}"></div></div>
       <label>Repeat every week on <span class="mut">(optional)</span></label>${dayChips('lr-days', r.repeat_days)}
@@ -457,8 +515,8 @@
     const t0 = todayStr(), tripById = {}, reqById = {};
     [...otherTrips, ...extraTrips].concat(curTrip ? [curTrip] : []).forEach((t) => { tripById[t.id] = t; });
     [...otherReqs, ...extraReqs].concat(curReq ? [curReq] : []).forEach((q) => { reqById[q.id] = q; });
-    const mineTrip = curTrip ? `<div style="padding:6px 0"><b>${esc(curTrip.origin)} to ${esc(curTrip.dest)}</b><div class="mut">${whenText(curTrip.trip_date, curTrip.depart_min, curTrip.repeat_days)}</div><div style="margin-top:6px"><button class="btn ghost" data-go="t-driver">Edit</button> <button class="btn ghost" data-offtrip="${curTrip.id}">Take it down</button></div></div>` : '<p class="mut">No trip posted. Use <b>I\'m driving</b>.</p>';
-    const mineReq = curReq ? `<div style="padding:6px 0"><b>${esc(curReq.pickup)} to ${esc(curReq.dropoff)}</b><div class="mut">${esc(RSD.label(curReq.ride_date))}, ready ${RS.clock(curReq.ready_from)} to ${RS.clock(curReq.ready_to)}${curReq.repeat_days.length ? ' &middot; repeats ' + RSD.repeatText(curReq.repeat_days) : ' &middot; one time'}</div><div style="margin-top:6px"><button class="btn ghost" data-go="t-rider">Edit</button> <button class="btn ghost" data-offreq="${curReq.id}">Take it down</button></div></div>` : '<p class="mut">No ride requested. Use <b>I need a ride</b>.</p>';
+    const mineTrip = curTrip ? `<div style="padding:6px 0"><b>${esc(disp(curTrip, 'origin'))} to ${esc(disp(curTrip, 'dest'))}</b><div class="mut">${whenText(curTrip.trip_date, curTrip.depart_min, curTrip.repeat_days)}</div><div style="margin-top:6px"><button class="btn ghost" data-go="t-driver">Edit</button> <button class="btn ghost" data-offtrip="${curTrip.id}">Take it down</button></div></div>` : '<p class="mut">No trip posted. Use <b>I\'m driving</b>.</p>';
+    const mineReq = curReq ? `<div style="padding:6px 0"><b>${esc(disp(curReq, 'pickup'))} to ${esc(disp(curReq, 'dropoff'))}</b><div class="mut">${esc(RSD.label(curReq.ride_date))}, ready ${RS.clock(curReq.ready_from)} to ${RS.clock(curReq.ready_to)}${curReq.repeat_days.length ? ' &middot; repeats ' + RSD.repeatText(curReq.repeat_days) : ' &middot; one time'}</div><div style="margin-top:6px"><button class="btn ghost" data-go="t-rider">Edit</button> <button class="btn ghost" data-offreq="${curReq.id}">Take it down</button></div></div>` : '<p class="mut">No ride requested. Use <b>I need a ride</b>.</p>';
     const live = matches.filter((x) => (x.status === 'requested' || x.status === 'accepted') && x.ride_date >= t0).sort((a, b) => (a.ride_date < b.ride_date ? -1 : 1));
     const asRider = live.filter((x) => x.rider_id === user.id), asDriver = live.filter((x) => x.driver_id === user.id);
     const when = (x) => { const t = tripBy(x.trip_id); return esc(RSD.label(x.ride_date)) + (t ? ' at ' + RS.clock(t.depart_min) : ''); };
@@ -538,7 +596,7 @@
     renderAuth();
     if (!user) { ['ld-top', 'lr-top'].forEach((id) => { $(id).innerHTML = ''; }); ['ld-form', 'ld-lists', 'lr-form', 'lr-lists', 'lu-main', 'lw-main', 'ls-main'].forEach((id) => { $(id).innerHTML = /form|main/.test(id) ? hint : ''; }); return; }
     const sig = JSON.stringify([myTrip, myReq, me.points, pending, mySet, isTest, testMode]);
-    const typing = document.activeElement && /^(lt|lr|lv|ls)-/.test(document.activeElement.id || '') && document.activeElement.tagName !== 'BUTTON' && !pending;
+    const typing = document.activeElement && /^(lt|lr|lv|ls|ln|rn)-/.test(document.activeElement.id || '') && document.activeElement.tagName !== 'BUTTON' && !pending;
     if (!typing && sig !== formSig) { formSig = sig; $('ld-form').innerHTML = guard('trip form', driverForm); $('lr-form').innerHTML = guard('ride form', riderForm); $('lw-main').innerHTML = guard('points', walletMain); $('ls-main').innerHTML = guard('settings', settingsMain); }
     const busyIn = (id) => { const a = document.activeElement; return a && /SELECT|INPUT/.test(a.tagName) && a.closest && a.closest('#' + id); };
     if (!busyIn('ld-top')) $('ld-top').innerHTML = guard('leave now', driverNow) + guard('driver summary', driverTop) + guard('drive log', driveLogCard);
@@ -556,10 +614,11 @@
     const on = (id, fn) => { const e = $(id); if (e) e.onclick = fn; };
     document.querySelectorAll('#lt-days button, #lr-days button').forEach((b) => (b.onclick = () => b.classList.toggle('on')));
     on('lt-review', () => {
-      const row = { origin: $('lt-o').value, dest: $('lt-d').value, trip_date: $('lt-date').value, depart_min: hm($('lt-t').value || '07:30'), repeat_days: readDays('lt-days'), max_detour: +$('lt-dt').value, max_total_detour: +$('lt-tt').value, max_pickups: +$('lt-pk').value, max_wait: +$('lt-w').value, accepts: $('lt-a').value };
+      const row = { origin: $('lt-o').value, dest: $('lt-d').value, trip_date: $('lt-date').value, depart_min: hm($('lt-t').value || '07:30'), repeat_days: readDays('lt-days'), max_detour: +$('lt-dt').value, max_total_detour: +$('lt-tt').value, max_pickups: +$('lt-pk').value, max_wait: +$('lt-w').value, accepts: $('lt-a').value, ...plCols('lt-o', 'origin'), ...plCols('lt-d', 'dest') };
+      const need = plNeed('lt-o', 'where you start') || plNeed('lt-d', 'where you are going'); if (need) { formMsg('lt-msg', need); return; }
       if (row.max_pickups === 1) row.max_total_detour = null; else if (row.max_total_detour < row.max_detour) { formMsg('lt-msg', 'The total for all pickups cannot be less than the time for one pickup'); return; }
       formMsg('lt-msg', '');
-      if (row.origin === row.dest) { formMsg('lt-msg', 'Pick two different places'); return; }
+      if (samePlace(row.origin, row.dest, 'lt-o', 'lt-d')) { formMsg('lt-msg', 'Pick two different places'); return; }
       if (!row.trip_date) { formMsg('lt-msg', 'Pick a date'); return; }
       const bad = RSD.check(row.trip_date, row.depart_min); if (bad) { formMsg('lt-msg', bad); return; }
       pending = { kind: 'trip', row }; formSig = ''; render();
@@ -567,12 +626,13 @@
     on('lt-back', () => { pending = null; formSig = ''; render(); });
     on('lt-confirm', async () => {
       const row = pending.row; const ok = await run(myTrip ? sb.from('trips').update(row).eq('id', myTrip.id) : sb.from('trips').insert(row), 'Trip saved');
-      if (ok) { pending = null; viewD = null; mapSig = {}; formSig = ''; render(); }
+      if (ok) { plReset('lt-o', 'lt-d'); pending = null; viewD = null; mapSig = {}; formSig = ''; render(); }
     });
     on('lr-review', () => {
-      const row = { pickup: $('lr-p').value, dropoff: $('lr-d').value, ride_date: $('lr-date').value, ready_from: hm($('lr-f').value || '07:20'), ready_to: hm($('lr-u').value || '07:50'), repeat_days: readDays('lr-days'), pays: $('lr-pay').value };
+      const row = { pickup: $('lr-p').value, dropoff: $('lr-d').value, ride_date: $('lr-date').value, ready_from: hm($('lr-f').value || '07:20'), ready_to: hm($('lr-u').value || '07:50'), repeat_days: readDays('lr-days'), pays: $('lr-pay').value, ...plCols('lr-p', 'pickup'), ...plCols('lr-d', 'dropoff') };
       formMsg('lr-msg', '');
-      if (row.pickup === row.dropoff) { formMsg('lr-msg', 'Pick two different places'); return; }
+      const need = plNeed('lr-p', 'where to pick you up') || plNeed('lr-d', 'where to drop you off'); if (need) { formMsg('lr-msg', need); return; }
+      if (samePlace(row.pickup, row.dropoff, 'lr-p', 'lr-d')) { formMsg('lr-msg', 'Pick two different places'); return; }
       if (!row.ride_date) { formMsg('lr-msg', 'Pick a date'); return; }
       if (row.ready_to < row.ready_from) { formMsg('lr-msg', '"Ready until" must be after "Ready from"'); return; }
       const bad = RSD.check(row.ride_date, row.ready_from); if (bad) { formMsg('lr-msg', bad); return; }
@@ -581,7 +641,7 @@
     on('lr-back', () => { pending = null; formSig = ''; render(); });
     on('lr-confirm', async () => {
       const row = pending.row; const ok = await run(myReq ? sb.from('ride_requests').update(row).eq('id', myReq.id) : sb.from('ride_requests').insert(row), 'Request saved');
-      if (ok) { pending = null; viewR = null; mapSig = {}; formSig = ''; render(); }
+      if (ok) { plReset('lr-p', 'lr-d'); pending = null; viewR = null; mapSig = {}; formSig = ''; render(); }
     });
     if ($('del-confirm')) $('del-confirm').oninput = () => { $('del-go').disabled = $('del-confirm').value.trim() !== 'DELETE'; };
     on('del-go', async () => {
@@ -626,16 +686,20 @@
     each('[data-startnav]', () => startNav());
     each('[data-scroll]', (b) => { const e = $(b.dataset.scroll); if (e) e.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
     document.querySelectorAll('#ln-o, #ln-d, #rn-p, #rn-d, #rn-pay').forEach((e) => { e.onchange = () => { nowSel[e.id] = e.value; }; });
+    wirePlaces();
     on('ln-loc', () => useMyLocation('ln-o', 'ln-msg'));
     on('rn-loc', () => useMyLocation('rn-p', 'rn-msg'));
     on('ln-go', async () => {
-      const o = $('ln-o').value, d = $('ln-d').value; if (o === d) { formMsg('ln-msg', 'Pick two different places'); return; }
-      const f = myTrip || {}; const ok = await run(sb.rpc('go_live_trip', { p_origin: o, p_dest: d, p_max_detour: f.max_detour == null ? S_().d_detour : f.max_detour, p_max_wait: f.max_wait == null ? S_().d_wait : f.max_wait, p_accepts: f.accepts || S_().d_accepts, p_cost_per_km: 0.2, p_minutes: 720, p_max_pickups: Math.min(4, S_().d_seats), p_max_total_detour: Math.min(4, S_().d_seats) > 1 ? Math.max(S_().d_total_detour, f.max_detour == null ? S_().d_detour : f.max_detour) : null }), 'You are live for 30 minutes');
+      const o = $('ln-o').value, d = $('ln-d').value, need = plNeed('ln-o', 'where you start') || plNeed('ln-d', 'where you are going'); if (need) { formMsg('ln-msg', need); return; }
+      if (samePlace(o, d, 'ln-o', 'ln-d')) { formMsg('ln-msg', 'Pick two different places'); return; }
+      const f = myTrip || {}, cols = [plCols('ln-o', 'origin'), plCols('ln-d', 'dest')]; const ok = await run(sb.rpc('go_live_trip', { p_origin: o, p_dest: d, p_max_detour: f.max_detour == null ? S_().d_detour : f.max_detour, p_max_wait: f.max_wait == null ? S_().d_wait : f.max_wait, p_accepts: f.accepts || S_().d_accepts, p_cost_per_km: 0.2, p_minutes: 720, p_max_pickups: Math.min(4, S_().d_seats), p_max_total_detour: Math.min(4, S_().d_seats) > 1 ? Math.max(S_().d_total_detour, f.max_detour == null ? S_().d_detour : f.max_detour) : null }).then(async (r) => { if (!r.error) await setCols('trips', r.data, ...cols); return r; }), 'You are live. Switch it off when you stop driving.');
       if (ok) { viewD = null; mapSig = {}; }
     });
     on('rn-go', async () => {
-      const p = $('rn-p').value, d = $('rn-d').value; if (p === d) { formMsg('rn-msg', 'Pick two different places'); return; }
-      const ok = await run(sb.rpc('go_live_request', { p_pickup: p, p_dropoff: d, p_pays: $('rn-pay').value }), 'Drivers can see you for 20 minutes');
+      const p = $('rn-p').value, d = $('rn-d').value, need = plNeed('rn-p', 'where to pick you up') || plNeed('rn-d', 'where to drop you off'); if (need) { formMsg('rn-msg', need); return; }
+      if (samePlace(p, d, 'rn-p', 'rn-d')) { formMsg('rn-msg', 'Pick two different places'); return; }
+      const cols = [plCols('rn-p', 'pickup'), plCols('rn-d', 'dropoff')];
+      const ok = await run(sb.rpc('go_live_request', { p_pickup: p, p_dropoff: d, p_pays: $('rn-pay').value }).then(async (r) => { if (!r.error) await setCols('ride_requests', r.data, ...cols); return r; }), 'Drivers can see you for 20 minutes');
       if (ok) { viewR = null; mapSig = {}; }
     });
     each('[data-stoplive]', (b) => { const isTrip = b.dataset.stoplive === 'trip', row = isTrip ? myLiveTrip : myLiveReq; if (row) run(sb.from(isTrip ? 'trips' : 'ride_requests').update({ active: false }).eq('id', row.id), 'Stopped'); });

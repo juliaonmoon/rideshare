@@ -158,6 +158,15 @@ t('Google times: a place that is not in the table falls back to the rough estima
   const odd = { lat: 49.3, lng: -122.9 };
   assert.ok(RS.minutes(LOCS['Surrey Central'], odd, 480, 2) > 0);
 });
+t('Google times: an address between neighbourhoods is scaled by the Google time of the nearest centres', () => {
+  RS.setTraffic(T, LOCS);
+  const o = { lat: LOCS['Surrey Central'].lat + 0.004, lng: LOCS['Surrey Central'].lng + 0.004 }, d = { lat: LOCS['BCIT / Willingdon (Burnaby)'].lat - 0.004, lng: LOCS['BCIT / Willingdon (Burnaby)'].lng + 0.003 };
+  const mid = RS.minutes(o, d, 12 * 60, 2), pm = RS.minutes(o, d, 17 * 60, 2);
+  assert.ok(mid > 5 && pm > 5);
+  assert.ok(pm > mid, 'rush hour is slower than midday for a street address too');
+  assert.ok(Math.abs(mid - RS.minutes(LOCS['Surrey Central'], LOCS['BCIT / Willingdon (Burnaby)'], 12 * 60, 2)) < 8, 'close to the centre-to-centre Google time');
+  RS.setTraffic(null);
+});
 t('Google times change who matches: the same pickup costs a different detour at midday and in rush hour', () => {
   RS.setTraffic(T, LOCS);
   const o = LOCS['Surrey Central'], d = LOCS['BCIT / Willingdon (Burnaby)'], p = LOCS['Production Way (Burnaby)'];
