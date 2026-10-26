@@ -243,7 +243,7 @@
       if (s.type === 'pickup') return 'Pick up <b>' + esc(s.rider.name) + '</b>' + (q ? ' <span class="mut">&middot; ' + esc(disp(q, 'pickup')) + '</span>' : '');
       return 'Drop off <b>' + esc(s.rider.name) + '</b>' + (q ? ' <span class="mut">&middot; ' + esc(disp(q, 'dropoff')) + '</span>' : '');
     };
-    const rows = ev.timeline.map((t, i) => '<div style="display:flex;gap:10px;padding:8px 0;border-top:1px solid var(--line)"><b style="min-width:46px">' + (i === 0 ? RS.clock(dr.departMin) : RS.clock(t.arrive)) + '</b><span>' + label(t.stop) + '</span></div>').join('');
+    const rows = ev.timeline.map((t, i) => '<div style="display:flex;gap:10px;padding:8px 0;border-top:1px solid var(--line)"><span style="flex:none;width:24px;height:24px;border-radius:50%;background:var(--acc);color:#fff;font-weight:700;font-size:13px;display:inline-flex;align-items:center;justify-content:center">' + (i + 1) + '</span><b style="min-width:46px">' + (i === 0 ? RS.clock(dr.departMin) : RS.clock(t.arrive)) + '</b><span>' + label(t.stop) + '</span></div>').join('');
     const extra = Math.max(0, Math.round(ev.totalMin - direct));
     return { stops, html: '<p class="mut" style="margin-top:0">Review this, then tap Start trip. About ' + fmtMin(ev.totalMin) + ' in all' + (extra ? ', ' + extra + ' min more than driving alone' : '') + '.</p>' + rows
       + '<div style="margin-top:12px"><button class="btn" data-startnav="1" style="width:100%;padding:12px;font-size:16px">Start trip</button></div>'
@@ -751,6 +751,11 @@
       try { await nat.openUrl({ url }); } catch (e) { window.open(url, '_blank', 'noopener'); }
       loadAll();
     };
+    on('plan-full', () => {
+      const box = $('map-plan-box'), full = box.classList.toggle('full');
+      $('plan-full').textContent = full ? 'Close' : 'Full screen'; document.body.style.overflow = full ? 'hidden' : '';
+      setTimeout(() => { mapSig.p = ''; try { renderPlan(); } catch (e) { console.error('plan map', e); } }, 250);
+    });
     on('ld-go', () => startNav());
     window.__startNav = startNav;
     on('ld-start', () => { if (window.__ldStops) window.RS_UI.startSim('ld', 'map-ld', window.__ldStops, 'You', 'driver'); });
