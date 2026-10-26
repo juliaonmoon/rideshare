@@ -52,7 +52,15 @@ public class LocationService extends Service {
     private static final long POLL_MS = 15000;
     static final String ACTION_ACCEPT = "ca.rideshare.app.ACCEPT";
     static final String ACTION_DECLINE = "ca.rideshare.app.DECLINE";
+    static final String ACTION_STEP = "ca.rideshare.app.STEP";
+    static final String STEPS_CHANNEL = "rideshare_steps";
+    private static final double ARRIVE_M = 250;   // close enough to a pickup to say "your driver is here" (stop points are only known to about 100 m)
+    private static final double DROP_M = 300;     // close enough to a drop-off to offer the Dropped off button
     static volatile boolean running = false;
+    // Testing without driving: the app can tell the helper to pretend the car is at a point (used only from the admin test tools).
+    static volatile double fakeLat = 0, fakeLng = 0;
+    static volatile long fakeUntil = 0;
+    static boolean fakeActive() { return System.currentTimeMillis() < fakeUntil; }
     static volatile long lastOk = 0;
     static volatile String lastError = "";
 
@@ -65,10 +73,15 @@ public class LocationService extends Service {
     private boolean firstPoll = true;             // requests already waiting when we start are not announced
     private int inactive = 0;
     private final Set<String> notified = new HashSet<>();
+    private volatile JSONArray rides = new JSONArray();   // riders on the way (from the last check): who, which step, where
+    private volatile Location lastLoc = null;
+    private final Set<String> nearShown = new HashSet<>();   // "near a stop" pop-ups already shown ("pick:id", "drop:id")
+    private final Set<Integer> stepIds = new HashSet<>();    // step notifications currently shown
     private boolean polling = false;
     private final Runnable poller = new Runnable() {
         @Override public void run() {
             if (!io.isShutdown()) io.execute(LocationService.this::pollAlerts);
+            if (!io.isShutdown() && fakeActive()) io.execute(LocationService.this::tickFake);
             main.postDelayed(this, POLL_MS);
         }
     };
@@ -122,7 +135,9 @@ public class LocationService extends Service {
             @Override
             public void onLocationResult(LocationResult result) {
                 Location loc = result.getLastLocation();
-                if (loc != null) io.execute(() -> post(loc));
+                if (loc == null || fakeActive()) return;   // while testing with a pretend position, the real one is ignored
+                lastLoc = loc;
+                io.execute(() -> { post(loc); checkStops(loc); });
             }
         };
         LocationRequest req = new LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 4000)
@@ -228,10 +243,158 @@ public class LocationService extends Service {
                 }
             }
             firstPoll = false;
+            JSONArray rs = o.optJSONArray("rides");
+            rides = rs == null ? new JSONArray() : rs;
+            updateStepNotes();
+            Location here = fakeActive() ? fakeLocation() : lastLoc;
+            if (here != null) checkStops(here);
         } catch (Exception e) {
             // no network right now: try again next time
         } finally {
             if (c != null) c.disconnect();
+        }
+    }
+
+    // ---------- the steps of a ride: Arrived (automatic), Picked up and Dropped off (one tap in a notification) ----------
+
+    private static double meters(double lat1, double lng1, double lat2, double lng2) {
+        double r = 6371000, p1 = Math.toRadians(lat1), p2 = Math.toRadians(lat2), dp = p2 - p1, dl = Math.toRadians(lng2 - lng1);
+        double a = Math.sin(dp / 2) * Math.sin(dp / 2) + Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) * Math.sin(dl / 2);
+        return 2 * r * Math.asin(Math.sqrt(a));
+    }
+
+    private Location fakeLocation() {
+        Location l = new Location("rideshare-test");
+        l.setLatitude(fakeLat); l.setLongitude(fakeLng); l.setSpeed(0f); l.setAccuracy(10f);
+        return l;
+    }
+
+    /** While a pretend position is active: send it like a real one and check the stops. */
+    private void tickFake() {
+        Location l = fakeLocation();
+        lastLoc = l;
+        post(l);
+        checkStops(l);
+    }
+
+    private static int idOf(int base, String matchId) { return base + (matchId.hashCode() & 0xfff); }
+
+    private PendingIntent stepIntent(String step, String matchId, String name, int nid) {
+        Intent i = new Intent(this, LocationService.class).setAction(ACTION_STEP).putExtra("match", matchId).putExtra("step", step).putExtra("name", name).putExtra("nid", nid);
+        return PendingIntent.getService(this, nid * 8 + ("picked_up".equals(step) ? 3 : 5), i, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+    }
+
+    private PendingIntent openIntent() {
+        Intent open = new Intent(this, MainActivity.class).setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_NEW_TASK);
+        return PendingIntent.getActivity(this, 2, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+    }
+
+    /** A quiet notification per rider with the next step and its button (nothing pops up; it sits in the notification shade). */
+    private void updateStepNotes() {
+        NotificationManager nm = getSystemService(NotificationManager.class);
+        Set<Integer> now = new HashSet<>();
+        JSONArray rs = rides;
+        for (int i = 0; i < rs.length(); i++) {
+            JSONObject r = rs.optJSONObject(i);
+            if (r == null) continue;
+            String id = r.optString("id"), name = r.optString("name", "Rider"), stage = r.optString("stage");
+            boolean picked = "picked_up".equals(stage);
+            int nid = idOf(4000, id);
+            now.add(nid);
+            Notification n = new NotificationCompat.Builder(this, STEPS_CHANNEL)
+                    .setContentTitle(picked ? "Drop off " + name : "Pick up " + name)
+                    .setContentText(picked ? r.optString("dropoff_name") : r.optString("pickup_name"))
+                    .setSmallIcon(android.R.drawable.ic_menu_directions)
+                    .setPriority(NotificationCompat.PRIORITY_LOW)
+                    .setOnlyAlertOnce(true)
+                    .setOngoing(true)
+                    .setContentIntent(openIntent())
+                    .addAction(0, picked ? "Dropped off " + name : "Picked up " + name, stepIntent(picked ? "dropped_off" : "picked_up", id, name, nid))
+                    .build();
+            try { nm.notify(nid, n); } catch (Exception ignore) { }
+        }
+        for (Integer old : new HashSet<>(stepIds)) if (!now.contains(old)) { nm.cancel(old); nm.cancel(old + 1000); }
+        stepIds.clear(); stepIds.addAll(now);
+    }
+
+    /** Near a pickup: tell the rider "your driver is here" (automatic) and pop up the Picked up button. Near a drop-off: pop up Dropped off. */
+    private void checkStops(Location loc) {
+        JSONArray rs = rides;
+        for (int i = 0; i < rs.length(); i++) {
+            JSONObject r = rs.optJSONObject(i);
+            if (r == null) continue;
+            String id = r.optString("id"), name = r.optString("name", "Rider"), stage = r.optString("stage");
+            if ("picked_up".equals(stage)) {
+                if (r.optBoolean("dropoff_exact", false) && !r.isNull("dropoff_lat")
+                        && meters(loc.getLatitude(), loc.getLongitude(), r.optDouble("dropoff_lat"), r.optDouble("dropoff_lng")) <= DROP_M && nearShown.add("drop:" + id)) {
+                    headsUp(id, "Near " + name + "'s drop-off", "Tap when " + name + " is out of the car.", "dropped_off", "Dropped off " + name, name);
+                }
+            } else if (r.optBoolean("pickup_exact", false) && !r.isNull("pickup_lat")
+                    && meters(loc.getLatitude(), loc.getLongitude(), r.optDouble("pickup_lat"), r.optDouble("pickup_lng")) <= ARRIVE_M && nearShown.add("pick:" + id)) {
+                if ("on_my_way".equals(stage)) stepCall(id, "arrived");   // automatic: the rider sees "your driver has arrived"
+                headsUp(id, "At " + name + "'s pickup", "Tap when " + name + " is in the car.", "picked_up", "Picked up " + name, name);
+            }
+        }
+    }
+
+    private void headsUp(String matchId, String title, String text, String step, String button, String name) {
+        int nid = idOf(5000, matchId);
+        Notification n = new NotificationCompat.Builder(this, ALERT_CHANNEL)
+                .setContentTitle(title).setContentText(text)
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setDefaults(Notification.DEFAULT_ALL)
+                .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+                .setContentIntent(openIntent())
+                .addAction(0, button, stepIntent(step, matchId, name, nid))
+                .build();
+        try { getSystemService(NotificationManager.class).notify(nid, n); } catch (Exception ignore) { }
+    }
+
+    /** Calls ride_step_token. Returns an empty string on success, or the reason it failed. */
+    private String stepCall(String matchId, String step) {
+        HttpURLConnection c = null;
+        try {
+            c = (HttpURLConnection) new URL(url + "/rest/v1/rpc/ride_step_token").openConnection();
+            c.setRequestMethod("POST");
+            c.setConnectTimeout(8000);
+            c.setReadTimeout(8000);
+            c.setDoOutput(true);
+            c.setRequestProperty("Content-Type", "application/json");
+            c.setRequestProperty("apikey", key);
+            try (OutputStream os = c.getOutputStream()) {
+                os.write(new JSONObject().put("p_token", token).put("p_match", matchId).put("p_step", step).toString().getBytes(StandardCharsets.UTF_8));
+            }
+            int code = c.getResponseCode();
+            if (code >= 200 && code < 300) return "";
+            InputStream is = c.getErrorStream();
+            StringBuilder sb = new StringBuilder();
+            if (is != null) {
+                try (BufferedReader br = new BufferedReader(new InputStreamReader(is))) {
+                    String line;
+                    while ((line = br.readLine()) != null && sb.length() < 600) sb.append(line);
+                }
+            }
+            String msg = "Please open RideShare and try there.";
+            try { msg = new JSONObject(sb.toString()).optString("message", msg); } catch (Exception ignore) { }
+            return msg;
+        } catch (Exception e) {
+            return "No connection. Open RideShare to update this step.";
+        } finally {
+            if (c != null) c.disconnect();
+        }
+    }
+
+    /** A step button was tapped in a notification. */
+    private void doStep(String matchId, String step, String name, int nid) {
+        NotificationManager nm = getSystemService(NotificationManager.class);
+        String err = stepCall(matchId, step);
+        if (err.isEmpty()) {
+            nm.cancel(idOf(5000, matchId));
+            nm.cancel(idOf(4000, matchId));
+            pollAlerts();   // refresh right away: shows the next step, or clears the finished rider
+        } else {
+            post2("Could not update " + name, err, 2000 + (nid & 0xfff));
         }
     }
 
@@ -264,6 +427,13 @@ public class LocationService extends Service {
     }
 
     private void handleAnswer(Intent intent) {
+        if (ACTION_STEP.equals(intent.getAction())) {
+            final String mid = intent.getStringExtra("match"), step = intent.getStringExtra("step");
+            final String nm2 = intent.getStringExtra("name") == null ? "The rider" : intent.getStringExtra("name");
+            final int nid2 = intent.getIntExtra("nid", 0);
+            if (mid != null && step != null && !io.isShutdown()) io.execute(() -> doStep(mid, step, nm2, nid2));
+            return;
+        }
         final boolean accept = ACTION_ACCEPT.equals(intent.getAction());
         final String id = intent.getStringExtra("match");
         final String name = intent.getStringExtra("name") == null ? "The rider" : intent.getStringExtra("name");
@@ -343,6 +513,11 @@ public class LocationService extends Service {
             al.setDescription("An alert when a rider asks for a seat while you are driving");
             al.setBypassDnd(true); // only honoured once the phone's owner allows it in settings (RideShare asks for that)
             getSystemService(NotificationManager.class).createNotificationChannel(al);
+        }
+        if (Build.VERSION.SDK_INT >= 26) {
+            NotificationChannel st = new NotificationChannel(STEPS_CHANNEL, "Trip steps", NotificationManager.IMPORTANCE_LOW);
+            st.setDescription("The next step of each ride (Picked up, Dropped off), one tap each");
+            getSystemService(NotificationManager.class).createNotificationChannel(st);
         }
         if (Build.VERSION.SDK_INT >= 26) {
             NotificationChannel ch = new NotificationChannel(CHANNEL, "Location sharing", NotificationManager.IMPORTANCE_LOW);
