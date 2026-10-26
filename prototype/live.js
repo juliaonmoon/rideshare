@@ -395,7 +395,7 @@
   function syncSharing() {
     if (!user) { stopShare(false); return; }
     const nat = nativeLoc();
-    if (driveSession && nat) { nat.status().then((r) => { if (!r.running && driveSession) { driveSession = false; if (shareWatch === 'native') shareWatch = null; render(); } }).catch(() => {}); }
+    if (driveSession && nat) { nat.status().then((r) => { if (!r.running && driveSession) { driveSession = false; autoAlerts = false; if (shareWatch === 'native') shareWatch = null; render(); } }).catch(() => {}); }
     if (shouldShare()) { if (shareWatch == null) startShare(); } else if (shareWatch != null && !(shareWatch === 'native-pending' || (driveSession && shareWatch === 'native'))) stopShare(true);
   }
   const ago = (ms) => (ms ? Math.max(0, Math.round((Date.now() - ms) / 1000)) + ' s ago' : 'not yet');
