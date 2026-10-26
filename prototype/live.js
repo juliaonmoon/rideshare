@@ -44,6 +44,10 @@
   const nativePlug = (n) => (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform() && window.Capacitor.Plugins && window.Capacitor.Plugins[n]) || null;
   if (nativePlug('App')) {
     nativePlug('App').addListener('appUrlOpen', async (ev) => {
+      if (ev && ev.url && ev.url.indexOf('ca.rideshare.app://plan') === 0) {   // the Preview trip alert: open Home on the trip plan
+        await loadAll(); const dv = $('rs-driving'), hm2 = $('nb-home'); if (dv) dv.click(); if (hm2) hm2.click();
+        setTimeout(() => { const p = $('trip-plan') || $('ld-top'); if (p) p.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 500); return;
+      }
       if (ev && ev.url && ev.url.indexOf('ca.rideshare.app://update-route') === 0) { await loadAll(); setTimeout(() => { if (window.__startNav) window.__startNav(true); }, 600); return; }
       if (!ev || !ev.url || ev.url.indexOf(APP_AUTH) !== 0) return;
       try { if (nativePlug('Browser')) await nativePlug('Browser').close(); } catch (e) { /* tab already closed */ }
@@ -217,6 +221,30 @@
 
   // ---------- "what do I do next" cards at the top of the driving and riding tabs ----------
   const goTo = (id) => `<button class="btn ghost" data-scroll="${id}">`;
+  // The trip plan: shown on Home once a rider is accepted for today. This is the review before driving; Start trip is the only way into Google Maps.
+  function tripPlan() {
+    if (!user || !curTrip || !known(curTrip)) return '';
+    const d = todayStr(), reqById = {}; [...otherReqs, ...extraReqs].forEach((q) => { reqById[q.id] = q; });
+    const acc = matches.filter((x) => x.driver_id === user.id && x.ride_date === d && x.status === 'accepted' && reqById[x.request_id] && known(reqById[x.request_id]));
+    if (!acc.length) return '';
+    let dr = driverObj(curTrip, d);
+    if (curTrip.live) { const n = new Date(); dr = Object.assign({}, dr, { departMin: n.getHours() * 60 + n.getMinutes() + 2 }); }   // an Offer a ride now trip leaves about now
+    const objs = acc.map((x) => riderObj(reqById[x.request_id]));
+    const stops = RS.buildRoute(dr, objs) || RS.buildRoute(dr, objs, true) || RS.buildRoute(dr, []);
+    const ev = RS.evaluate(stops, dr.departMin, dr.maxWait, dr.dow), direct = RS.minutes(dr.origin, dr.dest, dr.departMin, dr.dow);
+    const label = (s) => {
+      const q = s.rider && reqById[s.rider.id];
+      if (s.type === 'origin') return 'Start: <b>' + esc(disp(curTrip, 'origin')) + '</b>';
+      if (s.type === 'dest') return 'Arrive: <b>' + esc(disp(curTrip, 'dest')) + '</b>';
+      if (s.type === 'pickup') return 'Pick up <b>' + esc(s.rider.name) + '</b>' + (q ? ' <span class="mut">&middot; ' + esc(disp(q, 'pickup')) + '</span>' : '');
+      return 'Drop off <b>' + esc(s.rider.name) + '</b>' + (q ? ' <span class="mut">&middot; ' + esc(disp(q, 'dropoff')) + '</span>' : '');
+    };
+    const rows = ev.timeline.map((t, i) => '<div style="display:flex;gap:10px;padding:8px 0;border-top:1px solid var(--line)"><b style="min-width:46px">' + (i === 0 ? RS.clock(dr.departMin) : RS.clock(t.arrive)) + '</b><span>' + label(t.stop) + '</span></div>').join('');
+    const extra = Math.max(0, Math.round(ev.totalMin - direct));
+    return '<div id="trip-plan">' + card('Trip plan', '<p class="mut" style="margin-top:0">Review this, then tap Start trip. About ' + fmtMin(ev.totalMin) + ' in all' + (extra ? ', ' + extra + ' min more than driving alone' : '') + '.</p>' + rows
+      + '<div style="margin-top:12px"><button class="btn" data-startnav="1" style="width:100%;padding:12px;font-size:16px">Start trip</button></div>'
+      + '<p class="mut" style="margin-top:8px">Start trip tells your riders you are on your way and opens Google Maps with all of these stops. If Maps is already navigating, tap X in Maps first.</p>') + '</div>';
+  }
   function driverTop() {
     if (!curTrip || !known(curTrip)) return card('Start here', `<p><b>1.</b> Fill in the form below: where you drive from and to, the date and time.</p><p><b>2.</b> Tap <b>Review trip</b>, then <b>Confirm and post</b>.</p><p><b>3.</b> Riders who ask for a seat will appear on this page for you to accept.</p><p>${goTo('ld-form')}Go to the form</button></p>`);
     const dates = RSD.nextOccurrences(curTrip.trip_date, curTrip.repeat_days, new Date(), 7), d = pickView(viewD, dates);
@@ -636,7 +664,7 @@
     const typing = document.activeElement && /^(lt|lr|lv|ls|ln|rn)-/.test(document.activeElement.id || '') && document.activeElement.tagName !== 'BUTTON' && !pending;
     if (!typing && sig !== formSig) { formSig = sig; $('ld-form').innerHTML = guard('trip form', driverForm); $('lr-form').innerHTML = guard('ride form', riderForm); $('lw-main').innerHTML = guard('points', walletMain); $('ls-main').innerHTML = guard('settings', settingsMain); }
     const busyIn = (id) => { const a = document.activeElement; return a && /SELECT|INPUT/.test(a.tagName) && a.closest && a.closest('#' + id); };
-    if (!busyIn('ld-top')) $('ld-top').innerHTML = guard('leave now', driverNow) + guard('driver summary', driverTop) + guard('drive log', driveLogCard);
+    if (!busyIn('ld-top')) $('ld-top').innerHTML = guard('trip plan', tripPlan) + guard('leave now', driverNow) + guard('driver summary', driverTop) + guard('drive log', driveLogCard);
     if (!busyIn('lr-top')) $('lr-top').innerHTML = guard('ride now', riderNow) + guard('rider summary', riderTop);
     $('ld-lists').innerHTML = guard('riders list', driverLists);
     $('lr-lists').innerHTML = guard('drivers list', riderLists);

@@ -314,18 +314,18 @@ public class LocationService extends Service {
 
     /** After an accept: one tap re-opens Google Maps with the new stop (RideShare keeps counting the drive time and distance). */
     private void routeAlert(String name) {
-        Intent link = new Intent(Intent.ACTION_VIEW, Uri.parse("ca.rideshare.app://update-route"))
+        Intent link = new Intent(Intent.ACTION_VIEW, Uri.parse("ca.rideshare.app://plan"))
                 .setClass(this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         PendingIntent pi = PendingIntent.getActivity(this, 7, link, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
         Notification n = new NotificationCompat.Builder(this, ALERT_CHANNEL)
                 .setContentTitle(name + " is added to your trip")
-                .setContentText("Tap to update your route in Google Maps. Your drive time and distance keep counting.")
+                .setContentText("Tap to preview your trip and stops, then start when you are ready.")
                 .setSmallIcon(android.R.drawable.ic_dialog_info)
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setDefaults(Notification.DEFAULT_ALL)
                 .setAutoCancel(true)
                 .setContentIntent(pi)
-                .addAction(0, "Update route", pi)
+                .addAction(0, "Preview trip", pi)
                 .build();
         try { getSystemService(NotificationManager.class).notify(3000, n); } catch (Exception ignore) { }
     }
