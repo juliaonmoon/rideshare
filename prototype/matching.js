@@ -80,7 +80,8 @@
   // The most extra minutes ALL pickups together may add. If the driver set no separate total, it is the same as max detour.
   const totalCap = (driver) => (driver.maxTotal == null ? driver.maxDetour : Math.max(driver.maxTotal, driver.maxDetour));
   // Cheapest feasible insertion of a rider's pickup+dropoff into an existing route.
-  function bestInsertion(stops, rider, driver) {
+  // relaxed = true is for riders the driver has ALREADY accepted: they stay on the route even if the timing or detour no longer fits.
+  function bestInsertion(stops, rider, driver, relaxed) {
     const directMin = minutes(driver.origin, driver.dest, driver.departMin, driver.dow);
     let best = null;
     for (let i = 1; i < stops.length; i++) {
@@ -90,7 +91,7 @@
         next.splice(i, 0, { loc: rider.pickup, type: 'pickup', rider });
         const ev = evaluate(next, driver.departMin, driver.maxWait, driver.dow);
         const detour = ev.totalMin - directMin;
-        if (ev.ok && detour <= totalCap(driver) + 1e-9 && (!best || detour < best.detour)) {
+        if ((relaxed || (ev.ok && detour <= totalCap(driver) + 1e-9)) && (!best || detour < best.detour)) {
           best = { stops: next, ev, detour };
         }
       }
@@ -103,10 +104,10 @@
   }
 
   // Build the current route from accepted riders (greedy cheapest insertion, in acceptance order).
-  function buildRoute(driver, accepted) {
+  function buildRoute(driver, accepted, relaxed) {
     let stops = baseStops(driver);
     for (const r of accepted) {
-      const b = bestInsertion(stops, r, driver);
+      const b = bestInsertion(stops, r, driver, relaxed);
       if (!b) return null;
       stops = b.stops;
     }
