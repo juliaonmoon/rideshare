@@ -7,6 +7,25 @@
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#0b7a5b">
 <script>
+// Sign-in return bridge. If Google/Supabase send the person back to this web page (instead of straight into the Android app), hand the sign-in to the app.
+// Works on an Android phone when the address carries a fresh sign-in; the app takes it from there (ca.rideshare.app://auth).
+(function () {
+  try {
+    var h = location.hash || '';
+    if (!/access_token=/.test(h) || !/refresh_token=/.test(h) || !/Android/i.test(navigator.userAgent) || (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform())) return;
+    var link = 'ca.rideshare.app://auth' + h;
+    window.addEventListener('DOMContentLoaded', function () {
+      var d = document.createElement('div');
+      d.style.cssText = 'position:fixed;inset:0;z-index:99999;background:#0b7a5b;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:24px;text-align:center;font:600 20px system-ui,sans-serif';
+      d.innerHTML = '<div>You are signed in.</div><a id="rs-open-app" style="background:#fff;color:#0b7a5b;padding:16px 28px;border-radius:14px;text-decoration:none;font-size:20px">Open the RideShare app</a><div style="font-weight:400;font-size:14px;opacity:.85">Tap the button to go back to the app.</div>';
+      document.body.appendChild(d);
+      document.getElementById('rs-open-app').href = link;
+    });
+    setTimeout(function () { try { location.href = link; } catch (e) {} }, 400);
+  } catch (e) {}
+})();
+</script>
+<script>
 // New layout is the default. ?ui=classic (or the switch in Me) brings the old layout back; ?ui=b returns.
 (function () { var m = 'b'; try { var q = new URLSearchParams(location.search).get('ui'); if (q === 'classic' || q === 'b') localStorage.setItem('rs_ui', q); m = localStorage.getItem('rs_ui') === 'classic' ? 'classic' : 'b'; } catch (e) {} document.documentElement.setAttribute('data-ui', m); })();
 </script>
