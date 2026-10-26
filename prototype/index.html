@@ -69,7 +69,7 @@ input[type=range]{width:100%;accent-color:var(--acc)}
 .name{font-weight:600}.mut{color:var(--mut);font-size:13px}
 .tag{display:inline-block;background:var(--acc2);color:var(--acc);border-radius:6px;padding:1px 7px;font-size:12px;margin-left:6px}
 .stat{display:flex;gap:18px;flex-wrap:wrap}.stat div{min-width:110px}.stat b{display:block;font-size:20px}
-#map-d,#map-r,#map-ld,#map-lr{height:300px;border-radius:12px;border:1px solid var(--line);margin-bottom:14px;background:var(--acc2)}
+#map-d,#map-r,#map-ld,#map-lr,#map-plan{height:300px;border-radius:12px;border:1px solid var(--line);margin-bottom:14px;background:var(--acc2)}
 .nomap{display:flex;align-items:center;justify-content:center;height:100%;color:var(--mut);padding:14px;text-align:center;font-size:13px}
 .empty{color:var(--mut);padding:8px 0}
 .warn{color:var(--bad);font-size:13px}
@@ -106,7 +106,7 @@ html[data-ui=b] .btn{padding:12px 18px;border-radius:12px;font-weight:600;min-he
 html[data-ui=b] select,html[data-ui=b] input[type=time],html[data-ui=b] input[type=date],html[data-ui=b] input[type=number],html[data-ui=b] input[type=text],html[data-ui=b] input[type=email]{min-height:44px;border-radius:10px;font-size:16px}
 html[data-ui=b] label{font-size:13px;margin:12px 0 4px}
 html[data-ui=b] .toast{bottom:calc(88px + env(safe-area-inset-bottom))}
-html[data-ui=b] #map-ld,html[data-ui=b] #map-lr{height:240px;border-radius:16px}
+html[data-ui=b] #map-ld,html[data-ui=b] #map-lr,html[data-ui=b] #map-plan{height:240px;border-radius:16px}
 html[data-ui=b] .days button{padding:9px 13px;min-height:40px}
 .uitoggle{display:block;text-align:center;font-size:13px;color:var(--acc);padding:6px 0}
 html[data-ui=b] .uitoggle{display:none}
@@ -188,6 +188,7 @@ html[data-ui=b] .uitoggle{display:none}
 </main>
 
 <main id="v-ldriver">
+  <div id="plan-wrap" class="hide" style="grid-column:1/-1"><div class="card"><h2>Trip plan</h2><div id="map-plan"></div><div id="plan-body"></div></div></div>
   <div id="ld-top" style="grid-column:1/-1"></div>
   <section id="ld-form"></section>
   <section>
