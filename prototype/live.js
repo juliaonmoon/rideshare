@@ -231,7 +231,11 @@
     if (curTrip.live) { const n = new Date(); dr = Object.assign({}, dr, { departMin: n.getHours() * 60 + n.getMinutes() + 2 }); }   // an Offer a ride now trip leaves about now
     const objs = acc.map((x) => riderObj(reqById[x.request_id]));
     const stops = RS.buildRoute(dr, objs) || RS.buildRoute(dr, objs, true) || RS.buildRoute(dr, []);
-    const ev = RS.evaluate(stops, dr.departMin, dr.maxWait, dr.dow), direct = RS.minutes(dr.origin, dr.dest, dr.departMin, dr.dow);
+    const direct = RS.minutes(dr.origin, dr.dest, dr.departMin, dr.dow);
+    let ev = RS.evaluate(stops, dr.departMin, dr.maxWait, dr.dow);
+    if (curTrip.live) {   // leaving about now: plain driving times, no waiting for a rider's window
+      let t = dr.departMin; ev = { timeline: stops.map((st, i) => { if (i > 0) t += RS.minutes(stops[i - 1].loc, st.loc, t, dr.dow); return { stop: st, arrive: t }; }) }; ev.totalMin = t - dr.departMin;
+    }
     const label = (s) => {
       const q = s.rider && reqById[s.rider.id];
       if (s.type === 'origin') return 'Start: <b>' + esc(disp(curTrip, 'origin')) + '</b>';
