@@ -12,6 +12,7 @@
   }
   const standalone = (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
   const inApp = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());   // the Android app itself
+  return;   // the install bar is switched off: people use the Android app, and the popup confused more than it helped
   if (!bar || standalone || inApp) return;
   const KEY = 'rs-install-dismissed';
   const dismissedRecently = () => { try { return Date.now() - Number(localStorage.getItem(KEY) || 0) < 7 * 864e5; } catch (e) { return false; } };
