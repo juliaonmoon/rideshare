@@ -339,7 +339,7 @@ function loadGoogle(){
 }
 // ---------- Road routes (Google Routes API, optional; falls back to straight lines) ----------
 // One request per distinct route, cached for the session, capped per day to protect the user's quota.
-const RT={cache:{},pending:{},timers:{},err:'',DAILY_CAP:250,CAPKEY:'rs-route-count'};
+const RT={cache:{},pending:{},timers:{},err:'',DAILY_CAP:300,CAPKEY:'rs-route-count'};
 const routeKey=(stops)=>stops.map(s=>s.loc.lat.toFixed(4)+','+s.loc.lng.toFixed(4)).join('|');
 function decodePoly(str){
   let i=0,lat=0,lng=0,out=[];
@@ -399,7 +399,8 @@ function fetchRoad(stops,k,done){
 function roadFor(id,stops,redraw){
   if(!getKey()||stops.length<2) return null;
   const k=routeKey(stops); if(RT.cache[k]) return RT.cache[k];
-  if(RT.err||RT.pending[k]||!routeBudgetOk()) return null;
+  if(!routeBudgetOk()){ if(!RT.capShown){ RT.capShown=true; toast('Road lookups are paused for today (the daily limit of '+RT.DAILY_CAP+' was reached). Maps show straight lines until tomorrow.'); } return null; }
+  if(RT.err||RT.pending[k]) return null;
   clearTimeout(RT.timers[id]);
   RT.timers[id]=setTimeout(()=>{ if(RT.cache[k]||RT.pending[k]) return; RT.pending[k]=1; fetchRoad(stops,k,redraw); },700);
   return null;
