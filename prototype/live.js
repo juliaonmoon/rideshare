@@ -57,6 +57,7 @@
   }
   let user = null, me = { name: '', points: 0 }, myTrip = null, myReq = null, ledger = [], matches = [];
   let otherTrips = [], otherReqs = [], extraTrips = [], extraReqs = [], names = {}, timer = null, busy = false, formSig = '', mapSig = {};
+  let autoAlerts = false;   // started the alert helper for a live trip that was already on when the app opened
   let dndOn = null;   // Android app only: can seat-request alerts break through Do Not Disturb?
   async function refreshDnd() {
     const n = window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform() && window.Capacitor.Plugins && window.Capacitor.Plugins.RideShareLocation;
@@ -153,6 +154,7 @@
       const stillLive = (x) => x.live && x.expires_at && Date.parse(x.expires_at) > Date.now();
       ledger = l.data || [];
       myLiveTrip = (t.data || []).find(stillLive) || null; myTrip = (t.data || []).find((x) => !x.live) || null; curTrip = myLiveTrip || myTrip;
+      if (!myLiveTrip) autoAlerts = false; else if (!autoAlerts && !driveSession && nativeLoc()) { autoAlerts = true; startAlerts(nativeLoc()); }
       myLiveReq = (r.data || []).find(stillLive) || null; myReq = (r.data || []).find((x) => !x.live) || null; curReq = myLiveReq || myReq;
       matches = m.data || []; otherTrips = ot.data || []; otherReqs = orq.data || [];
       const tIds = [...new Set(matches.map((x) => x.trip_id))], rIds = [...new Set(matches.map((x) => x.request_id))];
