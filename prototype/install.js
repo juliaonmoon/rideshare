@@ -11,7 +11,8 @@
     window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').then((reg) => reg.update()).catch(() => {}));
   }
   const standalone = (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
-  if (!bar || standalone) return;
+  const inApp = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());   // the Android app itself
+  if (!bar || standalone || inApp) return;
   const KEY = 'rs-install-dismissed';
   const dismissedRecently = () => { try { return Date.now() - Number(localStorage.getItem(KEY) || 0) < 7 * 864e5; } catch (e) { return false; } };
   const remember = () => { try { localStorage.setItem(KEY, String(Date.now())); } catch (e) {} };
