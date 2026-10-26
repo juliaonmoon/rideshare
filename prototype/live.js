@@ -57,6 +57,14 @@
   }
   let user = null, me = { name: '', points: 0 }, myTrip = null, myReq = null, ledger = [], matches = [];
   let otherTrips = [], otherReqs = [], extraTrips = [], extraReqs = [], names = {}, timer = null, busy = false, formSig = '', mapSig = {};
+  let dndOn = null;   // Android app only: can seat-request alerts break through Do Not Disturb?
+  async function refreshDnd() {
+    const n = window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform() && window.Capacitor.Plugins && window.Capacitor.Plugins.RideShareLocation;
+    if (!n) return;
+    let v = false; try { v = !!(await n.dndStatus()).bypass; } catch (e) { /* older app build */ }
+    if (v !== dndOn) { dndOn = v; formSig = ''; if (typeof render === 'function' && user) render(); }
+  }
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshDnd(); });
   const editing = { trip: false, req: false };   // the full form stays hidden behind the summary card until Edit is tapped
   let pending = null, viewD = null, viewR = null, askCancel = null, rel = {}, mySet = null, styles = {}, isTest = false, testMode = false, drives = [];
   // Personal settings: defaults for new trips and requests (every trip can still be changed before posting).
@@ -129,6 +137,7 @@
       const uid = user.id;
       try { await sb.rpc('settle_due'); } catch (e) { /* older database: ignore */ }
       try { await sb.rpc('expire_live'); } catch (e) { /* older database: ignore */ }
+      if (dndOn === null) refreshDnd();
       if (PLOK === null) PLOK = !!(window.RS_PLACES && window.RS_PLACES.available()) && !(await sb.from('trips').select('origin_lat').limit(1)).error;
       const [p, w, l, t, r, m, ot, orq] = await Promise.all([
         sb.from('profiles').select('display_name').eq('id', uid).maybeSingle(),
@@ -575,6 +584,7 @@
       + chk('ls-rpets', x.r_pets, 'I travel with a pet')
       + '<div style="margin-top:12px"><button class="btn" id="ls-save-r">Save rider settings</button></div>')
       + (isTest ? card('Admin and test tools (only you see this)', '<p><b>Test mode: ' + (testMode ? 'ON' : 'OFF') + '</b></p><p class="mut">While test mode is ON and driving mode is running (after Start my trip), a made-up rider asks for a seat on your trip about every 2 minutes, so you get alerts while you navigate.</p><p><button class="btn' + (testMode ? ' ghost' : '') + '" id="ts-mode">' + (testMode ? 'Turn test mode OFF' : 'Turn test mode ON') + '</button></p><hr style="border:0;border-top:1px solid var(--line);margin:12px 0"><p class="mut">Or send one test request by hand. Pick a delay if you want to start driving first.</p><label>Send it</label><select id="ts-delay" style="' + INPUT + '"><option value="0">Right now</option><option value="30" selected>In 30 seconds</option><option value="60">In 1 minute</option><option value="120">In 2 minutes</option></select><div style="margin-top:10px"><button class="btn" id="ts-send">Send a test request</button> <button class="btn ghost" id="ts-clear">Remove test requests</button></div>') : '')
+      + (nativeLoc() && nativeLoc().dndStatus ? card('Rider alerts', '<p class="mut">' + (dndOn ? '<b>On.</b> Seat requests can alert you even in Do Not Disturb or Sleeping mode.' : 'Seat requests are silent when your phone is on Do Not Disturb or Sleeping mode. Allow them to break through:') + '</p><p><button class="btn' + (dndOn ? ' ghost' : '') + '" data-dnd="1">' + (dndOn ? 'Open alert settings' : 'Let alerts break through Do Not Disturb') + '</button></p>') : '')
       + card('Layout', '<p class="mut">You are using the new layout. If something feels off, you can switch back at any time.</p><p><button class="btn ghost" data-uimode="classic">Use the old layout</button></p>')
       + card('Good to know', '<p class="mut">Driver and rider settings are separate, so you can be both at the same time. Other people only see your ride style (like "quiet ride") and whether you accept automatically. Nothing else in here is shared.</p>');
   }
@@ -672,6 +682,15 @@
         if (todo.length) { Promise.all(todo.map((x) => sb.rpc('ride_step', { p_match: x.id, p_step: 'on_my_way' }))).then(() => loadAll()); toast('Your riders can see you are on the way'); }
         return;
       }
+      // Android app: first time only, offer to let rider alerts break through Do Not Disturb / Sleeping mode (the phone's owner has to flip one switch).
+      try {
+        const st = nat.dndStatus ? await nat.dndStatus() : null; dndOn = st ? !!st.bypass : null;
+        let asked = ''; try { asked = localStorage.getItem('rs_dnd_asked') || ''; } catch (e) { /* storage blocked */ }
+        if (st && !st.bypass && !asked) {
+          try { localStorage.setItem('rs_dnd_asked', '1'); } catch (e) { /* storage blocked */ }
+          if (window.confirm('Rider requests can alert you even when your phone is on Do Not Disturb or Sleeping mode.\n\nOpen the setting now? Switch on "Override Do Not Disturb", then come back and tap Start my trip.')) { await nat.openAlertSettings(); return; }
+        }
+      } catch (e) { /* older app build: skip */ }
       // Android app: tell the riders, start background sharing, THEN hand over to Google Maps for voice directions.
       if (todo.length) { await Promise.all(todo.map((x) => sb.rpc('ride_step', { p_match: x.id, p_step: 'on_my_way' }))); toast('Your riders can see you are on the way'); }
       shareWatch = 'native-pending'; const ok = await startNativeShare(nat); if (!ok) shareWatch = null; else driveSession = true; paintSharing();
@@ -692,6 +711,7 @@
     on('ts-clear', () => run(sb.rpc('clear_test_requests'), 'Test requests removed'));
     each('[data-stopdrive]', () => { stopShare(true); toast('Driving mode is off'); render(); });
     each('[data-startnav]', () => startNav());
+    each('[data-dnd]', async () => { const n = nativeLoc(); try { await n.openAlertSettings(); } catch (e) { toast('Could not open the settings'); } });
     each('[data-edit]', (b) => { editing[b.dataset.edit] = true; formSig = ''; render(); const f = $(b.dataset.edit === 'trip' ? 'ld-form' : 'lr-form'); if (f) f.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
     each('[data-edit-off]', (b) => { editing[b.dataset.editOff] = false; pending = null; formSig = ''; plReset('lt-o', 'lt-d', 'lr-p', 'lr-d'); render(); });
     each('[data-scroll]', (b) => { const e = $(b.dataset.scroll); if (e) e.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
