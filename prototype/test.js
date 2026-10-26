@@ -158,6 +158,14 @@ t('Google times: a place that is not in the table falls back to the rough estima
   const odd = { lat: 49.3, lng: -122.9 };
   assert.ok(RS.minutes(LOCS['Surrey Central'], odd, 480, 2) > 0);
 });
+t('An accepted rider stays on the route even when the pickup window has passed', () => {
+  const o = LOCS['Surrey Central'], d = LOCS['BCIT / Willingdon (Burnaby)'], p = LOCS['Production Way (Burnaby)'];
+  const driver = { origin: o, dest: d, departMin: 22 * 60, maxDetour: 20, maxWait: 5, accepts: 'either', dow: 2 };
+  const late = { id: 'z', pickup: p, dropoff: d, readyFrom: 7 * 60, readyTo: 8 * 60, pays: 'cash' };   // window closed hours ago
+  assert.strictEqual(RS.buildRoute(driver, [late]), null, 'a normal search says it does not fit');
+  const stops = RS.buildRoute(driver, [late], true);
+  assert.ok(stops && stops.length === 4 && stops[1].type === 'pickup', 'but the accepted rider still gets a stop');
+});
 t('Google times: an address between neighbourhoods is scaled by the Google time of the nearest centres', () => {
   RS.setTraffic(T, LOCS);
   const o = { lat: LOCS['Surrey Central'].lat + 0.004, lng: LOCS['Surrey Central'].lng + 0.004 }, d = { lat: LOCS['BCIT / Willingdon (Burnaby)'].lat - 0.004, lng: LOCS['BCIT / Willingdon (Burnaby)'].lng + 0.003 };

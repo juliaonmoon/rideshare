@@ -44,7 +44,7 @@
   const nativePlug = (n) => (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform() && window.Capacitor.Plugins && window.Capacitor.Plugins[n]) || null;
   if (nativePlug('App')) {
     nativePlug('App').addListener('appUrlOpen', async (ev) => {
-      if (ev && ev.url && ev.url.indexOf('ca.rideshare.app://update-route') === 0) { await loadAll(); setTimeout(() => { if (window.__startNav) window.__startNav(); }, 600); return; }
+      if (ev && ev.url && ev.url.indexOf('ca.rideshare.app://update-route') === 0) { await loadAll(); setTimeout(() => { if (window.__startNav) window.__startNav(true); }, 600); return; }
       if (!ev || !ev.url || ev.url.indexOf(APP_AUTH) !== 0) return;
       try { if (nativePlug('Browser')) await nativePlug('Browser').close(); } catch (e) { /* tab already closed */ }
       const p = new URLSearchParams(ev.url.split('#')[1] || ev.url.split('?')[1] || '');
@@ -466,7 +466,7 @@
     const inc = mine.filter((x) => x.status === 'requested');
     const acc = mine.filter((x) => x.status === 'accepted' && reqById[x.request_id] && known(reqById[x.request_id]));
     const accObjs = acc.map((x) => riderObj(reqById[x.request_id]));
-    const stops = RS.buildRoute(dr, accObjs) || RS.buildRoute(dr, []);
+    const stops = RS.buildRoute(dr, accObjs) || RS.buildRoute(dr, accObjs, true) || RS.buildRoute(dr, []);
     const waiting = otherReqs.filter((q) => known(q) && reqOn(q, viewD)).map(riderObj);
     const found = RS.findMatches(dr, waiting, accObjs);
     drawDriverMap(stops, waiting.filter((w) => !found.some((f) => f.rider.id === w.id)), viewD);
@@ -523,7 +523,7 @@
     const accepted = mine.find((x) => x.status === 'accepted' || x.status === 'completed'), accTrip = accepted && tripById[accepted.trip_id];
     let html = dateCard, mapStops = [{ loc: meO.pickup, type: 'pickup', rider: meO }, { loc: meO.dropoff, type: 'dropoff', rider: meO }];
     if (accepted && accTrip && known(accTrip)) {
-      const stops = RS.buildRoute(driverObj(accTrip, accepted.ride_date), [meO]);
+      const stops = RS.buildRoute(driverObj(accTrip, accepted.ride_date), [meO]) || RS.buildRoute(driverObj(accTrip, accepted.ride_date), [meO], true);
       if (stops) { mapStops = stops; window.__lrStops = stops; window.__lrDriver = names[accTrip.user_id] || 'Your driver'; window.__lrMe = meO; }
       const stg = stageOf(accepted), dn = nm(accTrip.user_id);
       const live = { accepted: `${dn} accepted. They will tap <b>On my way</b> when they set off.`, on_my_way: `<b>${dn} is on the way.</b>`, arrived: `<b>${dn} has arrived.</b> Look for them at the pickup spot.`, picked_up: `<b>Ride in progress</b> with ${dn}.`, dropped_off: `<b>You have arrived.</b> Thanks for sharing the ride!` }[stg];
@@ -689,26 +689,27 @@
     });
     ['ls-save-d', 'ls-save-r'].forEach((id) => on(id, () => run(sb.from('user_settings').upsert(saveSettings()), 'Settings saved')));
     on('lv-savename', () => { const v = $('lv-name').value.trim(); if (!v) { toast('Enter a name'); return; } run(sb.from('profiles').update({ display_name: v }).eq('id', user.id), 'Name saved'); });
-    const startNav = async () => {
+    // routeOnly: just show the new route in Google Maps (from the Update route alert); it does not start the trip or tell the riders you are on your way.
+    const startNav = async (routeOnly) => {
       const stops = window.__ldStops || [];
       if (stops.length < 2) { toast('Nothing to navigate yet'); return; }
       const pt = (x) => x.loc.lat + ',' + x.loc.lng, mid = stops.slice(1, -1).map(pt);
-      const url = 'https://www.google.com/maps/dir/?api=1&travelmode=driving&dir_action=navigate&destination=' + pt(stops[stops.length - 1]) + (mid.length ? '&waypoints=' + encodeURIComponent(mid.join('|')) : '');
-      const todo = (window.__ldAcc || []).filter((x) => stageOf(x) === 'accepted' && stepsOpen(x));
+      const url = 'https://www.google.com/maps/dir/?api=1&travelmode=driving' + (routeOnly ? '' : '&dir_action=navigate') + '&destination=' + pt(stops[stops.length - 1]) + (mid.length ? '&waypoints=' + encodeURIComponent(mid.join('|')) : '');
+      const todo = routeOnly ? [] : (window.__ldAcc || []).filter((x) => stageOf(x) === 'accepted' && stepsOpen(x));
       const nat = nativeLoc();
       if (!nat) {
         window.open(url, '_blank', 'noopener');
         if (todo.length) { Promise.all(todo.map((x) => sb.rpc('ride_step', { p_match: x.id, p_step: 'on_my_way' }))).then(() => loadAll()); toast('Your riders can see you are on the way'); }
         return;
       }
-      if (await dndAsk(nat)) return;   // first time only: the driver went to the Do Not Disturb setting, so wait for them to come back
+      if (!routeOnly && await dndAsk(nat)) return;   // first time only: the driver went to the Do Not Disturb setting, so wait for them to come back
       // Android app: tell the riders, start background sharing, THEN hand over to Google Maps for voice directions.
       if (todo.length) { await Promise.all(todo.map((x) => sb.rpc('ride_step', { p_match: x.id, p_step: 'on_my_way' }))); toast('Your riders can see you are on the way'); }
-      shareWatch = 'native-pending'; const ok = await startNativeShare(nat); if (!ok) shareWatch = null; else driveSession = true; paintSharing();
+      if (!routeOnly || !driveSession) { shareWatch = 'native-pending'; const ok = await startNativeShare(nat); if (!ok) shareWatch = null; else driveSession = true; paintSharing(); }
       try { await nat.openUrl({ url }); } catch (e) { window.open(url, '_blank', 'noopener'); }
       loadAll();
     };
-    on('ld-go', startNav);
+    on('ld-go', () => startNav());
     window.__startNav = startNav;
     on('ld-start', () => { if (window.__ldStops) window.RS_UI.startSim('ld', 'map-ld', window.__ldStops, 'You', 'driver'); });
     on('ld-stop', () => window.RS_UI.stopSim('ld'));
