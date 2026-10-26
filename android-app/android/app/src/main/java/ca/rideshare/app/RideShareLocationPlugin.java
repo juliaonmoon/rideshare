@@ -89,6 +89,22 @@ public class RideShareLocationPlugin extends Plugin {
         call.resolve(r);
     }
 
+    /** fakeLocation({ lat, lng }): for testing without driving. The helper pretends the car is at this point for 15 minutes (clearFakeLocation() ends it). */
+    @PluginMethod
+    public void fakeLocation(PluginCall call) {
+        Double lat = call.getDouble("lat"), lng = call.getDouble("lng");
+        if (lat == null || lng == null) { call.reject("Missing lat or lng"); return; }
+        LocationService.fakeLat = lat; LocationService.fakeLng = lng;
+        LocationService.fakeUntil = System.currentTimeMillis() + 15 * 60 * 1000;
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void clearFakeLocation(PluginCall call) {
+        LocationService.fakeUntil = 0;
+        call.resolve();
+    }
+
     /** Make sure the seat-request alert channel exists (same settings as the service uses), so its settings page can be opened. */
     private NotificationChannel alertChannel() {
         NotificationManager nm = getContext().getSystemService(NotificationManager.class);
