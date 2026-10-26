@@ -339,7 +339,7 @@ function loadGoogle(){
 }
 // ---------- Road routes (Google Routes API, optional; falls back to straight lines) ----------
 // One request per distinct route, cached for the session, capped per day to protect the user's quota.
-const RT={cache:{},pending:{},timers:{},err:'',DAILY_CAP:60,CAPKEY:'rs-route-count'};
+const RT={cache:{},pending:{},timers:{},err:'',DAILY_CAP:250,CAPKEY:'rs-route-count'};
 const routeKey=(stops)=>stops.map(s=>s.loc.lat.toFixed(4)+','+s.loc.lng.toFixed(4)).join('|');
 function decodePoly(str){
   let i=0,lat=0,lng=0,out=[];
@@ -366,6 +366,16 @@ function routeCount(){
   try{ const day=new Date().toISOString().slice(0,10); let c=JSON.parse(localStorage.getItem(RT.CAPKEY)||'{}');
     if(c.day!==day) c={day,n:0}; c.n++; localStorage.setItem(RT.CAPKEY,JSON.stringify(c)); }catch(e){}
 }
+// Routes already fetched are kept on this phone (the last 12), so opening the app again does not ask Google again.
+const RCK='rs-route-cache';
+function saveRoute(k,rt){
+  try{ const c=JSON.parse(localStorage.getItem(RCK)||'{}'); c[k]={t:Date.now(),f:rt.polyline.encodedPolyline,l:rt.legs.map(l=>l.polyline.encodedPolyline)};
+    const keep=Object.keys(c).sort((a,b)=>c[b].t-c[a].t).slice(0,12), o={}; keep.forEach(x=>{ o[x]=c[x]; }); localStorage.setItem(RCK,JSON.stringify(o)); }catch(e){}
+}
+(function loadRoutes(){
+  try{ const c=JSON.parse(localStorage.getItem(RCK)||'{}');
+    Object.keys(c).forEach(k=>{ try{ RT.cache[k]={full:withLen(decodePoly(c[k].f)),legs:c[k].l.map(p=>withLen(decodePoly(p)))}; }catch(e){} }); }catch(e){}
+})();
 function fetchRoad(stops,k,done){
   const ll=(s)=>({location:{latLng:{latitude:s.loc.lat,longitude:s.loc.lng}}});
   const body={origin:ll(stops[0]),destination:ll(stops[stops.length-1]),intermediates:stops.slice(1,-1).map(ll),
@@ -379,6 +389,7 @@ function fetchRoad(stops,k,done){
     if(!ok||!j.routes||!j.routes[0]) throw new Error((j.error&&j.error.message)||'No route returned');
     const rt=j.routes[0];
     RT.cache[k]={full:withLen(decodePoly(rt.polyline.encodedPolyline)),legs:rt.legs.map(l=>withLen(decodePoly(l.polyline.encodedPolyline)))};
+    saveRoute(k,rt);
     RT.err=''; done();
   })
   .catch(e=>{ if(!RT.err){ RT.err=String(e.message||e); toast('Road routes unavailable ('+RT.err+'). Showing straight lines.'); renderMapStatus(); } })
