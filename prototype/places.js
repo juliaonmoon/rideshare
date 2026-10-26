@@ -36,5 +36,21 @@
     return { lat: j.location.latitude, lng: j.location.longitude, name: (j.displayName && j.displayName.text) || '' };
   }
 
-  window.RS_PLACES = { suggest, details, available: () => !down && !!KEY(), markDown: () => { down = true; } };
+  // The street address at a point (for Use my location): the closest place Google knows within 150 m. Empty text if none or blocked.
+  async function where(lat, lng) {
+    if (down || !KEY()) return '';
+    try {
+      const r = await fetch(BASE + 'places:searchNearby', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Goog-Api-Key': KEY(), 'X-Goog-FieldMask': 'places.formattedAddress' },
+        body: JSON.stringify({ maxResultCount: 1, rankPreference: 'DISTANCE', locationRestriction: { circle: { center: { latitude: lat, longitude: lng }, radius: 150 } } }),
+      });
+      if (r.status === 403) { down = true; return ''; }
+      if (!r.ok) return '';
+      const j = await r.json(), a = j.places && j.places[0] && j.places[0].formattedAddress;
+      return a ? a.split(',').slice(0, 2).join(',').trim() : '';
+    } catch (e) { return ''; }
+  }
+
+  window.RS_PLACES = { suggest, details, where, available: () => !down && !!KEY(), markDown: () => { down = true; } };
 })();
