@@ -29,11 +29,11 @@
 
   // The map point of a suggestion. Ending the search session here keeps Google's billing to one search.
   async function details(id) {
-    const r = await fetch(BASE + 'places/' + encodeURIComponent(id) + '?sessionToken=' + token, { headers: { 'X-Goog-Api-Key': KEY(), 'X-Goog-FieldMask': 'location,displayName' } });
+    const r = await fetch(BASE + 'places/' + encodeURIComponent(id) + '?sessionToken=' + token, { headers: { 'X-Goog-Api-Key': KEY(), 'X-Goog-FieldMask': 'location' } });
     token = newToken();
     if (!r.ok) throw new Error('Could not load that place');
     const j = await r.json();
-    return { lat: j.location.latitude, lng: j.location.longitude, name: (j.displayName && j.displayName.text) || '' };
+    return { lat: j.location.latitude, lng: j.location.longitude, name: '' };
   }
 
   // The street address at a point (for Use my location): the closest place Google knows within 150 m. Empty text if none or blocked.
