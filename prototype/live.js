@@ -305,7 +305,7 @@
     const share = sharingCard() + driveCard();
     if (myLiveTrip) return share + card('Offer a ride now: ON', `<p><b>${esc(disp(myLiveTrip, 'origin'))}</b> to <b>${esc(disp(myLiveTrip, 'dest'))}</b></p><p class="mut">Leaving about ${RS.clock(myLiveTrip.depart_min)} &middot; riders can see you until you switch it off.</p><p><button class="btn ghost" data-stoplive="trip">Switch OFF</button></p>`);
     const o = nowSel['ln-o'] || (myTrip && myTrip.origin) || 'Surrey Central', d = nowSel['ln-d'] || (myTrip && myTrip.dest) || 'BCIT / Willingdon (Burnaby)';
-    return share + card('Not on a schedule? Offer a ride now', `<p class="mut">For a spur-of-the-moment drive: no date or time. Switch it on and riders along your route can ask for a seat. It stays on until you switch it off (or after 12 hours). Already posted a trip? Use <b>Start my trip</b> instead.</p>
+    return share + card('Not on a schedule? Offer a ride now', `<p class="mut">For a spur-of-the-moment drive: no date or time. Switch it on and riders along your route can ask for a seat. You get a phone alert for each request, even before you leave. It stays on until you switch it off (or after 12 hours). Already posted a trip? Use <b>Start my trip</b> instead.</p>
       ${placeField('ln-o', 'From', myTrip, 'origin', o)}
       ${placeField('ln-d', 'To', myTrip, 'dest', d)}
       <div style="margin-top:10px"><button class="btn" id="ln-go" style="width:100%;padding:12px;font-size:16px">Switch ON: offer a ride now</button></div><p class="warn" id="ln-msg" role="alert"></p>`);
@@ -353,6 +353,23 @@
   const driveCard = () => (user && driveSession && !shouldShare() ? `<div class="card"><h2>Driving mode is on</h2><p>You will get a phone alert if a rider asks for a seat. Open the alert to accept or decline.</p><p class="mut">It switches itself off when your trips for the day are over.</p><p><button class="btn ghost" data-stopdrive="1">Stop driving mode</button></p>${testBtns()}</div>` : '');
   // In the Android app, a native background helper keeps sending the position while Google Maps is on screen.
   const nativeLoc = () => (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform() && window.Capacitor.Plugins && window.Capacitor.Plugins.RideShareLocation) || null;
+  // Android app: first time only, offer to let rider alerts break through Do Not Disturb / Sleeping mode (the phone's owner has to flip one switch).
+  // Returns true when the settings screen was opened.
+  async function dndAsk(nat) {
+    try {
+      const st = nat.dndStatus ? await nat.dndStatus() : null; dndOn = st ? !!st.bypass : null;
+      let asked = ''; try { asked = localStorage.getItem('rs_dnd_asked') || ''; } catch (e) { /* storage blocked */ }
+      if (st && !st.bypass && !asked) {
+        try { localStorage.setItem('rs_dnd_asked', '1'); } catch (e) { /* storage blocked */ }
+        if (window.confirm('Rider requests can alert you even when your phone is on Do Not Disturb or Sleeping mode.\n\nOpen the setting now? Switch on "Override Do Not Disturb", then come back.')) { await nat.openAlertSettings(); return true; }
+      }
+    } catch (e) { /* older app build: skip */ }
+    return false;
+  }
+  // Driving mode without Google Maps: the helper that listens for seat requests and shows the phone alert.
+  async function startAlerts(nat) {
+    shareWatch = 'native-pending'; const ok = await startNativeShare(nat); if (!ok) shareWatch = null; else driveSession = true; paintSharing(); return ok;
+  }
   async function startNativeShare(nat) {
     try {
       const r = await sb.rpc('start_tracking');
@@ -682,15 +699,7 @@
         if (todo.length) { Promise.all(todo.map((x) => sb.rpc('ride_step', { p_match: x.id, p_step: 'on_my_way' }))).then(() => loadAll()); toast('Your riders can see you are on the way'); }
         return;
       }
-      // Android app: first time only, offer to let rider alerts break through Do Not Disturb / Sleeping mode (the phone's owner has to flip one switch).
-      try {
-        const st = nat.dndStatus ? await nat.dndStatus() : null; dndOn = st ? !!st.bypass : null;
-        let asked = ''; try { asked = localStorage.getItem('rs_dnd_asked') || ''; } catch (e) { /* storage blocked */ }
-        if (st && !st.bypass && !asked) {
-          try { localStorage.setItem('rs_dnd_asked', '1'); } catch (e) { /* storage blocked */ }
-          if (window.confirm('Rider requests can alert you even when your phone is on Do Not Disturb or Sleeping mode.\n\nOpen the setting now? Switch on "Override Do Not Disturb", then come back and tap Start my trip.')) { await nat.openAlertSettings(); return; }
-        }
-      } catch (e) { /* older app build: skip */ }
+      if (await dndAsk(nat)) return;   // first time only: the driver went to the Do Not Disturb setting, so wait for them to come back
       // Android app: tell the riders, start background sharing, THEN hand over to Google Maps for voice directions.
       if (todo.length) { await Promise.all(todo.map((x) => sb.rpc('ride_step', { p_match: x.id, p_step: 'on_my_way' }))); toast('Your riders can see you are on the way'); }
       shareWatch = 'native-pending'; const ok = await startNativeShare(nat); if (!ok) shareWatch = null; else driveSession = true; paintSharing();
@@ -723,7 +732,7 @@
       const o = $('ln-o').value, d = $('ln-d').value, need = plNeed('ln-o', 'where you start') || plNeed('ln-d', 'where you are going'); if (need) { formMsg('ln-msg', need); return; }
       if (samePlace(o, d, 'ln-o', 'ln-d')) { formMsg('ln-msg', 'Pick two different places'); return; }
       const f = myTrip || {}, cols = [plCols('ln-o', 'origin'), plCols('ln-d', 'dest')]; const ok = await run(sb.rpc('go_live_trip', { p_origin: o, p_dest: d, p_max_detour: f.max_detour == null ? S_().d_detour : f.max_detour, p_max_wait: f.max_wait == null ? S_().d_wait : f.max_wait, p_accepts: f.accepts || S_().d_accepts, p_cost_per_km: 0.2, p_minutes: 720, p_max_pickups: Math.min(4, S_().d_seats), p_max_total_detour: Math.min(4, S_().d_seats) > 1 ? Math.max(S_().d_total_detour, f.max_detour == null ? S_().d_detour : f.max_detour) : null }).then(async (r) => { if (!r.error) await setCols('trips', r.data, ...cols); return r; }), 'You are live. Switch it off when you stop driving.');
-      if (ok) { viewD = null; mapSig = {}; }
+      if (ok) { viewD = null; mapSig = {}; const nat = nativeLoc(); if (nat) { await dndAsk(nat); if (await startAlerts(nat)) toast('Alerts are on. You will get a phone alert when a rider asks for a seat.'); } }
     });
     on('rn-go', async () => {
       const p = $('rn-p').value, d = $('rn-d').value, need = plNeed('rn-p', 'where to pick you up') || plNeed('rn-d', 'where to drop you off'); if (need) { formMsg('rn-msg', need); return; }
@@ -732,7 +741,7 @@
       const ok = await run(sb.rpc('go_live_request', { p_pickup: p, p_dropoff: d, p_pays: $('rn-pay').value }).then(async (r) => { if (!r.error) await setCols('ride_requests', r.data, ...cols); return r; }), 'Drivers can see you for 20 minutes');
       if (ok) { viewR = null; mapSig = {}; }
     });
-    each('[data-stoplive]', (b) => { const isTrip = b.dataset.stoplive === 'trip', row = isTrip ? myLiveTrip : myLiveReq; if (row) run(sb.from(isTrip ? 'trips' : 'ride_requests').update({ active: false }).eq('id', row.id), 'Stopped'); });
+    each('[data-stoplive]', (b) => { const isTrip = b.dataset.stoplive === 'trip', row = isTrip ? myLiveTrip : myLiveReq; if (isTrip && driveSession && !shouldShare()) stopShare(true); if (row) run(sb.from(isTrip ? 'trips' : 'ride_requests').update({ active: false }).eq('id', row.id), 'Stopped'); });
     each('#ld-dates button', (b) => { viewD = b.dataset.date; mapSig = {}; render(); });
     each('#lr-dates button', (b) => { viewR = b.dataset.date; mapSig = {}; render(); });
     each('[data-req]', (b) => run(sb.rpc('request_seat', { p_trip: b.dataset.req, p_request: myReq.id, p_pay_with: b.dataset.pay, p_points: +b.dataset.pts, p_date: b.dataset.date }), 'Seat requested'));
