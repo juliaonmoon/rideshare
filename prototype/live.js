@@ -275,7 +275,12 @@
       box.querySelector('[data-ploc]').onclick = () => {
         if (!navigator.geolocation) { note.textContent = 'This device cannot share its location'; return; }
         note.textContent = 'Finding you...';
-        navigator.geolocation.getCurrentPosition((pos) => { const n = covered(pos.coords.latitude, pos.coords.longitude); if (n) setP({ label: 'My location', lat: pos.coords.latitude, lng: pos.coords.longitude, area: n.a }); },
+        navigator.geolocation.getCurrentPosition(async (pos) => {
+            const n = covered(pos.coords.latitude, pos.coords.longitude); if (!n) return;
+            note.textContent = 'Finding your address...';
+            const addr = await window.RS_PLACES.where(pos.coords.latitude, pos.coords.longitude);
+            setP({ label: addr || 'My location', lat: pos.coords.latitude, lng: pos.coords.longitude, area: n.a });
+          },
           (e) => { note.textContent = e && e.code === 1 ? 'Location is blocked. Allow it in your settings.' : 'Could not find your location'; }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 });
       };
       box.querySelector('[data-pnb]').onclick = (e) => { e.preventDefault(); sel.style.display = sel.style.display === 'none' ? '' : 'none'; };
