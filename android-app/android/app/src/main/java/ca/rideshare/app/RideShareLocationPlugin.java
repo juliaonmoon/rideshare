@@ -1,10 +1,13 @@
 package ca.rideshare.app;
 
 import android.Manifest;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Build;
+import android.provider.Settings;
 
 import androidx.core.content.ContextCompat;
 
@@ -84,6 +87,47 @@ public class RideShareLocationPlugin extends Plugin {
         r.put("lastOk", LocationService.lastOk);
         r.put("error", LocationService.lastError);
         call.resolve(r);
+    }
+
+    /** Make sure the seat-request alert channel exists (same settings as the service uses), so its settings page can be opened. */
+    private NotificationChannel alertChannel() {
+        NotificationManager nm = getContext().getSystemService(NotificationManager.class);
+        NotificationChannel ch = nm.getNotificationChannel(LocationService.ALERT_CHANNEL);
+        if (ch == null) {
+            ch = new NotificationChannel(LocationService.ALERT_CHANNEL, "Seat requests", NotificationManager.IMPORTANCE_HIGH);
+            ch.setDescription("An alert when a rider asks for a seat while you are driving");
+            ch.setBypassDnd(true); // only honoured once the phone's owner allows it in settings
+            nm.createNotificationChannel(ch);
+        }
+        return ch;
+    }
+
+    /** dndStatus(): { bypass } is true when seat-request alerts may break through Do Not Disturb / Sleeping mode. */
+    @PluginMethod
+    public void dndStatus(PluginCall call) {
+        JSObject r = new JSObject();
+        r.put("bypass", Build.VERSION.SDK_INT >= 26 && alertChannel().canBypassDnd());
+        call.resolve(r);
+    }
+
+    /** openAlertSettings(): opens the phone's settings page for the seat-request alerts (one switch: Override Do Not Disturb). */
+    @PluginMethod
+    public void openAlertSettings(PluginCall call) {
+        Intent i;
+        if (Build.VERSION.SDK_INT >= 26) {
+            alertChannel();
+            i = new Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
+                    .putExtra(Settings.EXTRA_APP_PACKAGE, getContext().getPackageName())
+                    .putExtra(Settings.EXTRA_CHANNEL_ID, LocationService.ALERT_CHANNEL);
+        } else {
+            i = new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, getContext().getPackageName());
+        }
+        try {
+            getContext().startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            call.resolve();
+        } catch (Exception e) {
+            call.reject("Could not open the settings");
+        }
     }
 
     /** openUrl({ url }): opens a link in the Google Maps app (voice directions), or the browser if Maps is missing. */

@@ -341,6 +341,7 @@ public class LocationService extends Service {
         if (Build.VERSION.SDK_INT >= 26) {
             NotificationChannel al = new NotificationChannel(ALERT_CHANNEL, "Seat requests", NotificationManager.IMPORTANCE_HIGH);
             al.setDescription("An alert when a rider asks for a seat while you are driving");
+            al.setBypassDnd(true); // only honoured once the phone's owner allows it in settings (RideShare asks for that)
             getSystemService(NotificationManager.class).createNotificationChannel(al);
         }
         if (Build.VERSION.SDK_INT >= 26) {
