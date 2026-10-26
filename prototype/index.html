@@ -113,6 +113,10 @@ html[data-ui=b] .uitoggle{display:none}
 .pfsug{margin-top:4px}.pfsug button{display:block;width:100%;text-align:left;padding:10px 12px;margin:0;border:1px solid var(--line);border-top:0;background:var(--card);color:var(--ink);font:inherit;cursor:pointer;min-height:44px}
 .pfsug button:first-child{border-top:1px solid var(--line);border-radius:10px 10px 0 0}.pfsug button:last-child{border-radius:0 0 10px 10px}.pfsug button:only-child{border-radius:10px}
 .pfsug button span{display:block;font-size:12px;color:var(--mut)}.pfrow{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-top:6px;font-size:13px}.pfrow a{color:var(--acc)}
+#map-plan-box{position:relative}
+#map-plan-box.full{position:fixed;inset:0;z-index:200;background:var(--card);padding-top:env(safe-area-inset-top)}
+#map-plan-box.full #map-plan{height:100%!important;border-radius:0;margin:0;border:0}
+#map-plan-box.full #plan-full{top:calc(12px + env(safe-area-inset-top))}
 </style>
 </head>
 <body>
@@ -188,7 +192,7 @@ html[data-ui=b] .uitoggle{display:none}
 </main>
 
 <main id="v-ldriver">
-  <div id="plan-wrap" class="hide" style="grid-column:1/-1"><div class="card"><h2>Trip plan</h2><div id="map-plan"></div><div id="plan-body"></div></div></div>
+  <div id="plan-wrap" class="hide" style="grid-column:1/-1"><div class="card"><h2>Trip plan</h2><div id="map-plan-box"><div id="map-plan"></div><button type="button" id="plan-full" class="btn" style="position:absolute;top:10px;right:10px;padding:8px 12px;min-height:0;background:var(--card);color:var(--acc);border:1px solid var(--line);box-shadow:0 1px 4px rgba(0,0,0,.25)">Full screen</button></div><div id="plan-body"></div></div></div>
   <div id="ld-top" style="grid-column:1/-1"></div>
   <section id="ld-form"></section>
   <section>
@@ -399,7 +403,7 @@ function gmapDraw(id, stops, extra){
   const road=roadFor(id,stops,()=>{ if(gmaps[id]&&gmaps[id].last&&routeKey(gmaps[id].last.stops)===routeKey(stops)) gmapDraw(id,stops,extra); });
   g.over.push(new gm.Polyline({map:g.map,path:road?road.full.path:path,strokeColor:'#0b7a5b',strokeWeight:5,strokeOpacity:.85}));
   const col={origin:'#0b7a5b',dest:'#b42318',pickup:'#2563eb',dropoff:'#7c3aed'};
-  stops.forEach(s=>g.over.push(new gm.Marker({map:g.map,position:{lat:s.loc.lat,lng:s.loc.lng},title:stopLabel(s),icon:{path:gm.SymbolPath.CIRCLE,scale:8,fillColor:col[s.type],fillOpacity:1,strokeColor:'#ffffff',strokeWeight:2}})));
+  stops.forEach((s,i)=>g.over.push(new gm.Marker({map:g.map,position:{lat:s.loc.lat,lng:s.loc.lng},title:stopLabel(s),label:{text:String(i+1),color:'#ffffff',fontSize:'12px',fontWeight:'700'},zIndex:10+i,icon:{path:gm.SymbolPath.CIRCLE,scale:12,fillColor:col[s.type],fillOpacity:1,strokeColor:'#ffffff',strokeWeight:2}})));
   (extra||[]).forEach(e=>g.over.push(new gm.Marker({map:g.map,position:{lat:e.loc.lat,lng:e.loc.lng},title:e.label,icon:{path:gm.SymbolPath.CIRCLE,scale:5,fillColor:'#94a3b8',fillOpacity:.7,strokeWeight:0}})));
   g.bounds=new gm.LatLngBounds(); (road?road.full.path:path).forEach(pt=>g.bounds.extend(pt)); g.map.fitBounds(g.bounds,40);
 }
