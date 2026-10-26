@@ -29,6 +29,7 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="ca.rideshare.app" android:host="auth" />
                 <data android:scheme="ca.rideshare.app" android:host="update-route" />
+                <data android:scheme="ca.rideshare.app" android:host="plan" />
             </intent-filter>
 
         </activity>
