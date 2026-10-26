@@ -133,8 +133,8 @@
   const driverObj = (t, date) => ({ dow: dowOf(date || t.trip_date), origin: pt(t, 'origin'), dest: pt(t, 'dest'), departMin: t.depart_min, maxDetour: t.max_detour, maxTotal: t.max_total_detour == null ? null : t.max_total_detour, maxPickups: t.max_pickups == null ? null : t.max_pickups, maxWait: t.max_wait, accepts: t.accepts, cpk: Number(t.cost_per_km) || 0.2, name: names[t.user_id] || 'Driver' });
   const riderObj = (r) => ({ id: r.id, name: names[r.user_id] || 'Rider', pickup: pt(r, 'pickup'), dropoff: pt(r, 'dropoff'), readyFrom: r.ready_from, readyTo: r.ready_to, pays: r.pays });
   const known = (x) => LOC[x.origin || x.pickup] && LOC[x.dest || x.dropoff];
-  const tripOn = (t, d) => RSD.occursOn(t.trip_date, t.repeat_days, d);
-  const reqOn = (r, d) => RSD.occursOn(r.ride_date, r.repeat_days, d);
+  const tripOn = (t, d) => RSD.occursOn(t.live ? todayStr() : t.trip_date, t.repeat_days, d);   // Offer a ride now trips always count as today, even after midnight
+  const reqOn = (r, d) => RSD.occursOn(r.live ? todayStr() : r.ride_date, r.repeat_days, d);
 
   async function loadAll() {
     if (!user || busy) return; busy = true;
@@ -247,7 +247,7 @@
   }
   function driverTop() {
     if (!curTrip || !known(curTrip)) return card('Start here', `<p><b>1.</b> Fill in the form below: where you drive from and to, the date and time.</p><p><b>2.</b> Tap <b>Review trip</b>, then <b>Confirm and post</b>.</p><p><b>3.</b> Riders who ask for a seat will appear on this page for you to accept.</p><p>${goTo('ld-form')}Go to the form</button></p>`);
-    const dates = RSD.nextOccurrences(curTrip.trip_date, curTrip.repeat_days, new Date(), 7), d = pickView(viewD, dates);
+    const dates = RSD.nextOccurrences(curTrip.live ? todayStr() : curTrip.trip_date, curTrip.repeat_days, new Date(), 7), d = pickView(viewD, dates);
     const mine = d ? matches.filter((x) => x.driver_id === user.id && x.ride_date === d) : [];
     const asks = mine.filter((x) => x.status === 'requested').length, acc = mine.filter((x) => x.status === 'accepted').length;
     const isToday = d === todayStr();
@@ -257,7 +257,7 @@
   }
   function riderTop() {
     if (!curReq || !known(curReq)) return card('Start here', `<p><b>1.</b> Fill in the form below: where you want to be picked up and dropped off, the date and when you are ready.</p><p><b>2.</b> Tap <b>Review request</b>, then <b>Confirm and post</b>.</p><p><b>3.</b> Pick a driver from the list and tap <b>Request</b>.</p><p>${goTo('lr-form')}Go to the form</button></p>`);
-    const dates = RSD.nextOccurrences(curReq.ride_date, curReq.repeat_days, new Date(), 7), d = pickView(viewR, dates);
+    const dates = RSD.nextOccurrences(curReq.live ? todayStr() : curReq.ride_date, curReq.repeat_days, new Date(), 7), d = pickView(viewR, dates);
     const mine = d ? matches.filter((x) => x.rider_id === user.id && x.request_id === curReq.id && x.ride_date === d) : [];
     const acc = mine.find((x) => x.status === 'accepted' || x.status === 'completed'), pend = mine.some((x) => x.status === 'requested');
     const line = acc ? `<b>${esc(STEP_LABEL[stageOf(acc)])}.</b> Tap <b>See my ride</b> for live updates.` : pend ? 'You asked a driver for a seat. Waiting for them to accept.' : 'Pick a driver below and tap <b>Request</b>.';
@@ -485,7 +485,7 @@
 
   function driverLists() {
     if (!curTrip || !known(curTrip)) return card('Riders', '<p class="mut">Post your trip on the left to see riders along your route.</p>');
-    const dates = RSD.nextOccurrences(curTrip.trip_date, curTrip.repeat_days, new Date(), 7);
+    const dates = RSD.nextOccurrences(curTrip.live ? todayStr() : curTrip.trip_date, curTrip.repeat_days, new Date(), 7);
     viewD = pickView(viewD, dates);
     const dr = driverObj(curTrip, viewD), reqById = {}; [...otherReqs, ...extraReqs].forEach((q) => { reqById[q.id] = q; });
     const dateCard = card('Date', dateChips('ld-dates', dates, viewD) + `<p class="mut" style="margin-top:8px">${whenText(curTrip.trip_date, curTrip.depart_min, curTrip.repeat_days)}</p>`);
@@ -542,7 +542,7 @@
 
   function riderLists() {
     if (!curReq || !known(curReq)) return card('Drivers going your way', '<p class="mut">Post your request on the left to see drivers.</p>');
-    const dates = RSD.nextOccurrences(curReq.ride_date, curReq.repeat_days, new Date(), 7);
+    const dates = RSD.nextOccurrences(curReq.live ? todayStr() : curReq.ride_date, curReq.repeat_days, new Date(), 7);
     viewR = pickView(viewR, dates);
     const dateCard = card('Date', dateChips('lr-dates', dates, viewR) + `<p class="mut" style="margin-top:8px">Ready ${RS.clock(curReq.ready_from)} to ${RS.clock(curReq.ready_to)}${curReq.repeat_days.length ? ' &middot; repeats ' + RSD.repeatText(curReq.repeat_days) : ' &middot; one time'}</p>`);
     if (!viewR) return dateCard;
