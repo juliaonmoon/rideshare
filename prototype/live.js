@@ -245,14 +245,25 @@
     };
     const rows = ev.timeline.map((t, i) => '<div style="display:flex;gap:10px;padding:8px 0;border-top:1px solid var(--line)"><span style="flex:none;width:24px;height:24px;border-radius:50%;background:var(--acc);color:#fff;font-weight:700;font-size:13px;display:inline-flex;align-items:center;justify-content:center">' + (i + 1) + '</span><b style="min-width:46px">' + (i === 0 ? RS.clock(dr.departMin) : RS.clock(t.arrive)) + '</b><span>' + label(t.stop) + '</span></div>').join('');
     const extra = Math.max(0, Math.round(ev.totalMin - direct));
-    // The same Picked up / Dropped off buttons as in the phone notification, in one obvious place.
-    const stepBtn = (x, step, label) => '<button class="btn" data-step="' + x.id + '|' + step + '" style="width:100%;margin-top:8px;padding:12px;font-size:16px">' + label + '</button>';
-    const stepBtns = acc.map((x) => { const stg = stageOf(x), who = esc(names[x.rider_id] || 'Rider'); return stg === 'on_my_way' || stg === 'arrived' ? stepBtn(x, 'picked_up', 'Picked up ' + who) : stg === 'picked_up' ? stepBtn(x, 'dropped_off', 'Dropped off ' + who) : ''; }).join('');
-    const stepBlock = stepBtns ? '<div style="margin:12px 0 4px"><b>Next step</b><span class="mut"> (same buttons as the notification)</span>' + stepBtns + '</div>' : '';
-    return { stops, html: '<p class="mut" style="margin-top:0">Review this, then tap Start trip. About ' + fmtMin(ev.totalMin) + ' in all' + (extra ? ', ' + extra + ' min more than driving alone' : '') + '.</p>' + rows
-      + stepBlock
-      + '<div style="margin-top:12px"><button class="btn" data-startnav="1" style="width:100%;padding:12px;font-size:16px">Start trip</button></div>'
-      + '<p class="mut" style="margin-top:8px">Start trip tells your riders you are on your way and opens Google Maps with all of these stops. If Maps is already navigating, tap X in Maps first.</p>' };
+    // One big button at a time, in order: Start trip, then Picked up (per rider, in route order), then Dropped off. Same actions as the phone notification.
+    const started = acc.some((x) => x.en_route_at);
+    const bigBtn = (attr, label) => '<button class="btn" ' + attr + ' style="width:100%;padding:14px;font-size:17px">' + label + '</button>';
+    let next = '';
+    if (!started) next = bigBtn('data-startnav="1"', 'Start trip');
+    else {
+      for (const st of stops) {
+        if (!st.rider || (st.type !== 'pickup' && st.type !== 'dropoff')) continue;
+        const x = acc.find((m) => m.request_id === st.rider.id); if (!x) continue;
+        const stg = stageOf(x), who = esc(st.rider.name);
+        if (st.type === 'pickup' && (stg === 'on_my_way' || stg === 'arrived' || stg === 'accepted')) { next = bigBtn('data-step="' + x.id + '|picked_up"', 'Picked up ' + who); break; }
+        if (st.type === 'dropoff' && stg === 'picked_up') { next = bigBtn('data-step="' + x.id + '|dropped_off"', 'Dropped off ' + who); break; }
+      }
+    }
+    const note = started
+      ? '<p class="mut" style="margin:8px 0 0">This is the next step. The same button also appears in your phone notification, so you can stay in Google Maps. </p><button class="btn ghost" data-startnav="1" style="margin-top:6px">Open Google Maps again</button>'
+      : '<p class="mut" style="margin:8px 0 0">Start trip tells your riders you are on your way and opens Google Maps with all of these stops. If Maps is already navigating, tap X in Maps first.</p>';
+    return { stops, html: '<p class="mut" style="margin-top:0">' + (started ? 'Your trip is under way. About ' : 'Review this, then tap Start trip. About ') + fmtMin(ev.totalMin) + ' in all' + (extra ? ', ' + extra + ' min more than driving alone' : '') + '.</p>' + rows
+      + '<div style="margin-top:12px">' + next + '</div>' + note };
   }
   // The plan card has its own map (map-plan) that is never rebuilt, so it does not flicker when the page refreshes.
   function renderPlan() {
