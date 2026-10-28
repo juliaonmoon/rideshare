@@ -267,13 +267,17 @@ public class LocationService extends Service {
 
     // ---------- a small floating RideShare button over Google Maps while a ride is under way: one tap brings the driver back to RideShare ----------
     private View bubble;
+    private View closeTarget;                    // the X shown at the bottom while the button is being dragged
+    private boolean bubbleDismissed = false;      // dragged onto the X: stay away until the next ride
+    private boolean hadRides = false;
     private WindowManager.LayoutParams bubbleLp;
 
     static boolean canOverlay(android.content.Context c) { return Build.VERSION.SDK_INT < 23 || Settings.canDrawOverlays(c); }
 
     private void syncBubble() {
         boolean need = rides.length() > 0;
-        if (need && bubble == null && canOverlay(this)) showBubble(); else if (!need && bubble != null) hideBubble();
+        if (!need) bubbleDismissed = false;   // a new ride brings it back
+        if (need && !bubbleDismissed && bubble == null && canOverlay(this)) showBubble(); else if ((!need || bubbleDismissed) && bubble != null) hideBubble();
     }
 
     private void showBubble() {
@@ -304,9 +308,15 @@ public class LocationService extends Service {
                         case MotionEvent.ACTION_DOWN: sx = e.getRawX(); sy = e.getRawY(); ox = lp.x; oy = lp.y; moved = false; return true;
                         case MotionEvent.ACTION_MOVE:
                             if (Math.abs(e.getRawX() - sx) > 12 * d || Math.abs(e.getRawY() - sy) > 12 * d) moved = true;
-                            if (moved) { lp.x = ox + (int) (e.getRawX() - sx); lp.y = oy + (int) (e.getRawY() - sy); try { wm.updateViewLayout(view, lp); } catch (Exception ignore) { } }
+                            if (moved) {
+                                lp.x = ox + (int) (e.getRawX() - sx); lp.y = oy + (int) (e.getRawY() - sy);
+                                try { wm.updateViewLayout(view, lp); } catch (Exception ignore) { }
+                                showCloseTarget(true, overTarget(e.getRawX(), e.getRawY()));
+                            }
                             return true;
                         case MotionEvent.ACTION_UP:
+                            if (moved && overTarget(e.getRawX(), e.getRawY())) { showCloseTarget(false, false); bubbleDismissed = true; main.post(LocationService.this::hideBubble); return true; }
+                            showCloseTarget(false, false);
                             if (moved) { getSharedPreferences("rideshare_bubble", MODE_PRIVATE).edit().putInt("x", lp.x).putInt("y", lp.y).apply(); }
                             if (!moved) { try { startActivity(new Intent(LocationService.this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP)); } catch (Exception ignore) { } }
                             return true;
@@ -321,7 +331,38 @@ public class LocationService extends Service {
         }
     }
 
+    /** Is the finger over the X at the bottom centre of the screen? */
+    private boolean overTarget(float rawX, float rawY) {
+        android.util.DisplayMetrics m = getResources().getDisplayMetrics();
+        return rawY > m.heightPixels - 190 * m.density && Math.abs(rawX - m.widthPixels / 2f) < 90 * m.density;
+    }
+
+    private void showCloseTarget(boolean show, boolean hot) {
+        try {
+            WindowManager wm = (WindowManager) getSystemService(WINDOW_SERVICE);
+            float d = getResources().getDisplayMetrics().density;
+            if (show && closeTarget == null) {
+                android.widget.TextView t = new android.widget.TextView(this);
+                t.setText("X"); t.setTextColor(0xFFFFFFFF); t.setTextSize(22); t.setGravity(Gravity.CENTER);
+                int size = (int) (64 * d);
+                int type = Build.VERSION.SDK_INT >= 26 ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY : WindowManager.LayoutParams.TYPE_PHONE;
+                WindowManager.LayoutParams lp = new WindowManager.LayoutParams(size, size, type,
+                        WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE, PixelFormat.TRANSLUCENT);
+                lp.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL; lp.y = (int) (70 * d);
+                wm.addView(t, lp);
+                closeTarget = t;
+            }
+            if (closeTarget != null && show) {
+                GradientDrawable g = new GradientDrawable();
+                g.setShape(GradientDrawable.OVAL); g.setColor(hot ? 0xFFB42318 : 0xCC333333);
+                closeTarget.setBackground(g);
+            }
+            if (!show && closeTarget != null) { wm.removeView(closeTarget); closeTarget = null; }
+        } catch (Exception ignore) { closeTarget = null; }
+    }
+
     private void hideBubble() {
+        showCloseTarget(false, false);
         if (bubble == null) return;
         try { ((WindowManager) getSystemService(WINDOW_SERVICE)).removeView(bubble); } catch (Exception ignore) { }
         bubble = null;
