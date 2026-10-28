@@ -268,7 +268,8 @@
       : '<p class="mut" style="margin:8px 0 0">Start trip tells your riders you are on your way and opens Google Maps with all of these stops. If Maps is already navigating, tap X in Maps first.</p>';
     return { stops, html: '<p class="mut" style="margin-top:0">' + (started ? 'Your trip is under way. About ' : 'Review this, then tap Start trip. About ') + fmtMin(ev.totalMin) + ' in all' + (extra ? ', ' + extra + ' min more than driving alone' : '') + '.</p>' + rows
       + paxBlock
-      + '<div style="margin-top:12px">' + next + '</div>' + note };
+      + '<div style="margin-top:12px">' + next + '</div>' + note
+      + '<div style="margin-top:12px"><button class="btn ghost" data-reset="trip">Reset trip</button></div>' };
   }
   // The plan card has its own map (map-plan) that is never rebuilt, so it does not flicker when the page refreshes.
   function renderPlan() {
@@ -287,7 +288,7 @@
     const isToday = d === todayStr();
     const line = asks ? `<b>${asks} rider${asks > 1 ? 's' : ''} asked for a seat.</b> Tap <b>See riders</b> to accept.` : acc ? `<b>${acc} rider${acc > 1 ? 's' : ''} accepted.</b> ${isToday ? 'Tap <b>Start my trip</b> when you set off.' : 'You can start on the day of the trip.'}` : 'No riders yet. They will show up here when they ask for a seat.';
     return card('Your trip', `<p><b>${esc(disp(curTrip, 'origin'))}</b> to <b>${esc(disp(curTrip, 'dest'))}</b></p><p class="mut">${whenText(curTrip.trip_date, curTrip.depart_min, curTrip.repeat_days)}</p><p>${line}</p>
-      <div class="row2">${isToday ? '<button class="btn" data-startnav="1">Start my trip</button> ' : ''}${goTo(asks ? 'seat-requests' : acc ? (isToday ? 'plan-wrap' : 'riding-with-me') : 'ld-lists')}See riders</button> <button class="btn ghost" data-edit="trip">Edit trip</button></div>`);
+      <div class="row2">${isToday ? '<button class="btn" data-startnav="1">Start my trip</button> ' : ''}${goTo(asks ? 'seat-requests' : acc ? (isToday ? 'plan-wrap' : 'riding-with-me') : 'ld-lists')}See riders</button> <button class="btn ghost" data-edit="trip">Edit trip</button> <button class="btn ghost" data-reset="trip">Reset trip</button></div>`);
   }
   function riderTop() {
     if (!curReq || !known(curReq)) return card('Start here', `<p><b>1.</b> Fill in the form below: where you want to be picked up and dropped off, the date and when you are ready.</p><p><b>2.</b> Tap <b>Review request</b>, then <b>Confirm and post</b>.</p><p><b>3.</b> Pick a driver from the list and tap <b>Request</b>.</p><p>${goTo('lr-form')}Go to the form</button></p>`);
@@ -802,6 +803,18 @@
     on('ts-fake-drop', () => fakeAt('drop'));
     on('ts-fake-off', () => { const nat = nativeLoc(); if (nat && nat.clearFakeLocation) nat.clearFakeLocation().then(() => toast('Using your real GPS again')); });
     each('[data-stopdrive]', () => { stopShare(true); toast('Driving mode is off'); render(); });
+    // Reset trip: start over at any time (after a trip, or when something went wrong).
+    const resetTrip = async () => {
+      const live = !!myLiveTrip;
+      if (!window.confirm('Reset this trip?\n\nRiders who are not picked up yet are cancelled (their points go back to them). ' + (live ? 'Your Offer a ride now trip is taken down. ' : 'Your posted trip stays. ') + 'Driving mode turns off. You can start a new trip right after.')) return;
+      const todo = matches.filter((x) => x.driver_id === user.id && (x.status === 'accepted' || x.status === 'requested') && !x.picked_up_at);
+      for (const x of todo) { try { await (x.status === 'requested' ? sb.rpc('respond_match', { p_match: x.id, p_accept: false }) : sb.rpc('cancel_ride', { p_match: x.id })); } catch (e) { /* already finished */ } }
+      if (myLiveTrip) { try { await sb.from('trips').update({ active: false }).eq('id', myLiveTrip.id); } catch (e) { /* ignore */ } }
+      if (isTest) { try { await sb.rpc('clear_test_requests'); } catch (e) { /* ignore */ } }
+      stopShare(true); editing.trip = false; pending = null; viewD = null; mapSig = {}; formSig = '';
+      toast('Trip reset. You can start a new one.'); await loadAll();
+    };
+    each('[data-reset]', () => resetTrip());
     each('[data-startnav]', () => startNav());
     on('dnd-go', async () => { const n = nativeLoc(); toast('Opening the alert settings...'); try { await n.openAlertSettings(); } catch (e) { toast('Could not open the settings. Open Settings > Apps > RideShare App > Notifications > Seat requests.'); } });
     each('[data-edit]', (b) => { editing[b.dataset.edit] = true; formSig = ''; render(); const f = $(b.dataset.edit === 'trip' ? 'ld-form' : 'lr-form'); if (f) f.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
