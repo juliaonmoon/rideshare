@@ -271,6 +271,18 @@
       + '<div style="margin-top:12px">' + next + '</div>' + note
       + '<div style="margin-top:12px"><button class="btn ghost" data-reset="trip">Reset trip</button></div>' };
   }
+  // Seat requests at the very top of Home, so a rider asking is the first thing the driver sees.
+  function renderRequests() {
+    const wrap = $('req-wrap'); if (!wrap) return;
+    const reqById = {}; [...otherReqs, ...extraReqs].forEach((q) => { reqById[q.id] = q; });
+    const t0 = todayStr();
+    const asks = user ? matches.filter((x) => x.driver_id === user.id && x.status === 'requested' && x.ride_date >= t0 && reqById[x.request_id]) : [];
+    if (!asks.length) { wrap.classList.add('hide'); return; }
+    wrap.classList.remove('hide');
+    $('req-title').textContent = asks.length > 1 ? asks.length + ' riders are asking for a seat' : 'A rider is asking for a seat';
+    $('req-body').innerHTML = asks.map((x) => { const q = reqById[x.request_id];
+      return '<div style="padding:8px 0;border-top:1px solid var(--line)"><b style="font-size:17px">' + nm(x.rider_id) + '</b>' + badge(x.rider_id, 'rider') + tagsFor(x.rider_id, 'rider') + '<div class="mut">' + esc(disp(q, 'pickup')) + ' to ' + esc(disp(q, 'dropoff')) + ' &middot; ' + (x.pay_with === 'points' ? x.points + ' pts' : 'cash gas-share') + '</div><div style="margin-top:8px"><button class="btn" data-acc="' + x.id + '" style="padding:12px 22px;font-size:16px">Accept</button> <button class="btn ghost" data-dec="' + x.id + '">Decline</button></div></div>'; }).join('');
+  }
   // The plan card has its own map (map-plan) that is never rebuilt, so it does not flicker when the page refreshes.
   function renderPlan() {
     const wrap = $('plan-wrap'); if (!wrap) return;
@@ -699,6 +711,7 @@
     const typing = document.activeElement && /^(lt|lr|lv|ls|ln|rn)-/.test(document.activeElement.id || '') && document.activeElement.tagName !== 'BUTTON' && !pending;
     if (!typing && sig !== formSig) { formSig = sig; $('ld-form').innerHTML = guard('trip form', driverForm); $('lr-form').innerHTML = guard('ride form', riderForm); $('lw-main').innerHTML = guard('points', walletMain); $('ls-main').innerHTML = guard('settings', settingsMain); }
     const busyIn = (id) => { const a = document.activeElement; return a && /SELECT|INPUT/.test(a.tagName) && a.closest && a.closest('#' + id); };
+    try { renderRequests(); } catch (e) { console.error('requests', e); }
     if (!busyIn('ld-top')) try { renderPlan(); } catch (e) { console.error('plan', e); }
     if (!busyIn('ld-top')) $('ld-top').innerHTML = guard('leave now', driverNow) + guard('driver summary', driverTop) + guard('drive log', driveLogCard);
     if (!busyIn('lr-top')) $('lr-top').innerHTML = guard('ride now', riderNow) + guard('rider summary', riderTop);
