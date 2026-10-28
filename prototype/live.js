@@ -226,7 +226,13 @@
     if (!user || !curTrip || !known(curTrip)) return null;
     const d = todayStr(), reqById = {}; [...otherReqs, ...extraReqs].forEach((q) => { reqById[q.id] = q; });
     const acc = matches.filter((x) => x.driver_id === user.id && x.ride_date === d && x.status === 'accepted' && reqById[x.request_id] && known(reqById[x.request_id]));
-    if (!acc.length) return null;
+    if (!acc.length) {
+      // every rider is dropped off, but the driver is not at the destination yet: keep a final step until they end the trip
+      let on = ''; try { on = localStorage.getItem('rs_trip_on') || ''; } catch (e) { /* storage blocked */ }
+      if (!(on && on === curTrip.id && curTrip.live)) return null;
+      return { stops: [{ loc: pt(curTrip, 'origin'), type: 'origin' }, { loc: pt(curTrip, 'dest'), type: 'dest' }],
+        html: '<p style="margin-top:0"><b>All riders are dropped off.</b> Keep driving to <b>' + esc(disp(curTrip, 'dest')) + '</b>.</p><div style="margin-top:12px"><button class="btn" data-reset="end" style="width:100%;padding:14px;font-size:17px">I have arrived: end trip</button></div><p class="mut" style="margin:8px 0 0">Tap this when you reach your destination. It turns off driving mode and takes the trip down.</p>' };
+    }
     let dr = driverObj(curTrip, d);
     if (curTrip.live) { const n = new Date(); dr = Object.assign({}, dr, { departMin: n.getHours() * 60 + n.getMinutes() + 2 }); }   // an Offer a ride now trip leaves about now
     const objs = acc.map((x) => riderObj(reqById[x.request_id]));
@@ -768,6 +774,7 @@
     on('lv-savename', () => { const v = $('lv-name').value.trim(); if (!v) { toast('Enter a name'); return; } run(sb.from('profiles').update({ display_name: v }).eq('id', user.id), 'Name saved'); });
     // routeOnly: just show the new route in Google Maps (from the Update route alert); it does not start the trip or tell the riders you are on your way.
     const startNav = async (routeOnly) => {
+      if (!routeOnly && curTrip) { try { localStorage.setItem('rs_trip_on', curTrip.id); } catch (e) { /* storage blocked */ } }
       const stops = window.__ldStops || [];
       if (stops.length < 2) { toast('Nothing to navigate yet'); return; }
       const pt = (x) => x.loc.lat + ',' + x.loc.lng, mid = stops.slice(1, -1).map(pt);
@@ -817,17 +824,18 @@
     on('ts-fake-off', () => { const nat = nativeLoc(); if (nat && nat.clearFakeLocation) nat.clearFakeLocation().then(() => toast('Using your real GPS again')); });
     each('[data-stopdrive]', () => { stopShare(true); toast('Driving mode is off'); render(); });
     // Reset trip: start over at any time (after a trip, or when something went wrong).
-    const resetTrip = async () => {
+    const resetTrip = async (end) => {
       const live = !!myLiveTrip;
-      if (!window.confirm('Reset this trip?\n\nRiders who are not picked up yet are cancelled (their points go back to them). ' + (live ? 'Your Offer a ride now trip is taken down. ' : 'Your posted trip stays. ') + 'Driving mode turns off. You can start a new trip right after.')) return;
+      if (!end && !window.confirm('Reset this trip?\n\nRiders who are not picked up yet are cancelled (their points go back to them). ' + (live ? 'Your Offer a ride now trip is taken down. ' : 'Your posted trip stays. ') + 'Driving mode turns off. You can start a new trip right after.')) return;
       const todo = matches.filter((x) => x.driver_id === user.id && (x.status === 'accepted' || x.status === 'requested') && !x.picked_up_at);
       for (const x of todo) { try { await (x.status === 'requested' ? sb.rpc('respond_match', { p_match: x.id, p_accept: false }) : sb.rpc('cancel_ride', { p_match: x.id })); } catch (e) { /* already finished */ } }
       if (myLiveTrip) { try { await sb.from('trips').update({ active: false }).eq('id', myLiveTrip.id); } catch (e) { /* ignore */ } }
       if (isTest) { try { await sb.rpc('clear_test_requests'); } catch (e) { /* ignore */ } }
       stopShare(true); editing.trip = false; pending = null; viewD = null; mapSig = {}; formSig = '';
-      toast('Trip reset. You can start a new one.'); await loadAll();
+      try { localStorage.removeItem('rs_trip_on'); } catch (e) { /* storage blocked */ }
+      toast(end ? 'Trip ended. Thank you for driving!' : 'Trip reset. You can start a new one.'); await loadAll();
     };
-    each('[data-reset]', () => resetTrip());
+    each('[data-reset]', (b) => resetTrip(b.dataset.reset === 'end'));
     each('[data-startnav]', () => startNav());
     on('dnd-go', async () => { const n = nativeLoc(); toast('Opening the alert settings...'); try { await n.openAlertSettings(); } catch (e) { toast('Could not open the settings. Open Settings > Apps > RideShare App > Notifications > Seat requests.'); } });
     each('[data-edit]', (b) => { editing[b.dataset.edit] = true; formSig = ''; render(); const f = $(b.dataset.edit === 'trip' ? 'ld-form' : 'lr-form'); if (f) f.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
@@ -858,7 +866,7 @@
     each('[data-cancelask]', (b) => { askCancel = b.dataset.cancelask; render(); });
     each('[data-cancelno]', () => { askCancel = null; render(); });
     each('[data-cancelgo]', (b) => { askCancel = null; run(sb.rpc('cancel_ride', { p_match: b.dataset.cancelgo }), 'Ride cancelled. See your points history for any refund.'); });
-    each('[data-step]', (b) => { const [id, st] = b.dataset.step.split('|'); run(sb.rpc('ride_step', { p_match: id, p_step: st }), st === 'dropped_off' ? 'Ride complete. Points paid.' : 'Updated'); });
+    each('[data-step]', (b) => { const [id, st] = b.dataset.step.split('|'); run(sb.rpc('ride_step', { p_match: id, p_step: st }), st === 'dropped_off' ? 'Dropped off. That rider\'s ride is complete and the points are paid. Keep driving to your destination.' : 'Updated'); });
     each('[data-incar]', (b) => run(sb.rpc('rider_in_car', { p_match: b.dataset.incar }), 'Thanks, confirmed'));
     each('[data-noshow]', (b) => run(sb.rpc('mark_no_show', { p_match: b.dataset.noshow }), 'Marked as a no-show. You keep the points.'));
     each('[data-acc]', (b) => run(sb.rpc('respond_match', { p_match: b.dataset.acc, p_accept: true }), 'Accepted'));
