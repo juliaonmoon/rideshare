@@ -314,6 +314,14 @@ public class LocationService extends Service {
             try { nm.notify(nid, n); } catch (Exception ignore) { }
         }
         for (Integer old : new HashSet<>(stepIds)) if (!now.contains(old)) { nm.cancel(old); nm.cancel(old + 1000); }
+        // also clear step notifications left over from before the helper restarted (a ride that is already finished)
+        try {
+            for (android.service.notification.StatusBarNotification sbn : nm.getActiveNotifications()) {
+                int id = sbn.getId();
+                boolean step = id >= 4000 && id <= 4000 + 0xfff, pop = id >= 5000 && id <= 5000 + 0xfff;
+                if ((step && !now.contains(id)) || (pop && !now.contains(id - 1000))) nm.cancel(id);
+            }
+        } catch (Exception ignore) { }
         stepIds.clear(); stepIds.addAll(now);
     }
 
@@ -324,17 +332,28 @@ public class LocationService extends Service {
             JSONObject r = rs.optJSONObject(i);
             if (r == null) continue;
             String id = r.optString("id"), name = r.optString("name", "Rider"), stage = r.optString("stage");
+            long now = System.currentTimeMillis();
             if ("picked_up".equals(stage)) {
                 if (r.optBoolean("dropoff_exact", false) && !r.isNull("dropoff_lat")
-                        && meters(loc.getLatitude(), loc.getLongitude(), r.optDouble("dropoff_lat"), r.optDouble("dropoff_lng")) <= DROP_M && nearShown.add("drop:" + id)) {
+                        && meters(loc.getLatitude(), loc.getLongitude(), r.optDouble("dropoff_lat"), r.optDouble("dropoff_lng")) <= DROP_M && dueAlert("drop:" + id, now)) {
                     headsUp(id, "Near " + name + "'s drop-off", "Tap when " + name + " is out of the car.", "dropped_off", "Dropped off " + name, name);
                 }
             } else if (r.optBoolean("pickup_exact", false) && !r.isNull("pickup_lat")
-                    && meters(loc.getLatitude(), loc.getLongitude(), r.optDouble("pickup_lat"), r.optDouble("pickup_lng")) <= ARRIVE_M && nearShown.add("pick:" + id)) {
+                    && meters(loc.getLatitude(), loc.getLongitude(), r.optDouble("pickup_lat"), r.optDouble("pickup_lng")) <= ARRIVE_M && dueAlert("pick:" + id, now)) {
                 if ("on_my_way".equals(stage)) stepCall(id, "arrived");   // automatic: the rider sees "your driver has arrived"
                 headsUp(id, "At " + name + "'s pickup", "Tap when " + name + " is in the car.", "picked_up", "Picked up " + name, name);
             }
         }
+    }
+
+    /** Android keeps a pop-up on screen for only a few seconds, so while the car is at a stop and the button has not been tapped,
+     *  pop it up again every 30 seconds (at most 10 times, about 5 minutes). The button also stays in the notification list the whole time. */
+    private final java.util.Map<String, long[]> alertTimes = new java.util.HashMap<>();   // key -> { last time, times shown }
+    private boolean dueAlert(String key, long now) {
+        long[] a = alertTimes.get(key);
+        if (a == null) { alertTimes.put(key, new long[]{now, 1}); return true; }
+        if (a[1] < 10 && now - a[0] >= 30000) { a[0] = now; a[1]++; return true; }
+        return false;
     }
 
     private void headsUp(String matchId, String title, String text, String step, String button, String name) {
