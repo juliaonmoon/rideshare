@@ -89,6 +89,26 @@ public class RideShareLocationPlugin extends Plugin {
         call.resolve(r);
     }
 
+    /** overlayStatus(): { allowed } is true when the floating RideShare button may be shown over other apps. */
+    @PluginMethod
+    public void overlayStatus(PluginCall call) {
+        JSObject r = new JSObject();
+        r.put("allowed", LocationService.canOverlay(getContext()));
+        call.resolve(r);
+    }
+
+    /** openOverlaySettings(): opens the phone's "Display over other apps" switch for RideShare. */
+    @PluginMethod
+    public void openOverlaySettings(PluginCall call) {
+        try {
+            Intent i = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + getContext().getPackageName())).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(i);
+            call.resolve();
+        } catch (Exception e) {
+            call.reject("Could not open the settings");
+        }
+    }
+
     /** fakeLocation({ lat, lng }): for testing without driving. The helper pretends the car is at this point for 15 minutes (clearFakeLocation() ends it). */
     @PluginMethod
     public void fakeLocation(PluginCall call) {

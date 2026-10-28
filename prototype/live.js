@@ -62,12 +62,14 @@
   let user = null, me = { name: '', points: 0 }, myTrip = null, myReq = null, ledger = [], matches = [];
   let otherTrips = [], otherReqs = [], extraTrips = [], extraReqs = [], names = {}, timer = null, busy = false, formSig = '', mapSig = {};
   let autoAlerts = false;   // started the alert helper for a live trip that was already on when the app opened
+  let overlayOn = null;   // Android app only: may the floating RideShare button be shown over Google Maps?
   let dndOn = null;   // Android app only: can seat-request alerts break through Do Not Disturb?
   async function refreshDnd() {
     const n = window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform() && window.Capacitor.Plugins && window.Capacitor.Plugins.RideShareLocation;
     if (!n) return;
     let v = false; try { v = !!(await n.dndStatus()).bypass; } catch (e) { /* older app build */ }
-    if (v !== dndOn) { dndOn = v; formSig = ''; if (typeof render === 'function' && user) render(); }
+    let o = false; try { o = !!(await n.overlayStatus()).allowed; } catch (e) { /* older app build */ }
+    if (v !== dndOn || o !== overlayOn) { dndOn = v; overlayOn = o; formSig = ''; if (typeof render === 'function' && user) render(); }
   }
   document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshDnd(); });
   const editing = { trip: false, req: false };   // the full form stays hidden behind the summary card until Edit is tapped
@@ -685,6 +687,7 @@
       + '<div style="margin-top:12px"><button class="btn" id="ls-save-r">Save rider settings</button></div>')
       + (isTest ? card('Admin and test tools (only you see this)', '<p><b>Test mode: ' + (testMode ? 'ON' : 'OFF') + '</b></p><p class="mut">While test mode is ON and driving mode is running (after Start my trip), a made-up rider asks for a seat on your trip about every 2 minutes, so you get alerts while you navigate.</p><p><button class="btn' + (testMode ? ' ghost' : '') + '" id="ts-mode">' + (testMode ? 'Turn test mode OFF' : 'Turn test mode ON') + '</button></p><hr style="border:0;border-top:1px solid var(--line);margin:12px 0"><p class="mut">Or send one test request by hand. Pick a delay if you want to start driving first.</p><label>Send it</label><select id="ts-delay" style="' + INPUT + '"><option value="0">Right now</option><option value="30" selected>In 30 seconds</option><option value="60">In 1 minute</option><option value="120">In 2 minutes</option></select><div style="margin-top:10px"><button class="btn" id="ts-send">Send a test request</button> <button class="btn ghost" id="ts-clear">Remove test requests</button></div><hr style="border:0;border-top:1px solid var(--line);margin:12px 0"><p class="mut">Pretend to drive without moving. First tap <b>Start trip</b> in the Trip plan, then:</p><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn ghost" id="ts-fake-pick">Pretend I am at the next pickup</button><button class="btn ghost" id="ts-fake-drop">Pretend I am at the next drop-off</button><button class="btn ghost" id="ts-fake-off">Use my real GPS again</button></div>') : '')
       + (nativeLoc() ? card('Rider alerts', '<p><b>Status: ' + (dndOn ? 'ON' : 'OFF') + '</b></p><p class="mut">' + (dndOn ? 'Seat requests can alert you even when your phone is on Do Not Disturb or Sleeping mode.' : 'Seat requests are silent when your phone is on Do Not Disturb or Sleeping mode. Tap the button, then switch on <b>Override Do Not Disturb</b> on the screen that opens.') + '</p><p><button class="btn' + (dndOn ? ' ghost' : '') + '" id="dnd-go">' + (dndOn ? 'Open alert settings' : 'Let alerts break through Do Not Disturb') + '</button></p>') : '')
+      + (nativeLoc() ? card('Floating RideShare button', '<p><b>Status: ' + (overlayOn ? 'ON' : 'OFF') + '</b></p><p class="mut">' + (overlayOn ? 'While a ride is under way, a small round RideShare button floats over Google Maps. Tap it to come back to RideShare. You can drag it out of the way.' : 'Shows a small round RideShare button over Google Maps while a ride is under way, so one tap brings you back to RideShare. Tap the button, then switch on <b>Allow display over other apps</b> on the screen that opens.') + '</p><p><button class="btn' + (overlayOn ? ' ghost' : '') + '" id="ov-go">' + (overlayOn ? 'Open the setting' : 'Allow the floating button') + '</button></p>') : '')
       + card('Layout', '<p class="mut">You are using the new layout. If something feels off, you can switch back at any time.</p><p><button class="btn ghost" data-uimode="classic">Use the old layout</button></p>')
       + card('Good to know', '<p class="mut">Driver and rider settings are separate, so you can be both at the same time. Other people only see your ride style (like "quiet ride") and whether you accept automatically. Nothing else in here is shared.</p>');
   }
@@ -837,6 +840,7 @@
     };
     each('[data-reset]', (b) => resetTrip(b.dataset.reset === 'end'));
     each('[data-startnav]', () => startNav());
+    on('ov-go', async () => { const n = nativeLoc(); toast('Opening the setting...'); try { await n.openOverlaySettings(); } catch (e) { toast('Could not open the setting. Open Settings > Apps > RideShare App > Display over other apps.'); } });
     on('dnd-go', async () => { const n = nativeLoc(); toast('Opening the alert settings...'); try { await n.openAlertSettings(); } catch (e) { toast('Could not open the settings. Open Settings > Apps > RideShare App > Notifications > Seat requests.'); } });
     each('[data-edit]', (b) => { editing[b.dataset.edit] = true; formSig = ''; render(); const f = $(b.dataset.edit === 'trip' ? 'ld-form' : 'lr-form'); if (f) f.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
     each('[data-edit-off]', (b) => { editing[b.dataset.editOff] = false; pending = null; formSig = ''; plReset('lt-o', 'lt-d', 'lr-p', 'lr-d'); render(); });
