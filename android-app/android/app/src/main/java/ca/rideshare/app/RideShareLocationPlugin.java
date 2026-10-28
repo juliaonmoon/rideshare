@@ -94,7 +94,16 @@ public class RideShareLocationPlugin extends Plugin {
     public void overlayStatus(PluginCall call) {
         JSObject r = new JSObject();
         r.put("allowed", LocationService.canOverlay(getContext()));
+        r.put("hidden", getContext().getSharedPreferences("rideshare_bubble", android.content.Context.MODE_PRIVATE).getBoolean("hidden", false));
         call.resolve(r);
+    }
+
+    /** setBubbleHidden({ hidden }): switches the floating RideShare button off (or on again) for good. */
+    @PluginMethod
+    public void setBubbleHidden(PluginCall call) {
+        boolean h = Boolean.TRUE.equals(call.getBoolean("hidden", false));
+        getContext().getSharedPreferences("rideshare_bubble", android.content.Context.MODE_PRIVATE).edit().putBoolean("hidden", h).apply();
+        call.resolve();
     }
 
     /** openOverlaySettings(): opens the phone's "Display over other apps" switch for RideShare. */

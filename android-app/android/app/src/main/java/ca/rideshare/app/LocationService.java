@@ -275,8 +275,8 @@ public class LocationService extends Service {
     static boolean canOverlay(android.content.Context c) { return Build.VERSION.SDK_INT < 23 || Settings.canDrawOverlays(c); }
 
     private void syncBubble() {
-        boolean need = rides.length() > 0;
-        if (!need) bubbleDismissed = false;   // a new ride brings it back
+        boolean need = rides.length() > 0 && !getSharedPreferences("rideshare_bubble", MODE_PRIVATE).getBoolean("hidden", false);
+        if (rides.length() == 0) bubbleDismissed = false;   // a new ride brings it back
         if (need && !bubbleDismissed && bubble == null && canOverlay(this)) showBubble(); else if ((!need || bubbleDismissed) && bubble != null) hideBubble();
     }
 
@@ -301,20 +301,27 @@ public class LocationService extends Service {
             int screenW = getResources().getDisplayMetrics().widthPixels;
             lp.x = bp.getInt("x", screenW - size - (int) (10 * d)); lp.y = bp.getInt("y", (int) (44 * d));
             if (lp.x < 0 || lp.x > screenW - size) lp.x = screenW - size - (int) (10 * d);
+            int screenH = getResources().getDisplayMetrics().heightPixels;
+            if (lp.y < topLimit() || lp.y > screenH - size - (int) (80 * d)) lp.y = topLimit() + (int) (36 * d);
             v.setOnTouchListener(new View.OnTouchListener() {
                 private float sx, sy; private int ox, oy; private boolean moved;
+                private final Runnable hold = new Runnable() { @Override public void run() {   // press and hold: the button goes away until the next ride
+                    if (!moved) { try { ((android.os.Vibrator) getSystemService(VIBRATOR_SERVICE)).vibrate(40); } catch (Exception ignore) { } bubbleDismissed = true; hideBubble(); } } };
                 @Override public boolean onTouch(View view, MotionEvent e) {
                     switch (e.getAction()) {
-                        case MotionEvent.ACTION_DOWN: sx = e.getRawX(); sy = e.getRawY(); ox = lp.x; oy = lp.y; moved = false; return true;
+                        case MotionEvent.ACTION_DOWN: sx = e.getRawX(); sy = e.getRawY(); ox = lp.x; oy = lp.y; moved = false; main.postDelayed(hold, 700); return true;
                         case MotionEvent.ACTION_MOVE:
-                            if (Math.abs(e.getRawX() - sx) > 12 * d || Math.abs(e.getRawY() - sy) > 12 * d) moved = true;
+                            if (Math.abs(e.getRawX() - sx) > 12 * d || Math.abs(e.getRawY() - sy) > 12 * d) { moved = true; main.removeCallbacks(hold); }
                             if (moved) {
                                 lp.x = ox + (int) (e.getRawX() - sx); lp.y = oy + (int) (e.getRawY() - sy);
+                                lp.x = Math.max(0, Math.min(lp.x, getResources().getDisplayMetrics().widthPixels - lp.width)); lp.y = Math.max(topLimit(), Math.min(lp.y, getResources().getDisplayMetrics().heightPixels - lp.height));
                                 try { wm.updateViewLayout(view, lp); } catch (Exception ignore) { }
                                 showCloseTarget(true, overTarget(e.getRawX(), e.getRawY()));
                             }
                             return true;
                         case MotionEvent.ACTION_UP:
+                            main.removeCallbacks(hold);
+                            if (bubble == null) return true;   // already dismissed by press and hold
                             if (moved && overTarget(e.getRawX(), e.getRawY())) { showCloseTarget(false, false); bubbleDismissed = true; main.post(LocationService.this::hideBubble); return true; }
                             showCloseTarget(false, false);
                             if (moved) { getSharedPreferences("rideshare_bubble", MODE_PRIVATE).edit().putInt("x", lp.x).putInt("y", lp.y).apply(); }
@@ -332,6 +339,12 @@ public class LocationService extends Service {
     }
 
     /** Is the finger over the X at the bottom centre of the screen? */
+    private int topLimit() {
+        int id = getResources().getIdentifier("status_bar_height", "dimen", "android");
+        int sb = id > 0 ? getResources().getDimensionPixelSize(id) : (int) (28 * getResources().getDisplayMetrics().density);
+        return sb + (int) (8 * getResources().getDisplayMetrics().density);
+    }
+
     private boolean overTarget(float rawX, float rawY) {
         android.util.DisplayMetrics m = getResources().getDisplayMetrics();
         return rawY > m.heightPixels - 190 * m.density && Math.abs(rawX - m.widthPixels / 2f) < 90 * m.density;
