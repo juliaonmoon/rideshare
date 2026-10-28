@@ -53,6 +53,7 @@ public class LocationService extends Service {
     static final String ACTION_ACCEPT = "ca.rideshare.app.ACCEPT";
     static final String ACTION_DECLINE = "ca.rideshare.app.DECLINE";
     static final String ACTION_STEP = "ca.rideshare.app.STEP";
+    static final String ACTION_QUIET = "ca.rideshare.app.QUIET";
     static final String STEPS_CHANNEL = "rideshare_steps";
     private static final double ARRIVE_M = 250;   // close enough to a pickup to say "your driver is here" (stop points are only known to about 100 m)
     private static final double DROP_M = 300;     // close enough to a drop-off to offer the Dropped off button
@@ -358,6 +359,10 @@ public class LocationService extends Service {
 
     private void headsUp(String matchId, String title, String text, String step, String button, String name) {
         int nid = idOf(5000, matchId);
+        // Swiping the pop-up away means "stop reminding me for this stop" (the quiet notification with the button stays in the list).
+        String key = ("picked_up".equals(step) ? "pick:" : "drop:") + matchId;
+        Intent quiet = new Intent(this, LocationService.class).setAction(ACTION_QUIET).putExtra("key", key).putExtra("nid", nid);
+        PendingIntent quietPi = PendingIntent.getService(this, nid * 8 + 7, quiet, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
         Notification n = new NotificationCompat.Builder(this, ALERT_CHANNEL)
                 .setContentTitle(title).setContentText(text)
                 .setSmallIcon(android.R.drawable.ic_dialog_info)
@@ -365,7 +370,9 @@ public class LocationService extends Service {
                 .setDefaults(Notification.DEFAULT_ALL)
                 .setCategory(NotificationCompat.CATEGORY_MESSAGE)
                 .setContentIntent(openIntent())
+                .setDeleteIntent(quietPi)
                 .addAction(0, button, stepIntent(step, matchId, name, nid))
+                .addAction(0, "Not yet", quietPi)
                 .build();
         try { getSystemService(NotificationManager.class).notify(nid, n); } catch (Exception ignore) { }
     }
@@ -446,6 +453,13 @@ public class LocationService extends Service {
     }
 
     private void handleAnswer(Intent intent) {
+        if (ACTION_QUIET.equals(intent.getAction())) {   // the pop-up was swiped away: no more reminders for this stop
+            String key = intent.getStringExtra("key");
+            if (key != null) alertTimes.put(key, new long[]{System.currentTimeMillis(), 99});
+            int qn = intent.getIntExtra("nid", 0);
+            if (qn != 0) { try { getSystemService(NotificationManager.class).cancel(qn); } catch (Exception ignore) { } }   // the Not yet button closes the pop-up
+            return;
+        }
         if (ACTION_STEP.equals(intent.getAction())) {
             final String mid = intent.getStringExtra("match"), step = intent.getStringExtra("step");
             final String nm2 = intent.getStringExtra("name") == null ? "The rider" : intent.getStringExtra("name");
