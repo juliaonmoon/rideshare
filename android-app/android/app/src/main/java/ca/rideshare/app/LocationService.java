@@ -291,7 +291,12 @@ public class LocationService extends Service {
             int type = Build.VERSION.SDK_INT >= 26 ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY : WindowManager.LayoutParams.TYPE_PHONE;
             final WindowManager.LayoutParams lp = new WindowManager.LayoutParams(size, size, type,
                     WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS, PixelFormat.TRANSLUCENT);
-            lp.gravity = Gravity.TOP | Gravity.START; lp.x = (int) (12 * d); lp.y = (int) (260 * d);
+            lp.gravity = Gravity.TOP | Gravity.START;
+            // the top-right corner to start with; after that, wherever the driver last dragged it
+            SharedPreferences bp = getSharedPreferences("rideshare_bubble", MODE_PRIVATE);
+            int screenW = getResources().getDisplayMetrics().widthPixels;
+            lp.x = bp.getInt("x", screenW - size - (int) (10 * d)); lp.y = bp.getInt("y", (int) (44 * d));
+            if (lp.x < 0 || lp.x > screenW - size) lp.x = screenW - size - (int) (10 * d);
             v.setOnTouchListener(new View.OnTouchListener() {
                 private float sx, sy; private int ox, oy; private boolean moved;
                 @Override public boolean onTouch(View view, MotionEvent e) {
@@ -302,6 +307,7 @@ public class LocationService extends Service {
                             if (moved) { lp.x = ox + (int) (e.getRawX() - sx); lp.y = oy + (int) (e.getRawY() - sy); try { wm.updateViewLayout(view, lp); } catch (Exception ignore) { } }
                             return true;
                         case MotionEvent.ACTION_UP:
+                            if (moved) { getSharedPreferences("rideshare_bubble", MODE_PRIVATE).edit().putInt("x", lp.x).putInt("y", lp.y).apply(); }
                             if (!moved) { try { startActivity(new Intent(LocationService.this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP)); } catch (Exception ignore) { } }
                             return true;
                         default: return false;
