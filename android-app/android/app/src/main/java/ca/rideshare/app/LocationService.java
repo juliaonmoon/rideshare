@@ -8,6 +8,14 @@ import android.app.Service;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.ServiceInfo;
+import android.graphics.PixelFormat;
+import android.graphics.drawable.GradientDrawable;
+import android.provider.Settings;
+import android.view.Gravity;
+import android.view.MotionEvent;
+import android.view.View;
+import android.view.WindowManager;
+import android.widget.ImageView;
 import android.location.Location;
 import android.net.Uri;
 import android.os.Build;
@@ -247,6 +255,7 @@ public class LocationService extends Service {
             JSONArray rs = o.optJSONArray("rides");
             rides = rs == null ? new JSONArray() : rs;
             updateStepNotes();
+            main.post(this::syncBubble);
             Location here = fakeActive() ? fakeLocation() : lastLoc;
             if (here != null) checkStops(here);
         } catch (Exception e) {
@@ -254,6 +263,62 @@ public class LocationService extends Service {
         } finally {
             if (c != null) c.disconnect();
         }
+    }
+
+    // ---------- a small floating RideShare button over Google Maps while a ride is under way: one tap brings the driver back to RideShare ----------
+    private View bubble;
+    private WindowManager.LayoutParams bubbleLp;
+
+    static boolean canOverlay(android.content.Context c) { return Build.VERSION.SDK_INT < 23 || Settings.canDrawOverlays(c); }
+
+    private void syncBubble() {
+        boolean need = rides.length() > 0;
+        if (need && bubble == null && canOverlay(this)) showBubble(); else if (!need && bubble != null) hideBubble();
+    }
+
+    private void showBubble() {
+        try {
+            final WindowManager wm = (WindowManager) getSystemService(WINDOW_SERVICE);
+            final float d = getResources().getDisplayMetrics().density;
+            int size = (int) (58 * d);
+            ImageView v = new ImageView(this);
+            GradientDrawable bg = new GradientDrawable();
+            bg.setShape(GradientDrawable.OVAL); bg.setColor(0xFFFFFFFF); bg.setStroke((int) (3 * d), 0xFF0B7A5B);
+            v.setBackground(bg);
+            int pad = (int) (8 * d); v.setPadding(pad, pad, pad, pad);
+            v.setImageDrawable(getPackageManager().getApplicationIcon(getPackageName()));
+            v.setElevation(8 * d);
+            int type = Build.VERSION.SDK_INT >= 26 ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY : WindowManager.LayoutParams.TYPE_PHONE;
+            final WindowManager.LayoutParams lp = new WindowManager.LayoutParams(size, size, type,
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS, PixelFormat.TRANSLUCENT);
+            lp.gravity = Gravity.TOP | Gravity.START; lp.x = (int) (12 * d); lp.y = (int) (260 * d);
+            v.setOnTouchListener(new View.OnTouchListener() {
+                private float sx, sy; private int ox, oy; private boolean moved;
+                @Override public boolean onTouch(View view, MotionEvent e) {
+                    switch (e.getAction()) {
+                        case MotionEvent.ACTION_DOWN: sx = e.getRawX(); sy = e.getRawY(); ox = lp.x; oy = lp.y; moved = false; return true;
+                        case MotionEvent.ACTION_MOVE:
+                            if (Math.abs(e.getRawX() - sx) > 12 * d || Math.abs(e.getRawY() - sy) > 12 * d) moved = true;
+                            if (moved) { lp.x = ox + (int) (e.getRawX() - sx); lp.y = oy + (int) (e.getRawY() - sy); try { wm.updateViewLayout(view, lp); } catch (Exception ignore) { } }
+                            return true;
+                        case MotionEvent.ACTION_UP:
+                            if (!moved) { try { startActivity(new Intent(LocationService.this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP)); } catch (Exception ignore) { } }
+                            return true;
+                        default: return false;
+                    }
+                }
+            });
+            wm.addView(v, lp);
+            bubble = v; bubbleLp = lp;
+        } catch (Exception e) {
+            bubble = null;   // no permission or the system refused: the notifications still work
+        }
+    }
+
+    private void hideBubble() {
+        if (bubble == null) return;
+        try { ((WindowManager) getSystemService(WINDOW_SERVICE)).removeView(bubble); } catch (Exception ignore) { }
+        bubble = null;
     }
 
     // ---------- the steps of a ride: Arrived (automatic), Picked up and Dropped off (one tap in a notification) ----------
@@ -561,6 +626,7 @@ public class LocationService extends Service {
 
     @Override
     public void onDestroy() {
+        main.post(this::hideBubble);
         running = false;
         main.removeCallbacks(poller);
         polling = false;
