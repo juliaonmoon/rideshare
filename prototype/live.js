@@ -890,7 +890,6 @@
       const todo = matches.filter((x) => x.driver_id === user.id && (x.status === 'accepted' || x.status === 'requested') && !x.picked_up_at);
       for (const x of todo) { try { await (x.status === 'requested' ? sb.rpc('respond_match', { p_match: x.id, p_accept: false }) : sb.rpc('cancel_ride', { p_match: x.id })); } catch (e) { /* already finished */ } }
       if (myLiveTrip) { try { await sb.from('trips').update({ active: false }).eq('id', myLiveTrip.id); } catch (e) { /* ignore */ } }
-      if (isTest) { try { await sb.rpc('clear_test_requests'); } catch (e) { /* ignore */ } }
       stopShare(true); editing.trip = false; pending = null; viewD = null; mapSig = {}; formSig = '';
       try { localStorage.removeItem('rs_trip_on'); } catch (e) { /* storage blocked */ }
       toast(end ? 'Trip ended. Thank you for driving!' : 'Trip reset. You can start a new one.'); await loadAll();
