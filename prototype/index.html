@@ -118,6 +118,13 @@ html[data-ui=b] .uitoggle{display:none}
 #map-plan-box.full{position:fixed;inset:0;z-index:200;background:var(--card);padding-top:env(safe-area-inset-top)}
 #map-plan-box.full #map-plan{height:100%!important;border-radius:0;margin:0;border:0}
 #map-plan-box.full #plan-full{top:calc(12px + env(safe-area-inset-top))}
+.swrow{display:flex;gap:14px;align-items:center;justify-content:space-between;margin-top:10px}
+.sw{position:relative;display:inline-block;width:58px;height:34px;flex:none}
+.sw input{opacity:0;width:0;height:0}
+.sw span{position:absolute;inset:0;background:#c5cdd3;border-radius:34px;cursor:pointer;transition:background .2s}
+.sw span:before{content:"";position:absolute;height:28px;width:28px;left:3px;top:3px;background:#fff;border-radius:50%;transition:transform .2s;box-shadow:0 1px 3px rgba(0,0,0,.35)}
+.sw input:checked+span{background:var(--acc)}
+.sw input:checked+span:before{transform:translateX(24px)}
 </style>
 </head>
 <body>

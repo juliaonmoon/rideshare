@@ -403,11 +403,11 @@
   const minsLeft = (iso) => Math.max(0, Math.round((Date.parse(iso) - Date.now()) / 60000));
   function driverNow() {
     const share = sharingCard() + driveCard();
-    if (myLiveTrip) return share + card('Offer a ride now: ON', `<p><b>${esc(disp(myLiveTrip, 'origin'))}</b> to <b>${esc(disp(myLiveTrip, 'dest'))}</b></p><p class="mut">Leaving about ${RS.clock(myLiveTrip.depart_min)} &middot; riders can see you until you switch it off.</p><p><button class="btn ghost" data-stoplive="trip">Switch OFF</button></p>`);
+    if (myLiveTrip) return share + card('Where are you driving?', `<p><b>${esc(disp(myLiveTrip, 'origin'))}</b> to <b>${esc(disp(myLiveTrip, 'dest'))}</b></p><p class="mut" style="margin-top:-6px">Leaving about ${RS.clock(myLiveTrip.depart_min)}</p><div class="swrow"><div><b>Offering seats to riders</b><div class="mut">Riders along your route can ask for a seat until you switch this off.</div></div><label class="sw"><input type="checkbox" checked id="ln-sw-off"><span></span></label></div>`);
     const o = nowSel['ln-o'] || (myTrip && myTrip.origin) || 'Surrey Central', d = nowSel['ln-d'] || (myTrip && myTrip.dest) || 'BCIT / Willingdon (Burnaby)';
     if (!myTrip) {
       if (editing.trip || (pending && pending.kind === 'trip')) return share;   // the full form or the confirm card is showing
-      const sx = S_();
+      const sx = S_(), seg = (m, label) => '<button type="button" class="btn' + (tripMode === m ? '' : ' ghost') + '" data-tmode="' + m + '" style="flex:1;min-width:0">' + label + '</button>';
       const val = (id, dflt) => esc(LV[id] != null ? LV[id] : dflt);
       const later = '<div class="row"><div><label>Date</label><input type="date" id="ln-date" min="' + todayStr() + '" max="' + maxDate() + '" value="' + val('ln-date', defaultDate('', 450)) + '"></div><div><label>Leave at</label><input type="time" id="ln-t" value="' + val('ln-t', '07:30') + '"></div></div>'
         + '<label>Repeat every week on <span class="mut">(optional)</span></label>' + dayChips('ln-days', LV.days || [])
@@ -418,11 +418,10 @@
         + '<label>Max wait at a pickup (min)</label><input type="number" id="ln-w" min="0" max="60" value="' + val('ln-w', sx.d_wait) + '">'
         + '<label>I accept</label><select id="ln-a">' + [['either', 'Points or cash'], ['points', 'Points only'], ['cash', 'Cash gas-share only']].map(([v, l]) => '<option value="' + v + '"' + (v === (LV['ln-a'] || sx.d_accepts) ? ' selected' : '') + '>' + l + '</option>').join('') + '</select></details>'
         + '<div style="margin-top:12px"><button class="btn" id="ln-review" style="width:100%;padding:12px;font-size:16px">Review trip</button></div>';
-      const now = '<div style="margin-top:14px"><button class="btn" id="ln-go" style="width:100%;padding:14px;font-size:17px">Offer a ride now</button></div><p class="mut" style="margin:6px 0 0;font-size:13px">Riders along your route can ask for a seat, and you get a phone alert for each one. It stays on until you switch it off (or after 12 hours).</p>';
+      const now = '<div class="swrow" style="margin-top:12px"><div><b>Offer seats to riders</b><div class="mut">Riders along your route can ask for a seat, and you get a phone alert for each one. It stays on until you switch it off (or after 12 hours).</div></div><label class="sw"><input type="checkbox" id="ln-sw"><span></span></label></div>';
       return share + card('Where are you driving?', placeField('ln-o', 'From', null, 'origin', o) + placeField('ln-d', 'To', null, 'dest', d)
-        + now
-        + '<div style="margin-top:10px"><button type="button" class="btn ghost" data-tmode="' + (tripMode === 'later' ? 'now' : 'later') + '" style="width:100%">' + (tripMode === 'later' ? 'Hide the schedule' : 'Or pick a day and time') + '</button></div>'
-        + (tripMode === 'later' ? '<div style="margin-top:8px">' + later + '</div>' : '') + '<p class="warn" id="ln-msg" role="alert"></p>');
+        + '<label>When?</label><div style="display:flex;gap:8px">' + seg('now', 'Leave now') + seg('later', 'Pick a day and time') + '</div>'
+        + (tripMode === 'later' ? later : now) + '<p class="warn" id="ln-msg" role="alert"></p>');
     }
     return share + card('Not on a schedule? Offer a ride now', `<p class="mut">For a spur-of-the-moment drive: no date or time. Switch it on and riders along your route can ask for a seat. You get a phone alert for each request, even before you leave. It stays on until you switch it off (or after 12 hours). Already posted a trip? Use <b>Start trip</b> instead.</p>
       ${placeField('ln-o', 'From', myTrip, 'origin', o)}
@@ -899,12 +898,17 @@
     wirePlaces();
     on('ln-loc', () => useMyLocation('ln-o', 'ln-msg'));
     on('rn-loc', () => useMyLocation('rn-p', 'rn-msg'));
-    on('ln-go', async () => {
-      const o = $('ln-o').value, d = $('ln-d').value, need = plNeed('ln-o', 'where you start') || plNeed('ln-d', 'where you are going'); if (need) { formMsg('ln-msg', need); return; }
-      if (samePlace(o, d, 'ln-o', 'ln-d')) { formMsg('ln-msg', 'Pick two different places'); return; }
+    const goLive = async () => {
+      const o = $('ln-o').value, d = $('ln-d').value, need = plNeed('ln-o', 'where you start') || plNeed('ln-d', 'where you are going'); if (need) { formMsg('ln-msg', need); return false; }
+      if (samePlace(o, d, 'ln-o', 'ln-d')) { formMsg('ln-msg', 'Pick two different places'); return false; }
+      formMsg('ln-msg', '');
       const f = myTrip || {}, cols = [plCols('ln-o', 'origin'), plCols('ln-d', 'dest')]; const ok = await run(sb.rpc('go_live_trip', { p_origin: o, p_dest: d, p_max_detour: f.max_detour == null ? S_().d_detour : f.max_detour, p_max_wait: f.max_wait == null ? S_().d_wait : f.max_wait, p_accepts: f.accepts || S_().d_accepts, p_cost_per_km: 0.2, p_minutes: 720, p_max_pickups: Math.min(4, S_().d_seats), p_max_total_detour: Math.min(4, S_().d_seats) > 1 ? Math.max(S_().d_total_detour, f.max_detour == null ? S_().d_detour : f.max_detour) : null }).then(async (r) => { if (!r.error) await setCols('trips', r.data, ...cols); return r; }), 'You are live. Switch it off when you stop driving.');
       if (ok) { viewD = null; mapSig = {}; const nat = nativeLoc(); if (nat) { await dndAsk(nat); if (await startAlerts(nat)) toast('Alerts are on. You will get a phone alert when a rider asks for a seat.'); } }
-    });
+      return !!ok;
+    };
+    on('ln-go', goLive);
+    const swOn = $('ln-sw'); if (swOn) swOn.onchange = async () => { if (swOn.checked) { const ok = await goLive(); if (!ok) swOn.checked = false; } };
+    const swOff = $('ln-sw-off'); if (swOff) swOff.onchange = () => { if (!swOff.checked && myLiveTrip) { if (driveSession && !shouldShare()) stopShare(true); run(sb.from('trips').update({ active: false }).eq('id', myLiveTrip.id), 'Stopped offering seats'); } };
     on('rn-go', async () => {
       const p = $('rn-p').value, d = $('rn-d').value, need = plNeed('rn-p', 'where to pick you up') || plNeed('rn-d', 'where to drop you off'); if (need) { formMsg('rn-msg', need); return; }
       if (samePlace(p, d, 'rn-p', 'rn-d')) { formMsg('rn-msg', 'Pick two different places'); return; }
