@@ -62,6 +62,8 @@
   let user = null, me = { name: '', points: 0 }, myTrip = null, myReq = null, ledger = [], matches = [];
   let otherTrips = [], otherReqs = [], extraTrips = [], extraReqs = [], names = {}, timer = null, busy = false, formSig = '', mapSig = {};
   let autoAlerts = false;   // started the alert helper for a live trip that was already on when the app opened
+  let tripMode = 'now';       // the one trip card: 'now' (offer a ride now) or 'later' (pick a day and time)
+  const LV = {};              // what is typed in the 'later' fields, kept across refreshes
   let bubbleHidden = false;
   let overlayOn = null;   // Android app only: may the floating RideShare button be shown over Google Maps?
   let dndOn = null;   // Android app only: can seat-request alerts break through Do Not Disturb?
@@ -303,7 +305,8 @@
     if (mapSig.p !== sig) { mapSig.p = sig; window.RS_UI.drawMap('map-plan', r.stops, []); }
   }
   function driverTop() {
-    if (!curTrip || !known(curTrip)) return card('Start here', `<p><b>1.</b> Fill in the form below: where you drive from and to, the date and time.</p><p><b>2.</b> Tap <b>Review trip</b>, then <b>Confirm and post</b>.</p><p><b>3.</b> Riders who ask for a seat will appear on this page for you to accept.</p><p>${goTo('ld-form')}Go to the form</button></p>`);
+    if (!curTrip || !known(curTrip)) return '';
+    if (false) return card('Start here', `<p><b>1.</b> Fill in the form below: where you drive from and to, the date and time.</p><p><b>2.</b> Tap <b>Review trip</b>, then <b>Confirm and post</b>.</p><p><b>3.</b> Riders who ask for a seat will appear on this page for you to accept.</p><p>${goTo('ld-form')}Go to the form</button></p>`);
     const dates = RSD.nextOccurrences(curTrip.live ? todayStr() : curTrip.trip_date, curTrip.repeat_days, new Date(), 7), d = pickView(viewD, dates);
     const mine = d ? matches.filter((x) => x.driver_id === user.id && x.ride_date === d) : [];
     const asks = mine.filter((x) => x.status === 'requested').length, acc = mine.filter((x) => x.status === 'accepted').length;
@@ -402,6 +405,24 @@
     const share = sharingCard() + driveCard();
     if (myLiveTrip) return share + card('Offer a ride now: ON', `<p><b>${esc(disp(myLiveTrip, 'origin'))}</b> to <b>${esc(disp(myLiveTrip, 'dest'))}</b></p><p class="mut">Leaving about ${RS.clock(myLiveTrip.depart_min)} &middot; riders can see you until you switch it off.</p><p><button class="btn ghost" data-stoplive="trip">Switch OFF</button></p>`);
     const o = nowSel['ln-o'] || (myTrip && myTrip.origin) || 'Surrey Central', d = nowSel['ln-d'] || (myTrip && myTrip.dest) || 'BCIT / Willingdon (Burnaby)';
+    if (!myTrip) {
+      if (editing.trip || (pending && pending.kind === 'trip')) return share;   // the full form or the confirm card is showing
+      const sx = S_(), seg = (m, label) => '<button type="button" class="btn' + (tripMode === m ? '' : ' ghost') + '" data-tmode="' + m + '" style="flex:1;min-width:0">' + label + '</button>';
+      const val = (id, dflt) => esc(LV[id] != null ? LV[id] : dflt);
+      const later = '<div class="row"><div><label>Date</label><input type="date" id="ln-date" min="' + todayStr() + '" max="' + maxDate() + '" value="' + val('ln-date', defaultDate('', 450)) + '"></div><div><label>Leave at</label><input type="time" id="ln-t" value="' + val('ln-t', '07:30') + '"></div></div>'
+        + '<label>Repeat every week on <span class="mut">(optional)</span></label>' + dayChips('ln-days', LV.days || [])
+        + '<details style="margin-top:12px"><summary class="mut" style="cursor:pointer">More options (rider limits, payment)</summary>'
+        + '<label>Most riders I will pick up</label><select id="ln-pk">' + [1, 2, 3, 4].map((n) => '<option value="' + n + '"' + (n === +(LV['ln-pk'] != null ? LV['ln-pk'] : Math.min(4, sx.d_seats)) ? ' selected' : '') + '>' + (n === 1 ? 'Just 1 (a single pickup)' : 'Up to ' + n) + '</option>').join('') + '</select>'
+        + '<label>Most extra minutes for ONE pickup</label><input type="number" id="ln-dt" min="0" max="60" value="' + val('ln-dt', sx.d_detour) + '">'
+        + '<label>Most extra minutes for ALL pickups together</label><input type="number" id="ln-tt" min="0" max="120" value="' + val('ln-tt', sx.d_total_detour) + '">'
+        + '<label>Max wait at a pickup (min)</label><input type="number" id="ln-w" min="0" max="60" value="' + val('ln-w', sx.d_wait) + '">'
+        + '<label>I accept</label><select id="ln-a">' + [['either', 'Points or cash'], ['points', 'Points only'], ['cash', 'Cash gas-share only']].map(([v, l]) => '<option value="' + v + '"' + (v === (LV['ln-a'] || sx.d_accepts) ? ' selected' : '') + '>' + l + '</option>').join('') + '</select></details>'
+        + '<div style="margin-top:12px"><button class="btn" id="ln-review" style="width:100%;padding:12px;font-size:16px">Review trip</button></div>';
+      const now = '<p class="mut" style="margin:8px 0 0">Riders along your route can ask for a seat. You get a phone alert for each request, even before you leave. It stays on until you switch it off (or after 12 hours).</p><div style="margin-top:12px"><button class="btn" id="ln-go" style="width:100%;padding:12px;font-size:16px">Switch ON: offer a ride now</button></div>';
+      return share + card('Where are you driving?', placeField('ln-o', 'From', null, 'origin', o) + placeField('ln-d', 'To', null, 'dest', d)
+        + '<label>When?</label><div style="display:flex;gap:8px">' + seg('now', 'Leave now') + seg('later', 'Pick a day and time') + '</div>'
+        + (tripMode === 'later' ? later : now) + '<p class="warn" id="ln-msg" role="alert"></p>');
+    }
     return share + card('Not on a schedule? Offer a ride now', `<p class="mut">For a spur-of-the-moment drive: no date or time. Switch it on and riders along your route can ask for a seat. You get a phone alert for each request, even before you leave. It stays on until you switch it off (or after 12 hours). Already posted a trip? Use <b>Start trip</b> instead.</p>
       ${placeField('ln-o', 'From', myTrip, 'origin', o)}
       ${placeField('ln-d', 'To', myTrip, 'dest', d)}
@@ -537,6 +558,7 @@
         <div style="margin-top:10px"><button class="btn" id="lt-confirm">${myTrip ? 'Confirm and update' : 'Confirm and post'}</button> <button class="btn ghost" id="lt-back">Back</button></div>`);
     }
     if (myTrip && !editing.trip) return '';
+    if (!myTrip && !myLiveTrip && !editing.trip) return '';
     if (myLiveTrip && !myTrip && !editing.trip) return card('Plan ahead', '<p class="mut">Want to drive on a set day and time? Post a scheduled trip.</p><p><button class="btn ghost" data-edit="trip">Post a scheduled trip</button></p>');
     const t = myTrip || { origin: 'Surrey Central', dest: 'BCIT / Willingdon (Burnaby)', depart_min: 450, max_detour: S_().d_detour, max_total_detour: S_().d_total_detour, max_pickups: Math.min(4, S_().d_seats), max_wait: S_().d_wait, accepts: S_().d_accepts, trip_date: todayStr(), repeat_days: [] };
     const date = defaultDate(t.trip_date, t.depart_min);
@@ -749,6 +771,18 @@
   function wire() {
     const on = (id, fn) => { const e = $(id); if (e) e.onclick = fn; };
     document.querySelectorAll('#lt-days button, #lr-days button').forEach((b) => (b.onclick = () => b.classList.toggle('on')));
+    ['ln-date', 'ln-t', 'ln-pk', 'ln-dt', 'ln-tt', 'ln-w', 'ln-a'].forEach((id) => { const e = $(id); if (e) e.onchange = () => { LV[id] = e.value; }; });
+    document.querySelectorAll('#ln-days button').forEach((b) => (b.onclick = () => { b.classList.toggle('on'); LV.days = readDays('ln-days'); }));
+    on('ln-review', () => {
+      const row = { origin: $('ln-o').value, dest: $('ln-d').value, trip_date: $('ln-date').value, depart_min: hm($('ln-t').value || '07:30'), repeat_days: readDays('ln-days'), max_detour: +$('ln-dt').value, max_total_detour: +$('ln-tt').value, max_pickups: +$('ln-pk').value, max_wait: +$('ln-w').value, accepts: $('ln-a').value, ...plCols('ln-o', 'origin'), ...plCols('ln-d', 'dest') };
+      const need = plNeed('ln-o', 'where you start') || plNeed('ln-d', 'where you are going'); if (need) { formMsg('ln-msg', need); return; }
+      if (row.max_pickups === 1) row.max_total_detour = null; else if (row.max_total_detour < row.max_detour) { formMsg('ln-msg', 'The total for all pickups cannot be less than the time for one pickup'); return; }
+      formMsg('ln-msg', '');
+      if (samePlace(row.origin, row.dest, 'ln-o', 'ln-d')) { formMsg('ln-msg', 'Pick two different places'); return; }
+      if (!row.trip_date) { formMsg('ln-msg', 'Pick a date'); return; }
+      const bad = RSD.check(row.trip_date, row.depart_min); if (bad) { formMsg('ln-msg', bad); return; }
+      pending = { kind: 'trip', row }; formSig = ''; render();
+    });
     on('lt-review', () => {
       const row = { origin: $('lt-o').value, dest: $('lt-d').value, trip_date: $('lt-date').value, depart_min: hm($('lt-t').value || '07:30'), repeat_days: readDays('lt-days'), max_detour: +$('lt-dt').value, max_total_detour: +$('lt-tt').value, max_pickups: +$('lt-pk').value, max_wait: +$('lt-w').value, accepts: $('lt-a').value, ...plCols('lt-o', 'origin'), ...plCols('lt-d', 'dest') };
       const need = plNeed('lt-o', 'where you start') || plNeed('lt-d', 'where you are going'); if (need) { formMsg('lt-msg', need); return; }
@@ -762,7 +796,7 @@
     on('lt-back', () => { pending = null; formSig = ''; render(); });
     on('lt-confirm', async () => {
       const row = pending.row; const ok = await run(myTrip ? sb.from('trips').update(row).eq('id', myTrip.id) : sb.from('trips').insert(row), 'Trip saved');
-      if (ok) { editing.trip = false; plReset('lt-o', 'lt-d'); pending = null; viewD = null; mapSig = {}; formSig = ''; render(); }
+      if (ok) { editing.trip = false; plReset('lt-o', 'lt-d', 'ln-o', 'ln-d'); Object.keys(LV).forEach((k) => delete LV[k]); tripMode = 'now'; pending = null; viewD = null; mapSig = {}; formSig = ''; render(); }
     });
     on('lr-review', () => {
       const row = { pickup: $('lr-p').value, dropoff: $('lr-d').value, ride_date: $('lr-date').value, ready_from: hm($('lr-f').value || '07:20'), ready_to: hm($('lr-u').value || '07:50'), repeat_days: readDays('lr-days'), pays: $('lr-pay').value, ...plCols('lr-p', 'pickup'), ...plCols('lr-d', 'dropoff') };
@@ -821,6 +855,7 @@
     on('lr-watch', () => { if (window.__lrStops) window.RS_UI.startSim('lr', 'map-lr', window.__lrStops, window.__lrDriver, 'rider', window.__lrMe); });
     on('lr-stop', () => window.RS_UI.stopSim('lr'));
     const each = (sel, fn) => document.querySelectorAll(['#v-ldriver', '#v-lrider', '#v-lupcoming'].map((r) => r + ' ' + sel).join(', ')).forEach((b) => (b.onclick = () => fn(b)));
+    each('[data-tmode]', (b) => { tripMode = b.dataset.tmode; formSig = ''; render(); });
     const sendTest = (d) => run(sb.rpc('send_test_request', { p_delay: d }), d ? 'A test rider will ask for a seat in ' + d + ' seconds' : 'A test rider just asked for a seat');
     each('[data-testsend]', (b) => sendTest(+b.dataset.testsend));
     on('ts-send', () => sendTest(+$('ts-delay').value));
