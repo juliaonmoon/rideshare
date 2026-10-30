@@ -371,14 +371,25 @@
       };
       box.querySelector('[data-ploc]').onclick = () => {
         if (!navigator.geolocation) { note.textContent = 'This device cannot share its location'; return; }
+        // Wait up to 12 s for a good GPS fix (30 m or better) instead of taking the first, rough one.
+        let best = null, done = false, watchId = null, timer = null;
         note.textContent = 'Finding you...';
-        navigator.geolocation.getCurrentPosition(async (pos) => {
-            const n = covered(pos.coords.latitude, pos.coords.longitude); if (!n) return;
-            note.textContent = 'Finding your address...';
-            const addr = await window.RS_PLACES.where(pos.coords.latitude, pos.coords.longitude);
-            setP({ label: addr || 'My location', lat: pos.coords.latitude, lng: pos.coords.longitude, area: n.a });
-          },
-          (e) => { note.textContent = e && e.code === 1 ? 'Location is blocked. Allow it in your settings.' : 'Could not find your location'; }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 });
+        const finish = async () => {
+          if (done) return; done = true; navigator.geolocation.clearWatch(watchId); clearTimeout(timer);
+          if (!best) { note.textContent = 'Could not find your location'; return; }
+          const n = covered(best.latitude, best.longitude); if (!n) return;
+          note.textContent = 'Finding the address...';
+          const addr = await window.RS_PLACES.where(best.latitude, best.longitude), acc = Math.round(best.accuracy);
+          setP({ label: addr ? 'Near ' + addr : 'My location', lat: best.latitude, lng: best.longitude, area: n.a });
+          note.textContent = 'Neighbourhood: ' + n.a + ' \u00b7 GPS accurate to about ' + acc + ' m' + (acc > 50 ? ' (weak signal: step outside or by a window and try again)' : '');
+        };
+        watchId = navigator.geolocation.watchPosition((pos) => {
+          if (!best || pos.coords.accuracy < best.accuracy) best = pos.coords;
+          note.textContent = 'Finding you... accurate to about ' + Math.round(best.accuracy) + ' m';
+          if (best.accuracy <= 30) finish();
+        }, (e) => { if (done) return; done = true; clearTimeout(timer); navigator.geolocation.clearWatch(watchId); note.textContent = e && e.code === 1 ? 'Location is blocked. Allow it in your settings.' : 'Could not find your location'; },
+        { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
+        timer = setTimeout(finish, 12000);
       };
       box.querySelector('[data-pnb]').onclick = (e) => { e.preventDefault(); sel.style.display = sel.style.display === 'none' ? '' : 'none'; };
       sel.onchange = () => setP({ label: sel.value, area: sel.value, isArea: true });
