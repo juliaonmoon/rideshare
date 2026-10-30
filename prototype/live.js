@@ -235,7 +235,16 @@
     if (!acc.length) {
       // every rider is dropped off, but the driver is not at the destination yet: keep a final step until they end the trip
       let on = ''; try { on = localStorage.getItem('rs_trip_on') || ''; } catch (e) { /* storage blocked */ }
-      if (!(on && on === curTrip.id && curTrip.live)) return null;
+      if (!curTrip.live) return null;
+      if (!(on && on === curTrip.id)) {
+        // trip on, no riders yet: show the route with a Start trip button; riders who are accepted become stops
+        const nowMin = new Date().getHours() * 60 + new Date().getMinutes() + 2, dr0 = Object.assign({}, driverObj(curTrip, d), { departMin: nowMin });
+        const o = pt(curTrip, 'origin'), de = pt(curTrip, 'dest'), mins = RS.minutes(o, de, nowMin, dr0.dow);
+        const row = (i, t, label) => '<div style="display:flex;gap:10px;padding:8px 0;border-top:1px solid var(--line)"><span style="flex:none;width:24px;height:24px;border-radius:50%;background:var(--acc);color:#fff;font-weight:700;font-size:13px;display:inline-flex;align-items:center;justify-content:center">' + i + '</span><b style="min-width:46px">' + RS.clock(t) + '</b><span>' + label + '</span></div>';
+        return { stops: [{ loc: o, type: 'origin' }, { loc: de, type: 'dest' }],
+          html: '<p class="mut" style="margin-top:0">No riders yet. About ' + fmtMin(mins) + ' if you drive straight there. Riders who ask for a seat show up at the top of this page. Accepted riders are added as stops.</p>' + row(1, nowMin, 'Start: <b>' + esc(disp(curTrip, 'origin')) + '</b>') + row(2, nowMin + mins, 'Arrive: <b>' + esc(disp(curTrip, 'dest')) + '</b>')
+            + '<div style="margin-top:12px"><button class="btn" data-startnav="1" style="width:100%;padding:14px;font-size:17px">Start trip</button></div><div style="margin-top:12px"><button class="btn ghost" data-reset="trip">Reset trip</button></div>' };
+      }
       return { stops: [{ loc: pt(curTrip, 'origin'), type: 'origin' }, { loc: pt(curTrip, 'dest'), type: 'dest' }],
         html: '<p style="margin-top:0"><b>All riders are dropped off.</b> Keep driving to <b>' + esc(disp(curTrip, 'dest')) + '</b>.</p><div style="margin-top:12px"><button class="btn" data-reset="end" style="width:100%;padding:14px;font-size:17px">I have arrived: end trip</button></div><p class="mut" style="margin:8px 0 0">Tap this when you reach your destination. It turns off driving mode and takes the trip down.</p>' };
     }
@@ -305,7 +314,7 @@
     if (mapSig.p !== sig) { mapSig.p = sig; window.RS_UI.drawMap('map-plan', r.stops, []); }
   }
   function driverTop() {
-    if (!curTrip || !known(curTrip)) return '';
+    if (!curTrip || !known(curTrip) || curTrip.live) return '';
     if (false) return card('Start here', `<p><b>1.</b> Fill in the form below: where you drive from and to, the date and time.</p><p><b>2.</b> Tap <b>Review trip</b>, then <b>Confirm and post</b>.</p><p><b>3.</b> Riders who ask for a seat will appear on this page for you to accept.</p><p>${goTo('ld-form')}Go to the form</button></p>`);
     const dates = RSD.nextOccurrences(curTrip.live ? todayStr() : curTrip.trip_date, curTrip.repeat_days, new Date(), 7), d = pickView(viewD, dates);
     const mine = d ? matches.filter((x) => x.driver_id === user.id && x.ride_date === d) : [];
@@ -757,11 +766,11 @@
     const busyIn = (id) => { const a = document.activeElement; return a && /SELECT|INPUT/.test(a.tagName) && a.closest && a.closest('#' + id); };
     try { renderRequests(); } catch (e) { console.error('requests', e); }
     if (!busyIn('ld-top')) try { renderPlan(); } catch (e) { console.error('plan', e); }
-    if (!busyIn('ld-top')) $('ld-top').innerHTML = guard('leave now', driverNow) + guard('driver summary', driverTop) + guard('drive log', driveLogCard);
+    if (!busyIn('ld-top')) $('ld-top').innerHTML = guard('leave now', driverNow) + guard('driver summary', driverTop);
     if (!busyIn('lr-top')) $('lr-top').innerHTML = guard('ride now', riderNow) + guard('rider summary', riderTop);
     $('ld-lists').innerHTML = guard('riders list', driverLists);
     $('lr-lists').innerHTML = guard('drivers list', riderLists);
-    $('lu-main').innerHTML = guard('upcoming', upcomingMain);
+    $('lu-main').innerHTML = guard('upcoming', upcomingMain) + guard('drive log', driveLogCard);
     applyCar(); syncSharing();
     try { wire(); } catch (e) { console.error('wire', e); showErr('buttons: ' + (e && e.message || e)); }
   }
