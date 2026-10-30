@@ -82,6 +82,7 @@ public class LocationService extends Service {
     private boolean firstPoll = true;             // requests already waiting when we start are not announced
     private int inactive = 0;
     private final Set<String> notified = new HashSet<>();
+    private volatile boolean tripOn = false;   // the driver has a trip on today (so the floating button shows for the whole trip, not only while a rider is on board)
     private volatile JSONArray rides = new JSONArray();   // riders on the way (from the last check): who, which step, where
     private volatile Location lastLoc = null;
     private final Set<String> nearShown = new HashSet<>();   // "near a stop" pop-ups already shown ("pick:id", "drop:id")
@@ -240,6 +241,7 @@ public class LocationService extends Service {
             }
             JSONObject o = new JSONObject(body);
             ride = o.optBoolean("ride", false);
+            tripOn = o.optBoolean("active", false);
             if (o.optBoolean("active", false)) inactive = 0;
             else if (++inactive >= 4) { main.post(this::stopSelf); return; }   // nothing on today: about a minute of quiet, then off
             JSONArray pend = o.optJSONArray("pending");
@@ -275,8 +277,8 @@ public class LocationService extends Service {
     static boolean canOverlay(android.content.Context c) { return Build.VERSION.SDK_INT < 23 || Settings.canDrawOverlays(c); }
 
     private void syncBubble() {
-        boolean need = rides.length() > 0 && !getSharedPreferences("rideshare_bubble", MODE_PRIVATE).getBoolean("hidden", false);
-        if (rides.length() == 0) bubbleDismissed = false;   // a new ride brings it back
+        boolean need = (tripOn || rides.length() > 0) && !getSharedPreferences("rideshare_bubble", MODE_PRIVATE).getBoolean("hidden", false);
+        if (!tripOn && rides.length() == 0) bubbleDismissed = false;   // a new ride brings it back
         if (need && !bubbleDismissed && bubble == null && canOverlay(this)) showBubble(); else if ((!need || bubbleDismissed) && bubble != null) hideBubble();
     }
 
@@ -473,12 +475,12 @@ public class LocationService extends Service {
     }
 
     /** Android keeps a pop-up on screen for only a few seconds, so while the car is at a stop and the button has not been tapped,
-     *  pop it up again every 30 seconds (at most 10 times, about 5 minutes). The button also stays in the notification list the whole time. */
+     *  pop it up again every 10 seconds (at most 90 times, about 15 minutes). The button also stays in the notification list the whole time. */
     private final java.util.Map<String, long[]> alertTimes = new java.util.HashMap<>();   // key -> { last time, times shown }
     private boolean dueAlert(String key, long now) {
         long[] a = alertTimes.get(key);
         if (a == null) { alertTimes.put(key, new long[]{now, 1}); return true; }
-        if (a[1] < 10 && now - a[0] >= 30000) { a[0] = now; a[1]++; return true; }
+        if (a[1] < 90 && now - a[0] >= 10000) { a[0] = now; a[1]++; return true; }
         return false;
     }
 
