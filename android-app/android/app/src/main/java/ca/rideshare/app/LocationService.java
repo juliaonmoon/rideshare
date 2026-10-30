@@ -300,11 +300,12 @@ public class LocationService extends Service {
             lp.gravity = Gravity.TOP | Gravity.START;
             // the top-right corner to start with; after that, wherever the driver last dragged it
             SharedPreferences bp = getSharedPreferences("rideshare_bubble", MODE_PRIVATE);
+            if (!bp.getBoolean("pos_v3", false)) bp.edit().remove("x").remove("y").putBoolean("pos_v3", true).apply();
             int screenW = getResources().getDisplayMetrics().widthPixels;
-            lp.x = bp.getInt("x", screenW - size - (int) (10 * d)); lp.y = bp.getInt("y", (int) (44 * d));
+            lp.x = bp.getInt("x", screenW - size - (int) (10 * d)); lp.y = bp.getInt("y", topLimit());
             if (lp.x < 0 || lp.x > screenW - size) lp.x = screenW - size - (int) (10 * d);
             int screenH = getResources().getDisplayMetrics().heightPixels;
-            if (lp.y < topLimit() || lp.y > screenH - size - (int) (80 * d)) lp.y = topLimit() + (int) (36 * d);
+            if (lp.y < topLimit() || lp.y > screenH - size - (int) (80 * d)) lp.y = topLimit();
             v.setOnTouchListener(new View.OnTouchListener() {
                 private float sx, sy; private int ox, oy; private boolean moved;
                 private final Runnable hold = new Runnable() { @Override public void run() {   // press and hold: the button goes away until the next ride
