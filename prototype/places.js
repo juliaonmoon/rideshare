@@ -36,8 +36,24 @@
     return { lat: j.location.latitude, lng: j.location.longitude, name: '' };
   }
 
-  // The street address at a point (for Use my location): the closest place Google knows within 150 m. Empty text if none or blocked.
+  // The street address at a point (for Use my location). First choice: Google's address lookup (Geocoding), the same one Google Maps uses when you drop a pin.
+  // If that is not switched on for the key yet, fall back to the closest place Google knows within 150 m.
+  let geoDown = false;
+  function geocode(lat, lng) {
+    return new Promise((resolve) => {
+      try {
+        if (geoDown || !(window.google && google.maps && google.maps.Geocoder)) return resolve('');
+        new google.maps.Geocoder().geocode({ location: { lat, lng } }, (results, status) => {
+          if (status === 'REQUEST_DENIED') { geoDown = true; return resolve(''); }
+          if (status !== 'OK' || !results || !results.length) return resolve('');
+          const best = results.find((r) => r.types.includes('street_address') || r.types.includes('premise')) || results[0];
+          resolve(best.formatted_address.split(',').slice(0, 2).join(',').trim());
+        });
+      } catch (e) { resolve(''); }
+    });
+  }
   async function where(lat, lng) {
+    const g = await geocode(lat, lng); if (g) return g;
     if (down || !KEY()) return '';
     try {
       const r = await fetch(BASE + 'places:searchNearby', {
@@ -52,5 +68,5 @@
     } catch (e) { return ''; }
   }
 
-  window.RS_PLACES = { suggest, details, where, available: () => !down && !!KEY(), markDown: () => { down = true; } };
+  window.RS_PLACES = { suggest, details, where, available: () => !down && !!KEY(), markDown: () => { down = true; }, exactAddress: () => !geoDown };
 })();

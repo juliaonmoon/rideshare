@@ -380,7 +380,7 @@
           const n = covered(best.latitude, best.longitude); if (!n) return;
           note.textContent = 'Finding the address...';
           const addr = await window.RS_PLACES.where(best.latitude, best.longitude), acc = Math.round(best.accuracy);
-          setP({ label: addr ? 'Near ' + addr : 'My location', lat: best.latitude, lng: best.longitude, area: n.a, acc });
+          setP({ label: addr || 'My location', lat: best.latitude, lng: best.longitude, area: n.a, acc });
         };
         watchId = navigator.geolocation.watchPosition((pos) => {
           if (!best || pos.coords.accuracy < best.accuracy) best = pos.coords;
