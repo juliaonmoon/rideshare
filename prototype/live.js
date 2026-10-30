@@ -345,14 +345,14 @@
     const p = PL[id], a = p ? p.area : area;
     return `<label>${label}</label><div data-pf="${id}"><input type="text" id="${id}-q" autocomplete="off" placeholder="Type an address or place" value="${esc(p ? p.label : '')}" style="${INPUT}"><div class="pfsug" id="${id}-sug"></div>
       <div class="pfrow"><button type="button" class="btn ghost" data-ploc="${id}">Use my location</button><a href="#" data-pnb="${id}">Choose a neighbourhood instead</a></div>
-      <div class="mut" id="${id}-note" style="font-size:12px;margin-top:4px">${p && !p.isArea ? 'Neighbourhood: ' + esc(a) : ''}</div>
+      <div class="mut" id="${id}-note" style="font-size:12px;margin-top:4px">${p && !p.isArea ? 'Neighbourhood: ' + esc(a) + (p.acc ? ' &middot; GPS accurate to about ' + p.acc + ' m' + (p.acc > 50 ? ' (weak signal: step outside or by a window and try again)' : '') : '') : ''}</div>
       <select id="${id}" style="display:none;margin-top:6px">${opts(a)}</select></div>`;
   }
   function wirePlaces() {
     document.querySelectorAll('[data-pf]').forEach((box) => {
       const id = box.dataset.pf, q = $(id + '-q'), sug = $(id + '-sug'), sel = $(id), note = $(id + '-note');
       let seq = 0, tm = null, list = [];
-      const setP = (p) => { PL[id] = p; sel.value = p.area; nowSel[id] = p.area; q.value = p.label; note.textContent = p.isArea ? '' : 'Neighbourhood: ' + p.area; sug.innerHTML = ''; };
+      const setP = (p) => { PL[id] = p; sel.value = p.area; nowSel[id] = p.area; q.value = p.label; note.textContent = p.isArea ? '' : 'Neighbourhood: ' + p.area + (p.acc ? ' \u00b7 GPS accurate to about ' + p.acc + ' m' + (p.acc > 50 ? ' (weak signal: step outside or by a window and try again)' : '') : ''); sug.innerHTML = ''; };
       const covered = (lat, lng) => { const n = nearestArea(lat, lng); if (n.km > 40) { note.textContent = 'That is outside the area we cover for now.'; return null; } return n; };
       q.oninput = () => {
         PL[id] = null; note.textContent = ''; clearTimeout(tm);
@@ -380,8 +380,7 @@
           const n = covered(best.latitude, best.longitude); if (!n) return;
           note.textContent = 'Finding the address...';
           const addr = await window.RS_PLACES.where(best.latitude, best.longitude), acc = Math.round(best.accuracy);
-          setP({ label: addr ? 'Near ' + addr : 'My location', lat: best.latitude, lng: best.longitude, area: n.a });
-          note.textContent = 'Neighbourhood: ' + n.a + ' \u00b7 GPS accurate to about ' + acc + ' m' + (acc > 50 ? ' (weak signal: step outside or by a window and try again)' : '');
+          setP({ label: addr ? 'Near ' + addr : 'My location', lat: best.latitude, lng: best.longitude, area: n.a, acc });
         };
         watchId = navigator.geolocation.watchPosition((pos) => {
           if (!best || pos.coords.accuracy < best.accuracy) best = pos.coords;
