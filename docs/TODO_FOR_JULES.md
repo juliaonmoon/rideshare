@@ -15,6 +15,7 @@ Open https://supabase.com/dashboard/project/iivhfapvkseeomxtsrxf/sql/new, paste 
 | `supabase/migrations/024_messages_ratings_admin.sql` | Messages, ratings, admin reports screen, blocking | Done (Jules ran it on 2026-10-30) |
 | `supabase/migrations/025_booking_integrity.sql` | Safer payouts, safe accepting, whole-trip cancel with refunds, locked bookings, fixed 5-minute wait, report function | **To run** |
 | `supabase/migrations/026_driver_route_token.sql` | Lets the phone rebuild the Google Maps route after you accept a rider while driving | **To run** |
+| `supabase/migrations/027_server_quotes.sql` | The server works out each rider's extra minutes and price (live traffic when switched on, saved drive times otherwise); riders together never pay more than the trip costs | **To run** (big file, about 65 KB, paste it all) |
 
 How to copy a file to the clipboard: ask Claude, or open the file on GitHub, click "Copy raw file", then paste it into the SQL editor.
 
@@ -98,12 +99,24 @@ The full review is in `design-review/CHATGPT_REVIEW_2.md` (kept on your computer
 
 ### Still open, in plain English
 
-1. **Fake numbers from a rider's phone.** When a rider asks for a seat, the rider's phone works out how many extra minutes the trip adds and what it costs, then sends those numbers to the server. The server believes them. Someone who changes the app could send "0 extra minutes" for a trip that really adds 30. The fix: the server works out the numbers itself, so they can't be faked.
-2. **Riders together pay more than the trip costs.** Each rider is quoted the price as if they were the only passenger. When four riders share one car, all four still pay that "alone" price, so together they pay about double the real cost. ChatGPT's example: four riders paying $6.80 in total for a trip that costs about $3.47. RideShare promises nobody profits, so the driver must never receive more than the trip costs. The fix: when more riders join, every share gets smaller so the total stays at or below the real cost.
-3. **Phone fixes (Android).**
+1. **(Done, needs migration 027 and the live-traffic setup below.)** The rider's phone no longer sends the extra minutes or the price. The server works them out, and riders together never pay more than the trip costs.
+2. **Phone fixes (Android).**
    - *Arrival:* the phone currently says "driver has arrived" when the car comes within 250 metres of the pickup, even if it is only driving past or the GPS is wrong. That starts the 5-minute no-show clock unfairly. The fix: only count it as arrived when the car has nearly stopped and the GPS is accurate.
    - *No signal:* if the phone has no signal when you tap "Picked up", the tap is lost and the notification says to open RideShare. The fix: save the tap on the phone and send it when the signal returns.
    - *Rider alerts:* a rider only starts getting phone alerts after a seat is accepted, and the first "Seat confirmed" alert can be missed. The fix: start the alerts as soon as the rider asks for a ride.
-4. **Blocking a person.** Blocking stops them from doing new things, but their existing offers and bookings stay. The fix: blocking should also hide their offers and cancel their future bookings. We also need a "never match me with this person again" button for ordinary users.
-5. **Photo and plate required.** The app asks for a photo (and a car plate for drivers), but the database does not insist. Someone could skip the app and post without them. The fix: the database requires them.
-6. **Identity, support and legal.** See sections 3 and 4 above. These are yours to decide.
+3. **Blocking a person.** Blocking stops them from doing new things, but their existing offers and bookings stay. The fix: blocking should also hide their offers and cancel their future bookings. We also need a "never match me with this person again" button for ordinary users.
+4. **Photo and plate required.** The app asks for a photo (and a car plate for drivers), but the database does not insist. Someone could skip the app and post without them. The fix: the database requires them.
+5. **Identity, support and legal.** See sections 3 and 4 above. These are yours to decide.
+
+## 11. Switch on live traffic (one time, optional; the app works without it)
+
+RideShare asks Google for live traffic only when a rider asks for a seat and when a driver accepts. It is capped at 150 lookups a day and 4,000 a month (Google's free allowance is 5,000 a month). When the cap is reached, or Google does not answer, the server uses the saved drive times instead, so the service never stops. The limits are two rows in the table `app_limits` (ask Claude to change them).
+
+Steps (you do them; Claude never changes Google settings and never sees the key):
+1. Run migration 027 (section 1). Without the next steps, it already works using the saved drive times.
+2. Google Cloud, project rideshare-mvp-487708: APIs and services, Credentials, **Create credentials, API key**. Name it "RideShare server". Under **API restrictions** choose **Restrict key** and tick only **Routes API**. Leave website restrictions empty (the server has no website address). Copy the key.
+3. In the same project, APIs and services, **Routes API**, **Quotas and system limits**. Find the daily limit for Compute Routes requests and set it to about 200 a day. This is what really stops spending. A billing budget only sends an email.
+4. Supabase SQL editor: run this one line, with your key typed in place of the words (the key goes only into your own browser):
+   `select vault.create_secret('PASTE-THE-KEY-HERE', 'google_routes_key');`
+   If it says vault does not exist, turn on the extension in Database, Extensions, "supabase_vault", and run it again. If migration 027 printed a notice that the http extension is not available, turn on the extension "http" in Database, Extensions, and run migration 027 again.
+5. Check it works: ask for a seat in the app (two test accounts), then run `select day, calls from public.route_usage order by day desc limit 3;` and `select quote_source, detour_min, price_dollars from public.matches order by created_at desc limit 3;`. The first should show lookups counted, and the second should say live.
