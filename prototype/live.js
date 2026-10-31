@@ -64,6 +64,7 @@
   let otherTrips = [], otherReqs = [], extraTrips = [], extraReqs = [], names = {}, timer = null, busy = false, formSig = '', mapSig = {};
   let autoAlerts = false;   // started the alert helper for a live trip that was already on when the app opened
   let tripsView = (() => { try { return localStorage.getItem('rs_trips_view') === 'rider' ? 'rider' : 'driver'; } catch (e) { return 'driver'; } })();   // Trips tab: 'driver' (my trip, my riders) or 'rider' (my ride requests, my rides)
+  let rideMode = (() => { try { return localStorage.getItem('rs_ride_mode') === 'later' ? 'later' : 'now'; } catch (e) { return 'now'; } })();   // rider card: 'now' or 'later' (Schedule)
   let tripMode = (() => { try { return localStorage.getItem('rs_trip_mode') === 'later' ? 'later' : 'now'; } catch (e) { return 'now'; } })();       // the one trip card: 'now' (offer a ride now) or 'later' (pick a day and time)
   const LV = {};              // what is typed in the 'later' fields, kept across refreshes
   let PCOK = null, cards = {};   // migration 021 (photo and car details shown to a matched driver or rider, Report a problem) is in place
@@ -395,7 +396,8 @@
       <div class="row2">${isToday ? '<button class="btn" data-startnav="1">Start trip</button> ' : ''}${goTo(asks ? 'seat-requests' : acc ? (isToday ? 'plan-wrap' : 'riding-with-me') : 'ld-lists')}See riders</button> <button class="btn ghost" data-edit="trip">Edit trip</button> <button class="btn ghost" data-reset="trip">Reset trip</button></div>`);
   }
   function riderTop() {
-    if (!curReq || !known(curReq)) return card('Start here', `<p><b>1.</b> Fill in the form below: where you want to be picked up and dropped off, the date and when you are ready.</p><p><b>2.</b> Tap <b>Review request</b>, then <b>Confirm and post</b>.</p><p><b>3.</b> Pick a driver from the list and tap <b>Request</b>.</p><p>${goTo('lr-form')}Go to the form</button></p>`);
+    if (!curReq || !known(curReq)) return '';
+    if (false) return card('Start here', `<p><b>1.</b> Fill in the form below: where you want to be picked up and dropped off, the date and when you are ready.</p><p><b>2.</b> Tap <b>Review request</b>, then <b>Confirm and post</b>.</p><p><b>3.</b> Pick a driver from the list and tap <b>Request</b>.</p><p>${goTo('lr-form')}Go to the form</button></p>`);
     const dates = RSD.nextOccurrences(curReq.live ? todayStr() : curReq.ride_date, curReq.repeat_days, new Date(), 7), d = pickView(viewR, dates);
     const mine = d ? matches.filter((x) => x.rider_id === user.id && x.request_id === curReq.id && x.ride_date === d) : [];
     const acc = mine.find((x) => x.status === 'accepted' || x.status === 'completed'), pend = mine.some((x) => x.status === 'requested');
@@ -506,14 +508,16 @@
       ${placeField('ln-d', 'To', myTrip, 'dest', d)}
       <div style="margin-top:10px"><button class="btn" id="ln-go" style="width:100%;padding:12px;font-size:16px">Offer a ride now</button></div><p class="warn" id="ln-msg" role="alert"></p>`);
   }
+  const rideToggle = () => '<div style="display:flex;gap:8px;margin:0 0 12px">' + [['now', 'Now'], ['later', 'Schedule']].map(([m, l]) => '<button type="button" class="btn' + (rideMode === m ? '' : ' ghost') + '" data-rmode="' + m + '" style="flex:1;min-width:0">' + l + '</button>').join('') + '</div>';
   function riderNow() {
     if (myLiveReq) return card('You are looking for a ride now', `<p><b>${esc(disp(myLiveReq, 'pickup'))}</b> to <b>${esc(disp(myLiveReq, 'dropoff'))}</b></p><p class="mut">Visible to drivers for ${minsLeft(myLiveReq.expires_at)} more minutes.</p><p><button class="btn ghost" data-stoplive="req">Stop</button></p>`);
+    if (rideMode === 'later') return '';
     const p = nowSel['rn-p'] || (myReq && myReq.pickup) || 'Whalley (Surrey)', d = nowSel['rn-d'] || (myReq && myReq.dropoff) || 'Brentwood (Burnaby)', pay = nowSel['rn-pay'] || 'points';
-    return card('I need a ride now', `<p class="mut">One tap, no date or time. You are ready now and drivers can see you for 20 minutes.</p>
+    return card('Ask for a ride', `${rideToggle()}<p class="mut">Leaving now. Your request stays visible to matching drivers for 20 minutes.</p>
       ${placeField('rn-p', 'Pick me up at', myReq, 'pickup', p)}
       ${placeField('rn-d', 'Drop me at', myReq, 'dropoff', d)}
       <label>I'll pay with</label><select id="rn-pay"><option value="points" ${pay === 'points' ? 'selected' : ''}>Points</option><option value="cash" ${pay === 'cash' ? 'selected' : ''}>Cash gas-share</option><option value="either" ${pay === 'either' ? 'selected' : ''}>Either</option></select>
-      <div style="margin-top:10px"><button class="btn" id="rn-go" style="width:100%;padding:12px;font-size:16px">I need a ride now</button></div><p class="warn" id="rn-msg" role="alert"></p>`);
+      <div style="margin-top:10px"><button class="btn" id="rn-go" style="width:100%;padding:12px;font-size:16px">Request a ride now</button></div><p class="warn" id="rn-msg" role="alert"></p>`);
   }
   function useMyLocation(selectId, msgId) {
     if (!navigator.geolocation) { formMsg(msgId, 'This device cannot share its location'); return; }
@@ -696,9 +700,10 @@
         <div style="margin-top:10px"><button class="btn" id="lr-confirm">${myReq ? 'Confirm and update' : 'Confirm and post'}</button> <button class="btn ghost" id="lr-back">Back</button></div>`);
     }
     if (myReq && !editing.req) return '';
+    if (rideMode === 'now' && !myReq) return '';
     const r = myReq || { pickup: 'Whalley (Surrey)', dropoff: 'Brentwood (Burnaby)', ready_from: 440, ready_to: 470, pays: S_().r_pays, ride_date: todayStr(), repeat_days: [] };
     const date = defaultDate(r.ride_date, r.ready_from);
-    return card(myReq ? 'My ride' : 'Where to?', `${placeField('lr-p', 'Pick me up at', myReq, 'pickup', r.pickup)}${placeField('lr-d', 'Drop me at', myReq, 'dropoff', r.dropoff)}
+    return card(myReq ? 'My ride' : 'Schedule a ride', `${myReq ? '' : rideToggle()}${placeField('lr-p', 'Pick me up at', myReq, 'pickup', r.pickup)}${placeField('lr-d', 'Drop me at', myReq, 'dropoff', r.dropoff)}
       <label>Date</label><input type="date" id="lr-date" min="${todayStr()}" max="${maxDate()}" value="${date}">
       <div class="row"><div><label>Earliest pickup</label><input type="time" id="lr-f" value="${hmIn(r.ready_from)}"></div><div><label>Latest pickup</label><input type="time" id="lr-u" value="${hmIn(r.ready_to)}"></div></div>
       <label>Repeat every week on <span class="mut">(optional)</span></label>${dayChips('lr-days', r.repeat_days)}
@@ -987,6 +992,7 @@
     const each = (sel, fn) => document.querySelectorAll(['#v-ldriver', '#v-lrider', '#v-lupcoming'].map((r) => r + ' ' + sel).join(', ')).forEach((b) => (b.onclick = () => fn(b)));
     each('[data-report]', (b) => { b.onclick = () => { const p = b.dataset.report.split('|'); reportDialog(p[0], p[1]); }; });
     each('[data-share]', (b) => { b.onclick = () => shareTrip(b.dataset.share); });
+    each('[data-rmode]', (b) => { b.onclick = () => { rideMode = b.dataset.rmode; try { localStorage.setItem('rs_ride_mode', rideMode); } catch (e) { /* storage blocked */ } formSig = ''; render(); }; });
     each('[data-tview]', (b) => { tripsView = b.dataset.tview; try { localStorage.setItem('rs_trips_view', tripsView); } catch (e) { /* storage blocked */ } render(); });
     each('[data-tmode]', (b) => { tripMode = b.dataset.tmode; try { localStorage.setItem('rs_trip_mode', tripMode); } catch (e) { /* storage blocked */ } formSig = ''; render(); });
     const sendTest = (d) => run(sb.rpc('send_test_request', { p_delay: d }), d ? 'A test rider will ask for a seat in ' + d + ' seconds' : 'A test rider just asked for a seat');
