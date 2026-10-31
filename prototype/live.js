@@ -67,6 +67,7 @@
   let rideMode = (() => { try { return localStorage.getItem('rs_ride_mode') === 'later' ? 'later' : 'now'; } catch (e) { return 'now'; } })();   // rider card: 'now' or 'later' (Schedule)
   let tripMode = (() => { try { return localStorage.getItem('rs_trip_mode') === 'later' ? 'later' : 'now'; } catch (e) { return 'now'; } })();       // the one trip card: 'now' (offer a ride now) or 'later' (pick a day and time)
   const LV = {};              // what is typed in the 'later' fields, kept across refreshes
+  let MSOK = null, msgs = [], myRatings = {}, scores = {}, adminReports = [];   // migration 024 (messages, ratings, admin reports)
   let PCOK = null, cards = {};   // migration 021 (photo and car details shown to a matched driver or rider, Report a problem) is in place
   let DKOK = null;   // migration 020 (detour limits in km, detour saved with each request) is in place
   let bubbleHidden = false;
@@ -107,7 +108,7 @@
   // photo (or the first letter of the name) and car, shown for the person I am matched with
   const avatar = (id, px) => { const c = cards[id], z = px || 44, base = 'width:' + z + 'px;height:' + z + 'px;border-radius:50%;flex:none;'; return c && c.photo ? '<img src="' + esc(c.photo) + '" alt="" referrerpolicy="no-referrer" style="' + base + 'object-fit:cover;background:var(--line)">' : '<span style="' + base + 'display:inline-flex;align-items:center;justify-content:center;background:var(--line);color:var(--acc);font-weight:700">' + esc((names[id] || '?').trim().charAt(0).toUpperCase()) + '</span>'; };
   const carLine = (id) => { const c = cards[id]; if (!c) return ''; const bits = [[c.car_color, c.car_make].filter(Boolean).join(' '), c.car_plate].filter(Boolean); return bits.length ? esc(bits.join(' \u00b7 ')) : ''; };
-  const whoCard = (id, role) => '<div style="display:flex;gap:10px;align-items:center">' + avatar(id) + '<div><b>' + nm(id) + '</b>' + badge(id, role) + (carLine(id) ? '<div class="mut">' + carLine(id) + '</div>' : '') + '</div></div>';
+  const whoCard = (id, role) => '<div style="display:flex;gap:10px;align-items:center">' + avatar(id) + '<div><b>' + nm(id) + '</b>' + badge(id, role) + scoreTag(id) + (carLine(id) ? '<div class="mut">' + carLine(id) + '</div>' : '') + '</div></div>';
   const withMeet = (m, q) => (m && q && m.meet_lat != null ? Object.assign({}, q, { pickup_lat: m.meet_lat, pickup_lng: m.meet_lng }) : q);
   const meetLine = (m) => (m && (m.meet_note || m.meet_lat != null) ? '<div class="mut" style="margin-top:4px">Meeting spot' + (m.meet_note ? ': ' + esc(m.meet_note) : ' set') + (m.meet_lat != null ? ' &middot; <a href="https://www.google.com/maps/search/?api=1&query=' + m.meet_lat + ',' + m.meet_lng + '" target="_blank" rel="noopener">see it on the map</a>' : '') + '</div>' : '');
   const meetButton = (m) => (m && 'meet_lat' in m && m.status === 'accepted' && !m.picked_up_at ? '<button class="btn ghost" data-meet="' + m.id + '">' + (m.meet_lat != null || m.meet_note ? 'Change meeting spot' : 'Set meeting spot') + '</button>' : '');
@@ -165,6 +166,50 @@
       await nat.start({ url: CFG.supabaseUrl, key: CFG.supabaseKey, token: r.data, riderOnly: true });
     } catch (e) { /* permission refused: no phone alerts */ }
   }
+  const scoreTag = (id) => { const z = scores[id]; return z && z.n > 0 ? ' <span class="tag">' + Math.round(100 * z.up / z.n) + '% liked (' + z.n + ')</span>' : ''; };
+  const unreadFor = (matchId) => msgs.filter((m) => m.match_id === matchId && m.recipient_id === (user && user.id) && !m.read_at).length;
+  const msgButton = (m) => { if (!MSOK || !m) return ''; const n = unreadFor(m.id); return (m.status === 'accepted' || m.status === 'completed') ? '<button class="btn ghost" data-msg="' + m.id + '">Message' + (n ? ' (' + n + ' new)' : '') + '</button>' : ''; };
+  const rateLine = (m, otherId) => !MSOK || !m || m.status !== 'completed' ? '' : (m.id in myRatings
+    ? '<div class="mut" style="margin-top:4px">You rated ' + nm(otherId) + ': ' + (myRatings[m.id] ? 'good' : 'not good') + '</div>'
+    : '<div style="margin-top:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="mut">Rate ' + nm(otherId) + ':</span><button class="btn ghost" data-rate="' + m.id + '|1">Good</button><button class="btn ghost" data-rate="' + m.id + '|0">Not good</button></div>');
+  let msgTimer = null;
+  function msgDialog(matchId) {
+    const x = matches.find((m) => m.id === matchId); if (!x) return;
+    const other = x.driver_id === user.id ? x.rider_id : x.driver_id;
+    const old = document.getElementById('ms-ov'); if (old) old.remove(); clearInterval(msgTimer);
+    const ov = document.createElement('div'); ov.id = 'ms-ov'; ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:12px';
+    ov.innerHTML = '<div style="background:var(--card);color:var(--ink);border-radius:14px;padding:16px;max-width:460px;width:100%;max-height:90vh;display:flex;flex-direction:column"><h2 style="margin:0 0 6px">Messages with ' + nm(other) + '</h2><p class="mut" style="margin:0 0 8px">Only the two of you can see this, while the seat is accepted.</p>'
+      + '<div id="ms-list" style="flex:1;overflow:auto;min-height:120px;max-height:45vh;border:1px solid var(--line);border-radius:10px;padding:8px"></div>'
+      + '<div style="display:flex;gap:8px;margin-top:8px"><input type="text" id="ms-text" maxlength="500" placeholder="Write a message" style="' + INPUT + ';flex:1"><button class="btn" id="ms-send">Send</button></div><p class="warn" id="ms-msg" role="alert"></p><div style="margin-top:6px"><button class="btn ghost" id="ms-close">Close</button></div></div>';
+    document.body.appendChild(ov);
+    const paint = () => {
+      const list = msgs.filter((m) => m.match_id === matchId).sort((a, b) => (a.created_at < b.created_at ? -1 : 1)), box = document.getElementById('ms-list'); if (!box) return;
+      box.innerHTML = list.length ? list.map((m) => '<div style="margin:6px 0;text-align:' + (m.sender_id === user.id ? 'right' : 'left') + '"><span style="display:inline-block;max-width:85%;padding:6px 10px;border-radius:12px;background:' + (m.sender_id === user.id ? 'var(--acc)' : 'var(--line)') + ';color:' + (m.sender_id === user.id ? '#fff' : 'var(--ink)') + ';text-align:left">' + esc(m.body) + '</span></div>').join('') : '<p class="mut">No messages yet. Say hello, or tell them where you are.</p>';
+      box.scrollTop = box.scrollHeight;
+    };
+    const pull = async () => {
+      try { const r = await sb.from('messages').select('*').order('created_at', { ascending: false }).limit(300); if (!r.error) { msgs = r.data || []; paint(); } } catch (e) { /* try again */ }
+      if (unreadFor(matchId)) { try { await sb.rpc('mark_messages_read', { p_match: matchId }); msgs.forEach((m) => { if (m.match_id === matchId && m.recipient_id === user.id) m.read_at = m.read_at || new Date().toISOString(); }); } catch (e) { /* ignore */ } }
+    };
+    paint(); pull(); msgTimer = setInterval(() => { if (!document.getElementById('ms-ov')) { clearInterval(msgTimer); return; } pull(); }, 5000);
+    const close = () => { clearInterval(msgTimer); ov.remove(); formSig = ''; render(); };
+    document.getElementById('ms-close').onclick = close;
+    const send = async () => {
+      const inp = document.getElementById('ms-text'), body = inp.value.trim(); if (!body) return;
+      const e = (await sb.rpc('send_message', { p_match: matchId, p_body: body })).error;
+      if (e) { document.getElementById('ms-msg').textContent = e.message; return; }
+      document.getElementById('ms-msg').textContent = ''; inp.value = ''; pull();
+    };
+    document.getElementById('ms-send').onclick = send;
+    document.getElementById('ms-text').onkeydown = (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); send(); } };
+  }
+  const adminCard = () => {
+    if (!isTest || !MSOK) return '';
+    const rows = adminReports.length ? adminReports.map((r) => '<div style="padding:8px 0;border-top:1px solid var(--line)"><b>' + esc(r.reported_name) + '</b> reported by ' + esc(r.reporter_name) + ' <span class="tag">' + esc(String(r.reason).replace(/_/g, ' ')) + '</span>' + (r.reported_blocked ? ' <span class="tag">blocked</span>' : '')
+      + '<div class="mut">' + esc(r.details || 'No details') + ' &middot; ' + esc(new Date(r.created_at).toLocaleString()) + ' &middot; ' + r.reports_about_them + ' report' + (r.reports_about_them == 1 ? '' : 's') + ' about them</div>'
+      + '<div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn ghost" data-adm="' + r.id + '|0">Mark handled</button><button class="btn ghost" data-adm="' + r.id + '|1">Handle and block ' + esc(r.reported_name) + '</button>' + (r.reported_blocked ? '<button class="btn ghost" data-unblock="' + r.reported_id + '">Unblock</button>' : '') + '</div></div>').join('') : '<p class="mut">No open reports.</p>';
+    return card('Reports to review (admin)', '<p class="mut">Only you see this. Blocking stops that account posting trips or requests, getting seats, accepting riders and messaging.</p>' + rows);
+  };
   // photo (and car plate for drivers) must be set before asking for or offering a ride
   const needProfile = (kind) => { if (!PCOK || !user) return false; const c = cards[user.id] || {}; const miss = !c.photo ? 'Add your photo first. It is at the top of the Me tab.' : (kind === 'drive' && !c.car_plate ? 'Add your car details first. They are at the top of the Me tab.' : ''); if (!miss) return false; toast(miss); const b = document.getElementById('nb-me'); if (b) b.click(); return true; };
   const REPORT_REASONS = [['late_or_absent', 'Late or did not show up'], ['unsafe', 'I felt unsafe'], ['wrong_car_or_person', 'Wrong car or wrong person'], ['rude', 'Rude or disrespectful'], ['payment', 'Payment problem'], ['other', 'Something else']];
@@ -276,7 +321,16 @@
       (n.data || []).forEach((x) => { names[x.id] = x.display_name; });
       if (PCOK === null) PCOK = !(await sb.from('profile_cards').select('user_id').limit(1)).error;
       if (PCOK) { try { const pc = await sb.from('profile_cards').select('*').in('user_id', [...ids]); cards = {}; (pc.data || []).forEach((x) => { cards[x.user_id] = x; }); } catch (e) { cards = {}; } }
+      if (MSOK === null) MSOK = !(await sb.from('messages').select('id').limit(1)).error;
+      if (MSOK) {
+        try {
+          const ms = await sb.from('messages').select('*').order('created_at', { ascending: false }).limit(300); msgs = ms.data || [];
+          const rt = await sb.from('ratings').select('match_id,up').limit(300); myRatings = {}; (rt.data || []).forEach((z) => { myRatings[z.match_id] = z.up; });
+          const sm = await sb.rpc('rating_summaries', { p_ids: [...ids] }); scores = {}; (sm.data || []).forEach((z) => { scores[z.user_id] = { n: z.n, up: z.up }; });
+        } catch (e) { /* keep the last values */ }
+      }
       try { const ta = await sb.from('test_accounts').select('user_id,test_mode').eq('user_id', uid).maybeSingle(); isTest = !!ta.data; testMode = !!(ta.data && ta.data.test_mode); } catch (e) { isTest = false; testMode = false; }
+      if (isTest && MSOK) { try { const ar = await sb.rpc('admin_reports', { p_open: true }); adminReports = ar.error ? [] : (ar.data || []); } catch (e) { adminReports = []; } }
       try { const pt = await sb.from('trips').select('*').eq('user_id', uid).eq('active', false).order('created_at', { ascending: false }).limit(12); pastTrips = pt.data || []; } catch (e) { pastTrips = []; }
       try { const ds = await sb.from('drive_sessions').select('*').order('started_at', { ascending: false }).limit(5); drives = ds.data || []; } catch (e) { drives = []; }
       try { const st = await sb.from('user_settings').select('*').eq('user_id', uid).maybeSingle(); mySet = st.data || null; const sr = await sb.rpc('ride_styles', { p_ids: [...ids] }); styles = {}; (sr.data || []).forEach((x) => { styles[x.user_id] = x; }); } catch (e) { /* older database without settings: ignore */ }
@@ -739,7 +793,7 @@
         <div style="margin-top:6px"><button class="btn" data-acc="${x.id}">Accept</button> <button class="btn ghost" data-dec="${x.id}">Decline</button></div></div>`).join('') : '<p class="mut">None yet. Riders ask you for a seat; you accept here.</p>');
     const riding = card('Confirmed riders', acc.length ? acc.map((x) => { const q = reqById[x.request_id], ns = nextStep(x, esc(names[x.rider_id] || 'rider')), open = stepsOpen(x), link = mapsLink(x, q);
       return `<div style="padding:8px 0;border-top:1px solid var(--line)">${whoCard(x.rider_id, 'rider')}<div style="margin:4px 0"><span class="tag">${esc(STEP_LABEL[stageOf(x)])}</span>${x.rider_confirmed_at ? ' <span class="tag">rider confirmed</span>' : ''}</div><div class="mut">${x.pay_with === 'points' ? x.points + ' pts held until drop-off' : 'cash gas-share'}${q ? ' &middot; ' + esc(q.pickup) + ' to ' + esc(q.dropoff) : ''}</div>${meetLine(x)}
-        <div style="margin-top:6px">${open ? `<button class="btn" data-step="${x.id}|${ns.step}">${ns.label}</button>` : '<span class="mut">Steps open 2 hours before pickup.</span>'} ${link && open ? `<a class="btn ghost" style="display:inline-block;text-decoration:none" href="${link}" target="_blank" rel="noopener">Open in Google Maps</a>` : ''} ${canNoShow(x) ? `<button class="btn ghost" data-noshow="${x.id}">Rider did not show up</button>` : noShowHint(x)} ${PCOK ? `<button class="btn ghost" data-report="${x.id}|${x.rider_id}">Report a problem</button>` : ''}</div></div>`; }).join('') : '<p class="mut">No riders yet.</p>');
+        <div style="margin-top:6px">${open ? `<button class="btn" data-step="${x.id}|${ns.step}">${ns.label}</button>` : '<span class="mut">Steps open 2 hours before pickup.</span>'} ${link && open ? `<a class="btn ghost" style="display:inline-block;text-decoration:none" href="${link}" target="_blank" rel="noopener">Open in Google Maps</a>` : ''} ${canNoShow(x) ? `<button class="btn ghost" data-noshow="${x.id}">Rider did not show up</button>` : noShowHint(x)} ${msgButton(x)} ${PCOK ? `<button class="btn ghost" data-report="${x.id}|${x.rider_id}">Report a problem</button>` : ''}</div></div>`; }).join('') : '<p class="mut">No riders yet.</p>');
     const near = !found.length ? '' : card('Matching ride requests', found.map((m) => { const q = reqById[m.rider.id]; return `<div style="padding:6px 0;border-top:1px solid var(--line)"><b>${nm(q.user_id)}</b>${badge(q.user_id, 'rider')}${tagsFor(q.user_id, 'rider')}${q.live ? ' <span class="tag">needs a ride now</span>' : ''} <span class="mut">${esc(q.pickup)} to ${esc(q.dropoff)} &middot; +${Math.round(m.addedDetour)} min detour &middot; pick up ${clk(m.pickupAt)} &middot; drop ${clk(m.dropAt)}</span></div>`; }).join(''));
     return dateCard + summary + '<div id="seat-requests">' + reqs + '</div><div id="riding-with-me">' + riding + '</div>' + near;
   }
@@ -788,7 +842,7 @@
       const stg = stageOf(accepted), dn = nm(accTrip.user_id);
       const live = { accepted: `${dn} accepted. They will tap <b>On my way</b> when they set off.`, on_my_way: `<b>${dn} is on the way.</b>`, arrived: `<b>${dn} has arrived.</b> Look for them at the pickup spot.`, picked_up: `<b>Ride in progress</b> with ${dn}.`, dropped_off: `<b>You have arrived.</b> Thanks for sharing the ride!` }[stg];
       const inCar = stg === 'picked_up' ? (accepted.rider_confirmed_at ? '<span class="tag">You confirmed you are in the car</span>' : `<button class="btn" data-incar="${accepted.id}">I'm in the car</button>`) : '';
-      html += card('Your ride', `<div style="margin-bottom:8px">${whoCard(accepted.driver_id, 'driver')}${meetLine(accepted)}${meetButton(accepted) ? '<div style="margin-top:8px">' + meetButton(accepted) + '</div>' : ''}</div><p>${live}</p>${trackInfo(accepted, accTrip, meO)}${rideStats(accepted)}<p class="mut">${esc(RSD.label(viewR))} &middot; ${accepted.pay_with === 'points' ? accepted.points + ' pts' + (stg === 'dropped_off' ? ' paid' : ' held until drop-off') : 'cash gas-share (settle with your driver)'}</p>${inCar}<p style="margin-top:8px"><button class="btn ghost" id="lr-watch">Preview route</button> <button class="btn ghost" id="lr-stop">Stop</button></p>${stg === 'accepted' || stg === 'on_my_way' ? '<p class="mut">To cancel, open the Upcoming tab.</p>' : ''}`);
+      html += card('Your ride', `<div style="margin-bottom:8px">${whoCard(accepted.driver_id, 'driver')}${meetLine(accepted)}${msgButton(accepted) || meetButton(accepted) ? '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">' + msgButton(accepted) + meetButton(accepted) + '</div>' : ''}</div><p>${live}</p>${trackInfo(accepted, accTrip, meO)}${rideStats(accepted)}<p class="mut">${esc(RSD.label(viewR))} &middot; ${accepted.pay_with === 'points' ? accepted.points + ' pts' + (stg === 'dropped_off' ? ' paid' : ' held until drop-off') : 'cash gas-share (settle with your driver)'}</p>${inCar}<p style="margin-top:8px"><button class="btn ghost" id="lr-watch">Preview route</button> <button class="btn ghost" id="lr-stop">Stop</button></p>${stg === 'accepted' || stg === 'on_my_way' ? '<p class="mut">To cancel, open the Upcoming tab.</p>' : ''}`);
     }
     let list = '';
     otherTrips.filter((t) => known(t) && tripOn(t, viewR)).forEach((t) => {
@@ -799,7 +853,7 @@
       const st = mine.find((x) => x.trip_id === t.id);
       const price = payWith === 'points' ? pts + ' pts (' + RS.money(pts * RS.POINT_VALUE) + ')' : RS.money(dollars);
       const btn = st ? `<span class="tag">${esc(st.status === 'requested' ? 'seat requested' : statusText(st.status))}</span>${st.status === 'requested' ? ` <button class="btn ghost" data-can="${st.id}">Cancel</button>` : ''}` : `<button class="btn" data-req="${t.id}" data-pay="${payWith}" data-pts="${pts}" data-date="${viewR}" data-dmin="${Math.max(0, m.addedDetour).toFixed(1)}" data-dkm="${Math.max(0, m.addedKm || 0).toFixed(1)}">Request &middot; ${price}</button>`;
-      list += `<div style="padding:8px 0;border-top:1px solid var(--line)"><b>${nm(t.user_id)}</b>${badge(t.user_id, 'driver')}${tagsFor(t.user_id, 'driver')}${t.live ? ' <span class="tag">leaving now</span>' : ''} <span class="mut">leaves ${clk(t.depart_min)} &middot; picks you up ${clk(m.pickupAt)} &middot; drops ${clk(m.dropAt)} &middot; adds ${Math.round(m.addedDetour)} min for them</span><div style="margin-top:6px">${btn}</div></div>`;
+      list += `<div style="padding:8px 0;border-top:1px solid var(--line)"><b>${nm(t.user_id)}</b>${badge(t.user_id, 'driver')}${scoreTag(t.user_id)}${tagsFor(t.user_id, 'driver')}${t.live ? ' <span class="tag">leaving now</span>' : ''} <span class="mut">leaves ${clk(t.depart_min)} &middot; picks you up ${clk(m.pickupAt)} &middot; drops ${clk(m.dropAt)} &middot; adds ${Math.round(m.addedDetour)} min for them</span><div style="margin-top:6px">${btn}</div></div>`;
     });
     html += card('Drivers going your way on ' + esc(RSD.label(viewR)), list || '<p class="mut">No drivers match on this date. Check back soon.</p>');
     const sig = routeSig(mapStops) + viewR; if (mapSig.r !== sig) { mapSig.r = sig; window.RS_UI.drawMap('map-lr', mapStops); }
@@ -829,6 +883,7 @@
         if (!isRider && x.status === 'requested') b.push(`<button class="btn" data-acc="${x.id}">Accept</button> <button class="btn ghost" data-dec="${x.id}">Decline</button>`);
         if (canNoShow(x)) b.push(`<button class="btn ghost" data-noshow="${x.id}">Rider did not show up</button>`); else if (noShowHint(x)) b.push(noShowHint(x));
         if ((isRider || x.status === 'accepted') && !x.picked_up_at) b.push(`<button class="btn ghost" data-cancelask="${x.id}">${!isRider ? 'Cancel pickup' : x.status === 'requested' ? 'Cancel request' : 'Cancel ride'}</button>`);
+        if (msgButton(x) && x.status === 'accepted') b.push(msgButton(x));
         if (isRider && meetButton(x)) b.push(meetButton(x));
         if (x.status === 'accepted' && PCOK) b.push(`<button class="btn ghost" data-share="${x.id}">Share my trip</button>`, `<button class="btn ghost" data-report="${x.id}|${other}">Report a problem</button>`);
         actions = b.length ? `<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:8px">${b.join(' ')}</div>` : '';
@@ -848,9 +903,9 @@
     const tripRows = pastTrips.filter((t) => (known(t) || t.origin) && (matches.some((x) => x.trip_id === t.id && x.status === 'completed') || kmOf(t.id) > 0)).slice(0, 8).map((t) => {
       const ms = matches.filter((x) => x.trip_id === t.id), done = ms.filter((x) => x.status === 'completed'), km = kmOf(t.id);
       const who = done.length ? done.map((x) => nm(x.rider_id)).join(', ') : '';
-      return '<div style="padding:8px 0;border-top:1px solid var(--line)"><b>' + esc(disp(t, 'origin')) + ' to ' + esc(disp(t, 'dest')) + '</b> <span class="tag">' + (done.length ? 'completed' : 'no riders') + '</span><div class="mut">' + esc(RSD.label(t.trip_date)) + ' at ' + clk(t.depart_min) + (who ? ' &middot; ' + who : '') + ' &middot; ' + done.length + ' rider' + (done.length === 1 ? '' : 's') + (km ? ' &middot; ' + km.toFixed(1) + ' km' : '') + '</div></div>';
+      return '<div style="padding:8px 0;border-top:1px solid var(--line)"><b>' + esc(disp(t, 'origin')) + ' to ' + esc(disp(t, 'dest')) + '</b> <span class="tag">' + (done.length ? 'completed' : 'no riders') + '</span><div class="mut">' + esc(RSD.label(t.trip_date)) + ' at ' + clk(t.depart_min) + (who ? ' &middot; ' + who : '') + ' &middot; ' + done.length + ' rider' + (done.length === 1 ? '' : 's') + (km ? ' &middot; ' + km.toFixed(1) + ' km' : '') + '</div>' + done.map((x) => rateLine(x, x.rider_id)).join('') + '</div>';
     }).join('');
-    const rideRows = past.filter((x) => x.rider_id === user.id).map((x) => '<div style="padding:8px 0;border-top:1px solid var(--line)"><b>Ride with ' + nm(x.driver_id) + '</b> <span class="tag">' + esc(statusText(x.status)) + '</span><div class="mut">' + when(x) + ' &middot; ' + (x.pay_with === 'points' ? x.points + ' pts' : 'cash') + '</div></div>').join('');
+    const rideRows = past.filter((x) => x.rider_id === user.id).map((x) => '<div style="padding:8px 0;border-top:1px solid var(--line)"><b>Ride with ' + nm(x.driver_id) + '</b> <span class="tag">' + esc(statusText(x.status)) + '</span><div class="mut">' + when(x) + ' &middot; ' + (x.pay_with === 'points' ? x.points + ' pts' : 'cash') + '</div>' + rateLine(x, x.driver_id) + '</div>').join('');
     const segT = (v, label) => '<button type="button" class="btn' + (tripsView === v ? '' : ' ghost') + '" data-tview="' + v + '" style="flex:1;min-width:0">' + label + '</button>';
     const toggle = '<div style="display:flex;gap:8px;margin:0 0 12px">' + segT('driver', 'As a driver') + segT('rider', 'As a rider') + '</div>';
     window.__rules = card('Cancellation rules', policy);
@@ -871,7 +926,7 @@
     const chk = (id, on, text) => '<label style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="' + id + '"' + (on ? ' checked' : '') + '> ' + text + '</label>';
     const optIn = (id, v, max) => '<input type="number" id="' + id + '" min="0" max="' + max + '" step="0.5" placeholder="no limit" value="' + (v == null ? '' : v) + '" style="' + INPUT + '">';
     const num = (id, v, max) => '<input type="number" id="' + id + '" min="0" max="' + max + '" value="' + v + '" style="' + INPUT + '">';
-    return profileCard() + card('Driver settings', '<p class="mut">Defaults for new trips. Changing them here does not change trips you already posted.</p>'
+    return adminCard() + profileCard() + card('Driver settings', '<p class="mut">Defaults for new trips. Changing them here does not change trips you already posted.</p>'
       + '<label>Extra minutes I accept for my whole trip</label>' + num('ls-detour', x.d_total_detour == null ? x.d_detour : x.d_total_detour, 120)
       + (DKOK ? '<label>Extra km I accept for my whole trip <span class="mut">(optional, empty = no distance limit)</span></label>' + optIn('ls-detourkm', x.d_total_detour_km == null ? x.d_detour_km : x.d_total_detour_km, 400) + '<p class="mut">A request has to fit every limit you set: minutes and kilometres.</p>' : '')
       + '<label>Payment I accept</label>' + sel('ls-accepts', [['either', 'Points or cash'], ['points', 'Points only'], ['cash', 'Cash gas-share only']], x.d_accepts)
@@ -1006,6 +1061,8 @@
       if (e) { toast('Could not save: ' + e.message); return; }
       cards[user.id] = Object.assign({}, cards[user.id] || {}, row); toast(msg); formSig = ''; render();
     };
+    document.querySelectorAll('[data-adm]').forEach((b) => { b.onclick = async () => { const p = b.dataset.adm.split('|'), block = p[1] === '1'; const note = window.prompt(block ? 'Why are you blocking this person? (saved with the block)' : 'Note (optional)'); if (note === null) return; const e = (await sb.rpc('admin_resolve_report', { p_id: p[0], p_note: note, p_block: block })).error; if (e) { toast(e.message); return; } toast(block ? 'Handled and blocked' : 'Marked handled'); loadAll(); }; });
+    document.querySelectorAll('[data-unblock]').forEach((b) => { b.onclick = async () => { const e = (await sb.rpc('admin_unblock', { p_user: b.dataset.unblock })).error; if (e) { toast(e.message); return; } toast('Unblocked'); loadAll(); }; });
     on('pc-pick', () => $('pc-file').click());
     const pcf = $('pc-file');
     if (pcf) pcf.onchange = () => {
@@ -1054,6 +1111,8 @@
     each('[data-report]', (b) => { b.onclick = () => { const p = b.dataset.report.split('|'); reportDialog(p[0], p[1]); }; });
     each('[data-share]', (b) => { b.onclick = () => shareTrip(b.dataset.share); });
     each('[data-meet]', (b) => { b.onclick = () => meetDialog(b.dataset.meet); });
+    each('[data-msg]', (b) => { b.onclick = () => msgDialog(b.dataset.msg); });
+    each('[data-rate]', (b) => { b.onclick = async () => { const p = b.dataset.rate.split('|'); const e = (await sb.rpc('rate_ride', { p_match: p[0], p_up: p[1] === '1', p_comment: null })).error; if (e) { toast(e.message); return; } myRatings[p[0]] = p[1] === '1'; toast('Thanks for rating'); formSig = ''; render(); loadAll(); }; });
     each('[data-rmode]', (b) => { b.onclick = () => { rideMode = b.dataset.rmode; try { localStorage.setItem('rs_ride_mode', rideMode); } catch (e) { /* storage blocked */ } formSig = ''; render(); }; });
     each('[data-tview]', (b) => { tripsView = b.dataset.tview; try { localStorage.setItem('rs_trips_view', tripsView); } catch (e) { /* storage blocked */ } render(); });
     each('[data-tmode]', (b) => { tripMode = b.dataset.tmode; try { localStorage.setItem('rs_trip_mode', tripMode); } catch (e) { /* storage blocked */ } formSig = ''; render(); });
