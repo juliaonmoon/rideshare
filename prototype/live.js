@@ -461,9 +461,8 @@
         + '<label>Repeat every week on <span class="mut">(optional)</span></label>' + dayChips('ln-days', LV.days || [])
         + '<details style="margin-top:12px"><summary class="mut" style="cursor:pointer">More options (rider limits, payment)</summary>'
         + '<label>Most riders I will pick up</label><select id="ln-pk">' + [1, 2, 3, 4].map((n) => '<option value="' + n + '"' + (n === +(LV['ln-pk'] != null ? LV['ln-pk'] : Math.min(4, sx.d_seats)) ? ' selected' : '') + '>' + (n === 1 ? 'Just 1 (a single pickup)' : 'Up to ' + n) + '</option>').join('') + '</select>'
-        + '<label>Extra minutes I accept for each rider</label><input type="number" id="ln-dt" min="0" max="60" value="' + val('ln-dt', sx.d_detour) + '">'
-        + (DKOK ? '<label>Extra km I accept for each rider (optional)</label><input type="number" id="ln-dk" min="0" max="200" step="0.5" placeholder="no limit" value="' + val('ln-dk', sx.d_detour_km == null ? '' : sx.d_detour_km) + '"><label>Extra km I accept for all riders added up (optional)</label><input type="number" id="ln-tk" min="0" max="400" step="0.5" placeholder="no limit" value="' + val('ln-tk', sx.d_total_detour_km == null ? '' : sx.d_total_detour_km) + '">' : '')
-        + '<label>Extra minutes I accept for all riders added up</label><input type="number" id="ln-tt" min="0" max="120" value="' + val('ln-tt', sx.d_total_detour) + '">'
+        + '<label>Extra minutes I accept for my whole trip</label><input type="number" id="ln-dt" min="0" max="120" value="' + val('ln-dt', sx.d_detour) + '">'
+        + (DKOK ? '<label>Extra km I accept for my whole trip (optional)</label><input type="number" id="ln-dk" min="0" max="200" step="0.5" placeholder="no limit" value="' + val('ln-dk', sx.d_detour_km == null ? '' : sx.d_detour_km) + '">' : '')
         + '<label>Max wait at a pickup (min)</label><input type="number" id="ln-w" min="0" max="60" value="' + val('ln-w', sx.d_wait) + '">'
         + '<label>I accept</label><select id="ln-a">' + [['either', 'Points or cash'], ['points', 'Points only'], ['cash', 'Cash gas-share only']].map(([v, l]) => '<option value="' + v + '"' + (v === (LV['ln-a'] || sx.d_accepts) ? ' selected' : '') + '>' + l + '</option>').join('') + '</select></details>'
         + '<div style="margin-top:12px"><button class="btn" id="ln-review" style="width:100%;padding:12px;font-size:16px">Review trip</button></div>';
@@ -615,8 +614,8 @@
       <div class="row"><div><label>Date</label><input type="date" id="lt-date" min="${todayStr()}" max="${maxDate()}" value="${date}"></div><div><label>Leave at</label><input type="time" id="lt-t" value="${hmIn(t.depart_min)}"></div></div>
       <label>Repeat every week on <span class="mut">(optional)</span></label>${dayChips('lt-days', t.repeat_days)}
       <label>Most riders I will pick up</label><select id="lt-pk">${[1, 2, 3, 4].map((n) => '<option value="' + n + '"' + (n === (t.max_pickups || 1) ? ' selected' : '') + '>' + (n === 1 ? 'Just 1 (a single pickup)' : 'Up to ' + n) + '</option>').join('')}</select>
-      <label>Extra minutes I accept for each rider</label><input type="number" id="lt-dt" min="0" max="60" value="${t.max_detour}">
-      <label>Extra minutes I accept for all riders added up <span class="mut">(only matters if you take more than 1 rider)</span></label><input type="number" id="lt-tt" min="0" max="120" value="${t.max_total_detour == null ? t.max_detour : t.max_total_detour}">${DKOK ? `<label>Extra km I accept for each rider <span class="mut">(optional)</span></label><input type="number" id="lt-dk" min="0" max="200" step="0.5" placeholder="no limit" value="${t.max_detour_km == null ? '' : t.max_detour_km}"><label>Extra km I accept for all riders added up <span class="mut">(optional)</span></label><input type="number" id="lt-tk" min="0" max="400" step="0.5" placeholder="no limit" value="${t.max_total_detour_km == null ? '' : t.max_total_detour_km}">` : ''}
+      <label>Extra minutes I accept for my whole trip</label><input type="number" id="lt-dt" min="0" max="120" value="${t.max_detour}">
+      ${DKOK ? `<label>Extra km I accept for my whole trip <span class="mut">(optional)</span></label><input type="number" id="lt-dk" min="0" max="200" step="0.5" placeholder="no limit" value="${t.max_detour_km == null ? '' : t.max_detour_km}">` : ''}
       <label>Max wait at a pickup (min)</label><input type="number" id="lt-w" min="0" max="60" value="${t.max_wait}">
       <label>I accept</label><select id="lt-a"><option value="either" ${t.accepts === 'either' ? 'selected' : ''}>Points or cash</option><option value="points" ${t.accepts === 'points' ? 'selected' : ''}>Points only</option><option value="cash" ${t.accepts === 'cash' ? 'selected' : ''}>Cash gas-share only</option></select>
       <div style="margin-top:10px"><button class="btn" id="lt-review">Review trip</button>${myTrip || myLiveTrip ? ' <button class="btn ghost" data-edit-off="trip">Cancel</button>' : ''}</div><p class="warn" id="lt-msg" role="alert"></p>`);
@@ -769,12 +768,11 @@
     const optIn = (id, v, max) => '<input type="number" id="' + id + '" min="0" max="' + max + '" step="0.5" placeholder="no limit" value="' + (v == null ? '' : v) + '" style="' + INPUT + '">';
     const num = (id, v, max) => '<input type="number" id="' + id + '" min="0" max="' + max + '" value="' + v + '" style="' + INPUT + '">';
     return card('Driver settings', '<p class="mut">These fill in each new trip for you. You can still change them on any trip before you post it. Once a rider is accepted, a trip cannot be changed.</p>'
-      + '<label>Extra minutes I accept for each rider</label>' + num('ls-detour', x.d_detour, 60)
+      + '<label>Extra minutes I accept for my whole trip</label>' + num('ls-detour', x.d_total_detour == null ? x.d_detour : x.d_total_detour, 120)
       + '<label>Longest I will wait at a pickup (min)</label>' + num('ls-wait', x.d_wait, 60)
       + '<label>I accept</label>' + sel('ls-accepts', [['either', 'Points or cash'], ['points', 'Points only'], ['cash', 'Cash gas-share only']], x.d_accepts)
       + '<label>Most riders I will pick up</label>' + sel('ls-seats', [1, 2, 3, 4].map((n) => [n, n === 1 ? 'Just 1 (a single pickup)' : 'Up to ' + n]), Math.min(4, x.d_seats))
-      + '<label>Extra minutes I accept for all riders added up (only matters with 2 or more riders)</label>' + num('ls-total', x.d_total_detour, 120)
-      + (DKOK ? '<label>Extra km I accept for each rider <span class="mut">(optional, empty = no distance limit)</span></label>' + optIn('ls-detourkm', x.d_detour_km, 200) + '<label>Extra km I accept for all riders added up <span class="mut">(optional)</span></label>' + optIn('ls-totalkm', x.d_total_detour_km, 400) + '<p class="mut">A rider has to fit every limit you set: minutes and kilometres.</p>' : '')
+      + (DKOK ? '<label>Extra km I accept for my whole trip <span class="mut">(optional, empty = no distance limit)</span></label>' + optIn('ls-detourkm', x.d_total_detour_km == null ? x.d_detour_km : x.d_total_detour_km, 400) + '<p class="mut">A request has to fit every limit you set: minutes and kilometres.</p>' : '')
       + chk('ls-auto', x.d_auto_accept, 'Accept the first rider automatically (if they can pay). Later riders wait for my tap, so my total time limit is respected')
       + '<label>My ride style</label>' + sel('ls-dchat', CHAT, x.d_chat)
       + chk('ls-dpets', x.d_pets, 'Pets are welcome in my car')
@@ -793,7 +791,7 @@
   const saveSettings = () => {
     const g = (id) => $(id), n = (id, max) => Math.max(0, Math.min(max, Math.round(+g(id).value || 0)));
     const base = S_(), row = Object.assign({}, base, { user_id: user.id, updated_at: new Date().toISOString() });
-    if (g('ls-detour')) Object.assign(row, { d_detour: n('ls-detour', 60), d_wait: n('ls-wait', 60), d_accepts: g('ls-accepts').value, d_seats: Math.max(1, Math.min(4, +g('ls-seats').value || 1)), d_total_detour: n('ls-total', 120), ...(DKOK ? { d_detour_km: optNum('ls-detourkm'), d_total_detour_km: optNum('ls-totalkm') } : {}), d_auto_accept: g('ls-auto').checked, d_chat: g('ls-dchat').value, d_pets: g('ls-dpets').checked });
+    if (g('ls-detour')) Object.assign(row, { d_detour: n('ls-detour', 60), d_wait: n('ls-wait', 60), d_accepts: g('ls-accepts').value, d_seats: Math.max(1, Math.min(4, +g('ls-seats').value || 1)), d_total_detour: n('ls-detour', 60), ...(DKOK ? { d_detour_km: optNum('ls-detourkm'), d_total_detour_km: optNum('ls-detourkm') } : {}), d_auto_accept: g('ls-auto').checked, d_chat: g('ls-dchat').value, d_pets: g('ls-dpets').checked });
     if (g('ls-pays')) Object.assign(row, { r_pays: g('ls-pays').value, r_chat: g('ls-rchat').value, r_pets: g('ls-rpets').checked });
     return row;
   };
@@ -836,10 +834,10 @@
   function wire() {
     const on = (id, fn) => { const e = $(id); if (e) e.onclick = fn; };
     document.querySelectorAll('#lt-days button, #lr-days button').forEach((b) => (b.onclick = () => b.classList.toggle('on')));
-    ['ln-date', 'ln-t', 'ln-pk', 'ln-dt', 'ln-tt', 'ln-w', 'ln-a', 'ln-dk', 'ln-tk'].forEach((id) => { const e = $(id); if (e) e.onchange = () => { LV[id] = e.value; }; });
+    ['ln-date', 'ln-t', 'ln-pk', 'ln-dt', 'ln-w', 'ln-a', 'ln-dk'].forEach((id) => { const e = $(id); if (e) e.onchange = () => { LV[id] = e.value; }; });
     document.querySelectorAll('#ln-days button').forEach((b) => (b.onclick = () => { b.classList.toggle('on'); LV.days = readDays('ln-days'); }));
     on('ln-review', () => {
-      const row = { origin: $('ln-o').value, dest: $('ln-d').value, trip_date: $('ln-date').value, depart_min: hm($('ln-t').value || '07:30'), repeat_days: readDays('ln-days'), max_detour: +$('ln-dt').value, max_total_detour: +$('ln-tt').value, max_pickups: +$('ln-pk').value, max_wait: +$('ln-w').value, accepts: $('ln-a').value, ...(DKOK ? { max_detour_km: optNum('ln-dk'), max_total_detour_km: optNum('ln-tk') } : {}), ...plCols('ln-o', 'origin'), ...plCols('ln-d', 'dest') };
+      const row = { origin: $('ln-o').value, dest: $('ln-d').value, trip_date: $('ln-date').value, depart_min: hm($('ln-t').value || '07:30'), repeat_days: readDays('ln-days'), max_detour: +$('ln-dt').value, max_total_detour: +$('ln-dt').value, max_pickups: +$('ln-pk').value, max_wait: +$('ln-w').value, accepts: $('ln-a').value, ...(DKOK ? { max_detour_km: optNum('ln-dk'), max_total_detour_km: optNum('ln-dk') } : {}), ...plCols('ln-o', 'origin'), ...plCols('ln-d', 'dest') };
       const need = plNeed('ln-o', 'where you start') || plNeed('ln-d', 'where you are going'); if (need) { formMsg('ln-msg', need); return; }
       if (row.max_pickups === 1) row.max_total_detour = null; else if (row.max_total_detour < row.max_detour) { formMsg('ln-msg', 'The total for all pickups cannot be less than the time for one pickup'); return; }
       formMsg('ln-msg', '');
@@ -849,7 +847,7 @@
       pending = { kind: 'trip', row }; formSig = ''; render();
     });
     on('lt-review', () => {
-      const row = { origin: $('lt-o').value, dest: $('lt-d').value, trip_date: $('lt-date').value, depart_min: hm($('lt-t').value || '07:30'), repeat_days: readDays('lt-days'), max_detour: +$('lt-dt').value, max_total_detour: +$('lt-tt').value, ...(DKOK ? { max_detour_km: optNum('lt-dk'), max_total_detour_km: optNum('lt-tk') } : {}), max_pickups: +$('lt-pk').value, max_wait: +$('lt-w').value, accepts: $('lt-a').value, ...plCols('lt-o', 'origin'), ...plCols('lt-d', 'dest') };
+      const row = { origin: $('lt-o').value, dest: $('lt-d').value, trip_date: $('lt-date').value, depart_min: hm($('lt-t').value || '07:30'), repeat_days: readDays('lt-days'), max_detour: +$('lt-dt').value, max_total_detour: +$('lt-dt').value, ...(DKOK ? { max_detour_km: optNum('lt-dk'), max_total_detour_km: optNum('lt-dk') } : {}), max_pickups: +$('lt-pk').value, max_wait: +$('lt-w').value, accepts: $('lt-a').value, ...plCols('lt-o', 'origin'), ...plCols('lt-d', 'dest') };
       const need = plNeed('lt-o', 'where you start') || plNeed('lt-d', 'where you are going'); if (need) { formMsg('lt-msg', need); return; }
       if (row.max_pickups === 1) row.max_total_detour = null; else if (row.max_total_detour < row.max_detour) { formMsg('lt-msg', 'The total for all pickups cannot be less than the time for one pickup'); return; }
       formMsg('lt-msg', '');
