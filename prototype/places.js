@@ -47,6 +47,10 @@
           if (status === 'REQUEST_DENIED') { geoDown = true; return resolve(''); }
           if (status !== 'OK' || !results || !results.length) return resolve('');
           const best = results.find((r) => r.types.includes('street_address') || r.types.includes('premise')) || results[0];
+          // built from the address parts, so a missing street number shows as "Near 128 St, Surrey" instead of a cut-off "St, Surrey"
+          const comp = (t) => { const c = (best.address_components || []).find((x) => x.types.includes(t)); return c ? c.long_name : ''; };
+          const num = comp('street_number'), road = comp('route'), city = comp('locality') || comp('sublocality') || comp('neighborhood');
+          if (road) return resolve((num ? num + ' ' + road : 'Near ' + road) + (city ? ', ' + city : ''));
           resolve(best.formatted_address.split(',').slice(0, 2).join(',').trim());
         });
       } catch (e) { resolve(''); }

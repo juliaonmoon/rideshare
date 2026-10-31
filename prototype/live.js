@@ -27,12 +27,13 @@
   const card = (title, body) => `<div class="card"><h2>${title}</h2>${body}</div>`;
   const hint = '<div class="card"><p class="mut">Sign in at the top of the page to use RideShare.</p></div>';
   const todayStr = () => RSD.today();
+  const clk = (m) => { const t = Math.round(m), h = Math.floor(t / 60) % 24, mm = t % 60; return ((h % 12) || 12) + ':' + String(mm).padStart(2, '0') + ' ' + (h < 12 ? 'am' : 'pm'); };
   // Default date for a form: the saved date, but never in the past, and if today's time has already passed (or is under 30 minutes away) use tomorrow.
   const defaultDate = (saved, minutes) => { let d = !saved || saved < todayStr() ? todayStr() : saved; if (d === todayStr() && RSD.check(d, minutes)) d = RSD.addDays(todayStr(), 1); return d; };
   const maxDate = () => RSD.addDays(todayStr(), RSD.MAX_AHEAD_DAYS);
   const dayChips = (id, sel) => `<div class="days" id="${id}">${RSD.DAY_NAMES.map((n, i) => `<button type="button" data-day="${i + 1}" class="${(sel || []).includes(i + 1) ? 'on' : ''}">${n}</button>`).join('')}</div>`;
   const readDays = (id) => [...document.querySelectorAll('#' + id + ' button.on')].map((b) => +b.dataset.day);
-  const whenText = (date, mins, days) => RSD.label(date) + ' at ' + RS.clock(mins) + (days && days.length ? ' &middot; repeats ' + RSD.repeatText(days) : ' &middot; one time');
+  const whenText = (date, mins, days) => RSD.label(date) + ' at ' + clk(mins) + (days && days.length ? ' &middot; repeats ' + RSD.repeatText(days) : ' &middot; one time');
 
   if (!CFG.supabaseUrl || !CFG.supabaseKey || !window.supabase) {
     $('auth-bar').innerHTML = '<div class="card"><p class="mut">The app could not connect. Please reload the page.</p></div>';
@@ -124,7 +125,7 @@
   async function shareTrip(matchId) {
     const x = matches.find((m) => m.id === matchId); if (!x) return;
     const other = x.driver_id === user.id ? x.rider_id : x.driver_id, q = [...otherReqs, ...extraReqs, ...(myReq ? [myReq] : [])].find((r) => r.id === x.request_id), t = tripBy(x.trip_id);
-    const text = 'I am sharing a ride with ' + (names[other] || 'someone') + (carLine(other) ? ' (' + carLine(other).replace(/&middot;/g, '-') + ')' : '') + (q ? ' from ' + disp(q, 'pickup') + ' to ' + disp(q, 'dropoff') : '') + (t ? ' at ' + RS.clock(t.depart_min) : '') + ', arranged on RideShare.';
+    const text = 'I am sharing a ride with ' + (names[other] || 'someone') + (carLine(other) ? ' (' + carLine(other).replace(/&middot;/g, '-') + ')' : '') + (q ? ' from ' + disp(q, 'pickup') + ' to ' + disp(q, 'dropoff') : '') + (t ? ' at ' + clk(t.depart_min) : '') + ', arranged on RideShare.';
     try { if (navigator.share) { await navigator.share({ text }); return; } } catch (e) { return; }
     try { await navigator.clipboard.writeText(text); toast('Copied. Paste it into a message to someone you trust.'); } catch (e) { toast(text); }
   }
@@ -280,7 +281,7 @@
         // trip on, no riders yet: show the route with a Start trip button; riders who are accepted become stops
         const nowMin = new Date().getHours() * 60 + new Date().getMinutes() + 2, dr0 = Object.assign({}, driverObj(curTrip, d), { departMin: nowMin });
         const o = pt(curTrip, 'origin'), de = pt(curTrip, 'dest'), mins = RS.minutes(o, de, nowMin, dr0.dow);
-        const row = (i, t, label) => '<div style="display:flex;gap:10px;padding:8px 0;border-top:1px solid var(--line)"><span style="flex:none;width:24px;height:24px;border-radius:50%;background:var(--acc);color:#fff;font-weight:700;font-size:13px;display:inline-flex;align-items:center;justify-content:center">' + i + '</span><b style="min-width:46px">' + RS.clock(t) + '</b><span>' + label + '</span></div>';
+        const row = (i, t, label) => '<div style="display:flex;gap:10px;padding:8px 0;border-top:1px solid var(--line)"><span style="flex:none;width:24px;height:24px;border-radius:50%;background:var(--acc);color:#fff;font-weight:700;font-size:13px;display:inline-flex;align-items:center;justify-content:center">' + i + '</span><b style="min-width:46px">' + clk(t) + '</b><span>' + label + '</span></div>';
         return { stops: [{ loc: o, type: 'origin' }, { loc: de, type: 'dest' }],
           html: '<p class="mut" style="margin-top:0">No riders yet. About ' + fmtMin(mins) + ' if you drive straight there. Riders who ask for a seat show up at the top of this page. Accepted riders are added as stops.</p>' + row(1, nowMin, 'Start: <b>' + esc(disp(curTrip, 'origin')) + '</b>') + row(2, nowMin + mins, 'Arrive: <b>' + esc(disp(curTrip, 'dest')) + '</b>')
             + '<div style="margin-top:12px"><button class="btn" data-startnav="1" style="width:100%;padding:14px;font-size:17px">Start trip</button></div><div style="margin-top:12px"><button class="btn ghost" data-reset="trip">Reset trip</button></div>' };
@@ -304,7 +305,7 @@
       if (s.type === 'pickup') return 'Pick up <b>' + esc(s.rider.name) + '</b>' + (q ? ' <span class="mut">&middot; ' + esc(disp(q, 'pickup')) + '</span>' : '');
       return 'Drop off <b>' + esc(s.rider.name) + '</b>' + (q ? ' <span class="mut">&middot; ' + esc(disp(q, 'dropoff')) + '</span>' : '');
     };
-    const rows = ev.timeline.map((t, i) => '<div style="display:flex;gap:10px;padding:8px 0;border-top:1px solid var(--line)"><span style="flex:none;width:24px;height:24px;border-radius:50%;background:var(--acc);color:#fff;font-weight:700;font-size:13px;display:inline-flex;align-items:center;justify-content:center">' + (i + 1) + '</span><b style="min-width:46px">' + (i === 0 ? RS.clock(dr.departMin) : RS.clock(t.arrive)) + '</b><span>' + label(t.stop) + '</span></div>').join('');
+    const rows = ev.timeline.map((t, i) => '<div style="display:flex;gap:10px;padding:8px 0;border-top:1px solid var(--line)"><span style="flex:none;width:24px;height:24px;border-radius:50%;background:var(--acc);color:#fff;font-weight:700;font-size:13px;display:inline-flex;align-items:center;justify-content:center">' + (i + 1) + '</span><b style="min-width:46px">' + (i === 0 ? clk(dr.departMin) : clk(t.arrive)) + '</b><span>' + label(t.stop) + '</span></div>').join('');
     const extra = Math.max(0, Math.round(ev.totalMin - direct));
     // One big button at a time, in order: Start trip, then Picked up (per rider, in route order), then Dropped off. Same actions as the phone notification.
     const started = acc.some((x) => x.en_route_at);
@@ -399,7 +400,7 @@
     const mine = d ? matches.filter((x) => x.rider_id === user.id && x.request_id === curReq.id && x.ride_date === d) : [];
     const acc = mine.find((x) => x.status === 'accepted' || x.status === 'completed'), pend = mine.some((x) => x.status === 'requested');
     const line = acc ? `<b>${esc(STEP_LABEL[stageOf(acc)])}.</b> Tap <b>See my ride</b> for live updates.` : pend ? 'You asked a driver for a seat. Waiting for them to accept. Nothing is confirmed yet.' : 'No driver has been asked yet. Posting your request does not reserve a seat. Pick a driver below and tap <b>Request</b>.';
-    return card(acc ? 'Seat confirmed' : pend ? 'Seat requested' : 'Looking for a ride', `<p><b>${esc(disp(curReq, 'pickup'))}</b> to <b>${esc(disp(curReq, 'dropoff'))}</b></p><p class="mut">${esc(RSD.label(curReq.ride_date))}, ready ${RS.clock(curReq.ready_from)} to ${RS.clock(curReq.ready_to)}</p><p>${line}</p>
+    return card(acc ? 'Seat confirmed' : pend ? 'Seat requested' : 'Looking for a ride', `<p><b>${esc(disp(curReq, 'pickup'))}</b> to <b>${esc(disp(curReq, 'dropoff'))}</b></p><p class="mut">${esc(RSD.label(curReq.ride_date))}, ready ${clk(curReq.ready_from)} to ${clk(curReq.ready_to)}</p><p>${line}</p>
       <div class="row2">${goTo('lr-lists')}${acc ? 'See my ride' : 'See drivers'}</button> <button class="btn ghost" data-edit="req">Edit request</button></div>`);
   }
 
@@ -481,7 +482,7 @@
   const minsLeft = (iso) => Math.max(0, Math.round((Date.parse(iso) - Date.now()) / 60000));
   function driverNow() {
     const share = sharingCard() + driveCard();
-    if (myLiveTrip) return share + card('Where are you driving?', `<p><b>${esc(disp(myLiveTrip, 'origin'))}</b> to <b>${esc(disp(myLiveTrip, 'dest'))}</b></p><p class="mut" style="margin-top:-6px">Leaving about ${RS.clock(myLiveTrip.depart_min)}</p><div class="swrow"><div><b>Offering seats to riders</b><div class="mut">Riders along your route can ask for a seat until you switch this off.</div></div><label class="sw"><input type="checkbox" checked id="ln-sw-off"><span></span></label></div>`);
+    if (myLiveTrip) return share + card('Where are you driving?', `<p><b>${esc(disp(myLiveTrip, 'origin'))}</b> to <b>${esc(disp(myLiveTrip, 'dest'))}</b></p><p class="mut" style="margin-top:-6px">Leaving about ${clk(myLiveTrip.depart_min)}</p><div class="swrow"><div><b>Offering seats to riders</b><div class="mut">Riders along your route can ask for a seat until you switch this off.</div></div><label class="sw"><input type="checkbox" checked id="ln-sw-off"><span></span></label></div>`);
     const o = nowSel['ln-o'] || (myTrip && myTrip.origin) || 'Surrey Central', d = nowSel['ln-d'] || (myTrip && myTrip.dest) || 'BCIT / Willingdon (Burnaby)';
     if (!myTrip) {
       if (editing.trip || (pending && pending.kind === 'trip')) return share;   // the full form or the confirm card is showing
@@ -675,7 +676,7 @@
     const riding = card('Confirmed riders', acc.length ? acc.map((x) => { const q = reqById[x.request_id], ns = nextStep(x, esc(names[x.rider_id] || 'rider')), open = stepsOpen(x), link = mapsLink(x, q);
       return `<div style="padding:8px 0;border-top:1px solid var(--line)">${whoCard(x.rider_id, 'rider')}<div style="margin:4px 0"><span class="tag">${esc(STEP_LABEL[stageOf(x)])}</span>${x.rider_confirmed_at ? ' <span class="tag">rider confirmed</span>' : ''}</div><div class="mut">${x.pay_with === 'points' ? x.points + ' pts held until drop-off' : 'cash gas-share'}${q ? ' &middot; ' + esc(q.pickup) + ' to ' + esc(q.dropoff) : ''}</div>
         <div style="margin-top:6px">${open ? `<button class="btn" data-step="${x.id}|${ns.step}">${ns.label}</button>` : '<span class="mut">Steps open 2 hours before pickup.</span>'} ${link && open ? `<a class="btn ghost" style="display:inline-block;text-decoration:none" href="${link}" target="_blank" rel="noopener">Open in Google Maps</a>` : ''} ${canNoShow(x) ? `<button class="btn ghost" data-noshow="${x.id}">Rider did not show up</button>` : ''} ${PCOK ? `<button class="btn ghost" data-report="${x.id}|${x.rider_id}">Report a problem</button>` : ''}</div></div>`; }).join('') : '<p class="mut">No riders yet.</p>');
-    const near = card('People who need a ride along your route', found.length ? found.map((m) => { const q = reqById[m.rider.id]; return `<div style="padding:6px 0;border-top:1px solid var(--line)"><b>${nm(q.user_id)}</b>${badge(q.user_id, 'rider')}${tagsFor(q.user_id, 'rider')}${q.live ? ' <span class="tag">needs a ride now</span>' : ''} <span class="mut">${esc(q.pickup)} to ${esc(q.dropoff)} &middot; +${Math.round(m.addedDetour)} min detour &middot; pick up ${RS.clock(m.pickupAt)} &middot; drop ${RS.clock(m.dropAt)}</span></div>`; }).join('') : '<p class="mut">Nobody matching on this date.</p>');
+    const near = card('People who need a ride along your route', found.length ? found.map((m) => { const q = reqById[m.rider.id]; return `<div style="padding:6px 0;border-top:1px solid var(--line)"><b>${nm(q.user_id)}</b>${badge(q.user_id, 'rider')}${tagsFor(q.user_id, 'rider')}${q.live ? ' <span class="tag">needs a ride now</span>' : ''} <span class="mut">${esc(q.pickup)} to ${esc(q.dropoff)} &middot; +${Math.round(m.addedDetour)} min detour &middot; pick up ${clk(m.pickupAt)} &middot; drop ${clk(m.dropAt)}</span></div>`; }).join('') : '<p class="mut">Nobody matching on this date.</p>');
     return dateCard + summary + '<div id="seat-requests">' + reqs + '</div><div id="riding-with-me">' + riding + '</div>' + near;
   }
 
@@ -690,7 +691,7 @@
   function riderForm() {
     if (pending && pending.kind === 'req') {
       const r = pending.row;
-      return card('Confirm your request', `<p><b>${esc(disp(r, 'pickup'))}</b> to <b>${esc(disp(r, 'dropoff'))}</b></p><p>${RSD.label(r.ride_date)}, ready ${RS.clock(r.ready_from)} to ${RS.clock(r.ready_to)}${r.repeat_days.length ? ' &middot; repeats ' + RSD.repeatText(r.repeat_days) : ' &middot; one time'}</p>
+      return card('Confirm your request', `<p><b>${esc(disp(r, 'pickup'))}</b> to <b>${esc(disp(r, 'dropoff'))}</b></p><p>${RSD.label(r.ride_date)}, ready ${clk(r.ready_from)} to ${clk(r.ready_to)}${r.repeat_days.length ? ' &middot; repeats ' + RSD.repeatText(r.repeat_days) : ' &middot; one time'}</p>
         <p class="mut">Paying with ${r.pays === 'either' ? 'points or cash' : r.pays === 'points' ? 'points' : 'cash gas-share'}</p>
         <div style="margin-top:10px"><button class="btn" id="lr-confirm">${myReq ? 'Confirm and update' : 'Confirm and post'}</button> <button class="btn ghost" id="lr-back">Back</button></div>`);
     }
@@ -710,7 +711,7 @@
     if (!curReq || !known(curReq)) return card('Drivers going your way', '<p class="mut">Ask for a ride on Home to see matching drivers.</p>');
     const dates = RSD.nextOccurrences(curReq.live ? todayStr() : curReq.ride_date, curReq.repeat_days, new Date(), 7);
     viewR = pickView(viewR, dates);
-    const dateCard = card('Date', dateChips('lr-dates', dates, viewR) + `<p class="mut" style="margin-top:8px">Ready ${RS.clock(curReq.ready_from)} to ${RS.clock(curReq.ready_to)}${curReq.repeat_days.length ? ' &middot; repeats ' + RSD.repeatText(curReq.repeat_days) : ' &middot; one time'}</p>`);
+    const dateCard = card('Date', dateChips('lr-dates', dates, viewR) + `<p class="mut" style="margin-top:8px">Ready ${clk(curReq.ready_from)} to ${clk(curReq.ready_to)}${curReq.repeat_days.length ? ' &middot; repeats ' + RSD.repeatText(curReq.repeat_days) : ' &middot; one time'}</p>`);
     if (!viewR) return dateCard;
     const meO = riderObj(curReq), tripById = {}; [...otherTrips, ...extraTrips].forEach((t) => { tripById[t.id] = t; });
     const mine = matches.filter((x) => x.rider_id === user.id && x.request_id === curReq.id && x.ride_date === viewR);
@@ -733,7 +734,7 @@
       const st = mine.find((x) => x.trip_id === t.id);
       const price = payWith === 'points' ? pts + ' pts' : RS.money(dollars);
       const btn = st ? `<span class="tag">${esc(st.status === 'requested' ? 'seat requested' : statusText(st.status))}</span>${st.status === 'requested' ? ` <button class="btn ghost" data-can="${st.id}">Cancel</button>` : ''}` : `<button class="btn" data-req="${t.id}" data-pay="${payWith}" data-pts="${pts}" data-date="${viewR}" data-dmin="${Math.max(0, m.addedDetour).toFixed(1)}" data-dkm="${Math.max(0, m.addedKm || 0).toFixed(1)}">Request &middot; ${price}</button>`;
-      list += `<div style="padding:8px 0;border-top:1px solid var(--line)"><b>${nm(t.user_id)}</b>${badge(t.user_id, 'driver')}${tagsFor(t.user_id, 'driver')}${t.live ? ' <span class="tag">leaving now</span>' : ''} <span class="mut">leaves ${RS.clock(t.depart_min)} &middot; picks you up ${RS.clock(m.pickupAt)} &middot; drops ${RS.clock(m.dropAt)} &middot; adds ${Math.round(m.addedDetour)} min for them</span><div style="margin-top:6px">${btn}</div></div>`;
+      list += `<div style="padding:8px 0;border-top:1px solid var(--line)"><b>${nm(t.user_id)}</b>${badge(t.user_id, 'driver')}${tagsFor(t.user_id, 'driver')}${t.live ? ' <span class="tag">leaving now</span>' : ''} <span class="mut">leaves ${clk(t.depart_min)} &middot; picks you up ${clk(m.pickupAt)} &middot; drops ${clk(m.dropAt)} &middot; adds ${Math.round(m.addedDetour)} min for them</span><div style="margin-top:6px">${btn}</div></div>`;
     });
     html += card('Drivers going your way on ' + esc(RSD.label(viewR)), list || '<p class="mut">No drivers match on this date. Check back soon.</p>');
     const sig = routeSig(mapStops) + viewR; if (mapSig.r !== sig) { mapSig.r = sig; window.RS_UI.drawMap('map-lr', mapStops); }
@@ -747,11 +748,11 @@
     [...otherReqs, ...extraReqs].concat(curReq ? [curReq] : []).forEach((q) => { reqById[q.id] = q; });
     const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
     const tripPassed = !!(curTrip && !curTrip.live && !(curTrip.repeat_days && curTrip.repeat_days.length) && (curTrip.trip_date < t0 || (curTrip.trip_date === t0 && curTrip.depart_min + 60 < nowMin)));
-    const mineTrip = curTrip ? `<div style="padding:6px 0"><b>${esc(disp(curTrip, 'origin'))} to ${esc(disp(curTrip, 'dest'))}</b><div class="mut">${curTrip.live ? 'Offering seats now &middot; started at ' + RS.clock(curTrip.depart_min) : whenText(curTrip.trip_date, curTrip.depart_min, curTrip.repeat_days)}</div><div style="margin-top:6px"><button class="btn ghost" data-go="t-driver">Edit</button> <button class="btn ghost" data-offtrip="${curTrip.id}">Cancel my trip</button></div></div>` : '<p class="mut">No trip posted. Use <b>I\'m driving</b>.</p>';
-    const mineReq = curReq ? `<div style="padding:6px 0"><b>${esc(disp(curReq, 'pickup'))} to ${esc(disp(curReq, 'dropoff'))}</b><div class="mut">${esc(RSD.label(curReq.ride_date))}, ready ${RS.clock(curReq.ready_from)} to ${RS.clock(curReq.ready_to)}${curReq.repeat_days.length ? ' &middot; repeats ' + RSD.repeatText(curReq.repeat_days) : ' &middot; one time'}</div><div style="margin-top:6px"><button class="btn ghost" data-go="t-rider">Edit</button> <button class="btn ghost" data-offreq="${curReq.id}">Cancel my request</button></div></div>` : '<p class="mut">No ride requested. Use <b>I need a ride</b>.</p>';
+    const mineTrip = curTrip ? `<div style="padding:6px 0"><b>${esc(disp(curTrip, 'origin'))} to ${esc(disp(curTrip, 'dest'))}</b><div class="mut">${curTrip.live ? 'Offering seats now &middot; started at ' + clk(curTrip.depart_min) : whenText(curTrip.trip_date, curTrip.depart_min, curTrip.repeat_days)}</div><div style="margin-top:6px"><button class="btn ghost" data-go="t-driver">Edit</button> <button class="btn ghost" data-offtrip="${curTrip.id}">Cancel my trip</button></div></div>` : '<p class="mut">No trip posted. Use <b>I\'m driving</b>.</p>';
+    const mineReq = curReq ? `<div style="padding:6px 0"><b>${esc(disp(curReq, 'pickup'))} to ${esc(disp(curReq, 'dropoff'))}</b><div class="mut">${esc(RSD.label(curReq.ride_date))}, ready ${clk(curReq.ready_from)} to ${clk(curReq.ready_to)}${curReq.repeat_days.length ? ' &middot; repeats ' + RSD.repeatText(curReq.repeat_days) : ' &middot; one time'}</div><div style="margin-top:6px"><button class="btn ghost" data-go="t-rider">Edit</button> <button class="btn ghost" data-offreq="${curReq.id}">Cancel my request</button></div></div>` : '<p class="mut">No ride requested. Use <b>I need a ride</b>.</p>';
     const live = matches.filter((x) => (x.status === 'requested' || x.status === 'accepted') && x.ride_date >= t0).sort((a, b) => (a.ride_date < b.ride_date ? -1 : 1));
     const asRider = live.filter((x) => x.rider_id === user.id), asDriver = live.filter((x) => x.driver_id === user.id && (x.status !== 'requested' || fitsOk(x)));
-    const when = (x) => { const t = tripBy(x.trip_id); return esc(RSD.label(x.ride_date)) + (t ? ' at ' + RS.clock(t.depart_min) : ''); };
+    const when = (x) => { const t = tripBy(x.trip_id); return esc(RSD.label(x.ride_date)) + (t ? ' at ' + clk(t.depart_min) : ''); };
     const row = (x, isRider) => {
       const other = isRider ? x.driver_id : x.rider_id, pay = x.pay_with === 'points' ? x.points + ' pts' : 'cash gas-share';
       let actions = '';
@@ -778,10 +779,10 @@
       <p style="margin:10px 0 2px"><b>If you are the driver</b></p><ul class="mut" style="margin:4px 0 0 18px;padding:0"><li>If you cancel a pickup, the rider gets all their points back.</li><li>If the rider does not show up, you can mark a no-show after waiting, and you keep the points.</li></ul>`;
     // Past trips: my finished trips (route, date, who rode, distance) and the rides I took as a rider
     const kmOf = (id) => drives.filter((d) => d.trip_id === id).reduce((a, d) => a + (+d.distance_km || 0), 0);
-    const tripRows = pastTrips.filter((t) => known(t) || t.origin).slice(0, 8).map((t) => {
+    const tripRows = pastTrips.filter((t) => (known(t) || t.origin) && (matches.some((x) => x.trip_id === t.id && x.status === 'completed') || kmOf(t.id) > 0)).slice(0, 8).map((t) => {
       const ms = matches.filter((x) => x.trip_id === t.id), done = ms.filter((x) => x.status === 'completed'), km = kmOf(t.id);
       const who = done.length ? done.map((x) => nm(x.rider_id)).join(', ') : '';
-      return '<div style="padding:8px 0;border-top:1px solid var(--line)"><b>' + esc(disp(t, 'origin')) + ' to ' + esc(disp(t, 'dest')) + '</b> <span class="tag">' + (done.length ? 'completed' : 'no riders') + '</span><div class="mut">' + esc(RSD.label(t.trip_date)) + ' at ' + RS.clock(t.depart_min) + (who ? ' &middot; ' + who : '') + ' &middot; ' + done.length + ' rider' + (done.length === 1 ? '' : 's') + (km ? ' &middot; ' + km.toFixed(1) + ' km' : '') + '</div></div>';
+      return '<div style="padding:8px 0;border-top:1px solid var(--line)"><b>' + esc(disp(t, 'origin')) + ' to ' + esc(disp(t, 'dest')) + '</b> <span class="tag">' + (done.length ? 'completed' : 'no riders') + '</span><div class="mut">' + esc(RSD.label(t.trip_date)) + ' at ' + clk(t.depart_min) + (who ? ' &middot; ' + who : '') + ' &middot; ' + done.length + ' rider' + (done.length === 1 ? '' : 's') + (km ? ' &middot; ' + km.toFixed(1) + ' km' : '') + '</div></div>';
     }).join('');
     const rideRows = past.filter((x) => x.rider_id === user.id).map((x) => '<div style="padding:8px 0;border-top:1px solid var(--line)"><b>Ride with ' + nm(x.driver_id) + '</b> <span class="tag">' + esc(statusText(x.status)) + '</span><div class="mut">' + when(x) + ' &middot; ' + (x.pay_with === 'points' ? x.points + ' pts' : 'cash') + '</div></div>').join('');
     const segT = (v, label) => '<button type="button" class="btn' + (tripsView === v ? '' : ' ghost') + '" data-tview="' + v + '" style="flex:1;min-width:0">' + label + '</button>';
@@ -859,6 +860,7 @@
   // ---------- render + wiring ----------
   function render() {
     renderAuth();
+    ['sim-d', 'sim-ld', 'map-card'].forEach((id) => { const e = $(id); if (e) e.style.display = isTest ? '' : 'none'; });
     if (!user) { ['ld-top', 'lr-top'].forEach((id) => { $(id).innerHTML = ''; }); ['ld-form', 'ld-lists', 'lr-form', 'lr-lists', 'lu-main', 'lw-main', 'ls-main'].forEach((id) => { $(id).innerHTML = /form|main/.test(id) ? hint : ''; }); return; }
     const sig = JSON.stringify([myTrip, myReq, me.points, pending, mySet, isTest, testMode]);
     const typing = document.activeElement && /^(lt|lr|lv|ls|ln|rn)-/.test(document.activeElement.id || '') && document.activeElement.tagName !== 'BUTTON' && !pending;
