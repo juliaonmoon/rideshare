@@ -87,6 +87,14 @@ public class LocationService extends Service {
     private LocationCallback callback;
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private final Handler main = new Handler(Looper.getMainLooper());
+    // The floating button is only for when the driver or rider is in another app (Maps). While RideShare itself is open, it is hidden.
+    private static volatile boolean appVisible = false;
+    private static volatile LocationService live;
+    static void appVisible(boolean visible) {
+        appVisible = visible;
+        LocationService s = live;
+        if (s != null) s.main.post(s::syncBubble);
+    }
     private String url = "", key = "", token = "";
     private volatile boolean ride = false;        // a ride is in progress, so positions are sent
     private boolean firstPoll = true;             // requests already waiting when we start are not announced
@@ -112,6 +120,7 @@ public class LocationService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        live = this;
         SharedPreferences sp = getSharedPreferences("rideshare_tracking", MODE_PRIVATE);
         if (intent != null && intent.hasExtra("token")) {
             sp.edit().putString("url", intent.getStringExtra("url")).putString("key", intent.getStringExtra("key"))
@@ -288,7 +297,7 @@ public class LocationService extends Service {
     static boolean canOverlay(android.content.Context c) { return Build.VERSION.SDK_INT < 23 || Settings.canDrawOverlays(c); }
 
     private void syncBubble() {
-        boolean need = (tripOn || rides.length() > 0) && !getSharedPreferences("rideshare_bubble", MODE_PRIVATE).getBoolean("hidden", false);
+        boolean need = (tripOn || rides.length() > 0) && !appVisible && !getSharedPreferences("rideshare_bubble", MODE_PRIVATE).getBoolean("hidden", false);
         if (!tripOn && rides.length() == 0) bubbleDismissed = false;   // a new ride brings it back
         if (need && !bubbleDismissed && bubble == null && canOverlay(this)) showBubble(); else if ((!need || bubbleDismissed) && bubble != null) hideBubble();
     }
@@ -730,6 +739,7 @@ public class LocationService extends Service {
 
     @Override
     public void onDestroy() {
+        if (live == this) live = null;
         main.post(this::hideBubble);
         running = false;
         main.removeCallbacks(poller);

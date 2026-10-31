@@ -10,4 +10,16 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(RideShareLocationPlugin.class);
         super.onCreate(savedInstanceState);
     }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        LocationService.appVisible(true);
+    }
+
+    @Override
+    public void onPause() {
+        LocationService.appVisible(false);
+        super.onPause();
+    }
 }
