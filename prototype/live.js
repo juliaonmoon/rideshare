@@ -716,7 +716,9 @@
     const t0 = todayStr(), tripById = {}, reqById = {};
     [...otherTrips, ...extraTrips].concat(curTrip ? [curTrip] : []).forEach((t) => { tripById[t.id] = t; });
     [...otherReqs, ...extraReqs].concat(curReq ? [curReq] : []).forEach((q) => { reqById[q.id] = q; });
-    const mineTrip = curTrip ? `<div style="padding:6px 0"><b>${esc(disp(curTrip, 'origin'))} to ${esc(disp(curTrip, 'dest'))}</b><div class="mut">${whenText(curTrip.trip_date, curTrip.depart_min, curTrip.repeat_days)}</div><div style="margin-top:6px"><button class="btn ghost" data-go="t-driver">Edit</button> <button class="btn ghost" data-offtrip="${curTrip.id}">Cancel my trip</button></div></div>` : '<p class="mut">No trip posted. Use <b>I\'m driving</b>.</p>';
+    const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+    const tripPassed = !!(curTrip && !curTrip.live && !(curTrip.repeat_days && curTrip.repeat_days.length) && (curTrip.trip_date < t0 || (curTrip.trip_date === t0 && curTrip.depart_min + 60 < nowMin)));
+    const mineTrip = curTrip ? `<div style="padding:6px 0"><b>${esc(disp(curTrip, 'origin'))} to ${esc(disp(curTrip, 'dest'))}</b><div class="mut">${curTrip.live ? 'Offering seats now &middot; started at ' + RS.clock(curTrip.depart_min) : whenText(curTrip.trip_date, curTrip.depart_min, curTrip.repeat_days)}</div><div style="margin-top:6px"><button class="btn ghost" data-go="t-driver">Edit</button> <button class="btn ghost" data-offtrip="${curTrip.id}">Cancel my trip</button></div></div>` : '<p class="mut">No trip posted. Use <b>I\'m driving</b>.</p>';
     const mineReq = curReq ? `<div style="padding:6px 0"><b>${esc(disp(curReq, 'pickup'))} to ${esc(disp(curReq, 'dropoff'))}</b><div class="mut">${esc(RSD.label(curReq.ride_date))}, ready ${RS.clock(curReq.ready_from)} to ${RS.clock(curReq.ready_to)}${curReq.repeat_days.length ? ' &middot; repeats ' + RSD.repeatText(curReq.repeat_days) : ' &middot; one time'}</div><div style="margin-top:6px"><button class="btn ghost" data-go="t-rider">Edit</button> <button class="btn ghost" data-offreq="${curReq.id}">Cancel my request</button></div></div>` : '<p class="mut">No ride requested. Use <b>I need a ride</b>.</p>';
     const live = matches.filter((x) => (x.status === 'requested' || x.status === 'accepted') && x.ride_date >= t0).sort((a, b) => (a.ride_date < b.ride_date ? -1 : 1));
     const asRider = live.filter((x) => x.rider_id === user.id), asDriver = live.filter((x) => x.driver_id === user.id && (x.status !== 'requested' || fitsOk(x)));
@@ -759,7 +761,7 @@
         || card('Upcoming rides', '<p class="mut">Nothing yet. Ask for a ride on <b>Home</b> and your driver will show up here.</p>');
       return toggle + comingR + card('Past rides', rideRows || '<p class="mut">Nothing yet. Rides you have taken show up here.</p>');
     }
-    const comingD = (curTrip ? card('Upcoming trip', mineTrip) : '') + (asDriver.length ? card('Upcoming riders', driverRows) : '')
+    const comingD = (curTrip && !tripPassed ? card(curTrip.live ? 'Offering seats now' : 'Upcoming trip', mineTrip) : '') + (asDriver.length ? card('Upcoming riders', driverRows) : '')
       || card('Upcoming trip', '<p class="mut">Nothing yet. Switch on <b>Offer seats to riders</b> on Home, or post a trip for a set day and time.</p>');
     return toggle + comingD + card('Past trips', tripRows || '<p class="mut">Nothing yet. Finished trips show up here.</p>');
   }
