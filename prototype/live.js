@@ -65,6 +65,12 @@
   let tripMode = (() => { try { return localStorage.getItem('rs_trip_mode') === 'later' ? 'later' : 'now'; } catch (e) { return 'now'; } })();       // the one trip card: 'now' (offer a ride now) or 'later' (pick a day and time)
   const LV = {};              // what is typed in the 'later' fields, kept across refreshes
   let bubbleHidden = false;
+  let apOn = null;   // test autopilot state last sent to the Android helper
+  function syncAutopilot() {
+    const n = nativeLoc && nativeLoc(); if (!n || !n.setAutopilot) return;
+    const want = !!(isTest && testMode); if (want === apOn) return; apOn = want;
+    try { n.setAutopilot({ on: want }); } catch (e) { /* older app build */ }
+  }
   let overlayOn = null;   // Android app only: may the floating RideShare button be shown over Google Maps?
   let dndOn = null;   // Android app only: can seat-request alerts break through Do Not Disturb?
   async function refreshDnd() {
@@ -764,6 +770,7 @@
     const typing = document.activeElement && /^(lt|lr|lv|ls|ln|rn)-/.test(document.activeElement.id || '') && document.activeElement.tagName !== 'BUTTON' && !pending;
     if (!typing && sig !== formSig) { formSig = sig; $('ld-form').innerHTML = guard('trip form', driverForm); $('lr-form').innerHTML = guard('ride form', riderForm); $('lw-main').innerHTML = guard('points', walletMain); $('ls-main').innerHTML = guard('settings', settingsMain); }
     const busyIn = (id) => { const a = document.activeElement; return a && /SELECT|INPUT/.test(a.tagName) && a.closest && a.closest('#' + id); };
+    try { syncAutopilot(); } catch (e) { /* ignore */ }
     try { renderRequests(); } catch (e) { console.error('requests', e); }
     if (!busyIn('ld-top')) try { renderPlan(); } catch (e) { console.error('plan', e); }
     if (!busyIn('ld-top')) $('ld-top').innerHTML = guard('leave now', driverNow) + guard('driver summary', driverTop);

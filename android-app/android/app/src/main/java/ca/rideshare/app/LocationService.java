@@ -69,6 +69,16 @@ public class LocationService extends Service {
     // Testing without driving: the app can tell the helper to pretend the car is at a point (used only from the admin test tools).
     static volatile double fakeLat = 0, fakeLng = 0;
     static volatile long fakeUntil = 0;
+    // Test autopilot (admin test mode only): the helper drives the pretend car to each pickup / drop-off by itself.
+    static volatile boolean autopilot = false;
+    private String apKey = ""; private long apSince = 0;
+    private boolean fakeLooping = false;
+    private final Runnable fakeLoop = new Runnable() {
+        @Override public void run() {
+            if (!io.isShutdown() && fakeActive()) io.execute(LocationService.this::tickFake);
+            main.postDelayed(this, 4000);
+        }
+    };
     static boolean fakeActive() { return System.currentTimeMillis() < fakeUntil; }
     static volatile long lastOk = 0;
     static volatile String lastError = "";
@@ -91,7 +101,6 @@ public class LocationService extends Service {
     private final Runnable poller = new Runnable() {
         @Override public void run() {
             if (!io.isShutdown()) io.execute(LocationService.this::pollAlerts);
-            if (!io.isShutdown() && fakeActive()) io.execute(LocationService.this::tickFake);
             main.postDelayed(this, POLL_MS);
         }
     };
@@ -133,6 +142,7 @@ public class LocationService extends Service {
         }
         startUpdates();
         if (!polling) { polling = true; main.post(poller); }
+        if (!fakeLooping) { fakeLooping = true; main.post(fakeLoop); }
         running = true;
         if (intent != null && intent.getAction() != null) handleAnswer(intent);   // Accept / Decline pressed on a seat-request alert
         return START_STICKY;
@@ -257,6 +267,7 @@ public class LocationService extends Service {
             JSONArray rs = o.optJSONArray("rides");
             rides = rs == null ? new JSONArray() : rs;
             updateStepNotes();
+            runAutopilot();
             main.post(this::syncBubble);
             Location here = fakeActive() ? fakeLocation() : lastLoc;
             if (here != null) checkStops(here);
@@ -382,6 +393,21 @@ public class LocationService extends Service {
         if (bubble == null) return;
         try { ((WindowManager) getSystemService(WINDOW_SERVICE)).removeView(bubble); } catch (Exception ignore) { }
         bubble = null;
+    }
+
+    /** Test autopilot: 20 s after a ride starts the pretend car reaches the pickup; 15 s after Picked up it reaches the drop-off. */
+    private void runAutopilot() {
+        if (!autopilot) return;
+        JSONArray rs = rides;
+        if (rs.length() == 0) { if (apKey.length() > 0) { apKey = ""; fakeUntil = 0; } return; }   // all rides done: back to the real GPS
+        JSONObject r = rs.optJSONObject(0);
+        if (r == null) return;
+        boolean picked = "picked_up".equals(r.optString("stage"));
+        String key = r.optString("id") + (picked ? ":drop" : ":pick");
+        long now = System.currentTimeMillis();
+        if (!key.equals(apKey)) { apKey = key; apSince = now; }
+        String la = picked ? "dropoff_lat" : "pickup_lat", lo = picked ? "dropoff_lng" : "pickup_lng";
+        if (now - apSince >= (picked ? 15000 : 20000) && !r.isNull(la)) { fakeLat = r.optDouble(la); fakeLng = r.optDouble(lo); fakeUntil = now + 15 * 60 * 1000; }
     }
 
     // ---------- the steps of a ride: Arrived (automatic), Picked up and Dropped off (one tap in a notification) ----------
@@ -692,6 +718,8 @@ public class LocationService extends Service {
         main.post(this::hideBubble);
         running = false;
         main.removeCallbacks(poller);
+        main.removeCallbacks(fakeLoop);
+        autopilot = false; fakeUntil = 0;
         polling = false;
         if (client != null && callback != null) client.removeLocationUpdates(callback);
         callback = null;
