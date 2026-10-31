@@ -836,22 +836,82 @@ public class LocationService extends Service {
         }
     }
 
-    /** After an accept: one tap re-opens Google Maps with the new stop (RideShare keeps counting the drive time and distance). */
+    /** After an accept: one tap in the notification re-starts Google Maps with every remaining stop, including the new rider.
+     *  (Android only lets the driver's own tap start Maps, so the notification is the tap.) If the route cannot be built, the tap opens RideShare's trip plan instead. */
     private void routeAlert(String name) {
-        Intent link = new Intent(Intent.ACTION_VIEW, Uri.parse("ca.rideshare.app://plan"))
-                .setClass(this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-        PendingIntent pi = PendingIntent.getActivity(this, 7, link, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+        PendingIntent pi = null;
+        String text = "Tap to preview your trip and stops, then start when you are ready.";
+        try {
+            String b = rpc("driver_route_token", new JSONObject().put("p_token", token));
+            Uri nav = b == null ? null : buildNavUri(new JSONObject(b));
+            if (nav != null) {
+                Intent maps = new Intent(Intent.ACTION_VIEW, nav).setPackage("com.google.android.apps.maps").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                pi = PendingIntent.getActivity(this, 8, maps, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+                text = "Tap to update your route in Google Maps. Navigation restarts with the new stop.";
+            }
+        } catch (Exception ignore) { /* fall back to the trip plan */ }
+        if (pi == null) {
+            Intent link = new Intent(Intent.ACTION_VIEW, Uri.parse("ca.rideshare.app://plan"))
+                    .setClass(this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            pi = PendingIntent.getActivity(this, 7, link, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+        }
         Notification n = new NotificationCompat.Builder(this, ALERT_CHANNEL)
                 .setContentTitle(name + " is added to your trip")
-                .setContentText("Tap to preview your trip and stops, then start when you are ready.")
+                .setContentText(text)
+                .setStyle(new NotificationCompat.BigTextStyle().bigText(text))
                 .setSmallIcon(android.R.drawable.ic_dialog_info)
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setDefaults(Notification.DEFAULT_ALL)
                 .setAutoCancel(true)
                 .setContentIntent(pi)
-                .addAction(0, "Preview trip", pi)
+                .addAction(0, "Update route", pi)
                 .build();
         try { getSystemService(NotificationManager.class).notify(3000, n); } catch (Exception ignore) { }
+    }
+
+    /** A Google Maps link that starts navigation through every remaining stop (nearest next, a pickup before its drop-off), ending at the destination. */
+    private Uri buildNavUri(JSONObject o) {
+        JSONArray st = o.optJSONArray("stops");
+        java.util.List<double[]> stops = new java.util.ArrayList<>();   // { lat, lng, 0 pick / 1 drop, match index }
+        java.util.List<String> ids = new java.util.ArrayList<>();
+        java.util.Set<String> hasPick = new HashSet<>();
+        if (st != null) {
+            for (int i = 0; i < st.length(); i++) {
+                JSONObject s = st.optJSONObject(i);
+                if (s == null || s.isNull("lat") || s.isNull("lng")) continue;
+                String id = s.optString("match_id");
+                int ix = ids.indexOf(id); if (ix < 0) { ids.add(id); ix = ids.size() - 1; }
+                boolean pick = "pick".equals(s.optString("type"));
+                if (pick) hasPick.add(id);
+                stops.add(new double[]{s.optDouble("lat"), s.optDouble("lng"), pick ? 0 : 1, ix});
+            }
+        }
+        double dlat = o.isNull("dest_lat") ? Double.NaN : o.optDouble("dest_lat"), dlng = o.isNull("dest_lng") ? Double.NaN : o.optDouble("dest_lng");
+        if (stops.isEmpty() && (Double.isNaN(dlat) || Double.isNaN(dlng))) return null;
+        Location here = fakeActive() ? fakeLocation() : lastLoc;
+        double cl = here != null ? here.getLatitude() : (stops.isEmpty() ? dlat : stops.get(0)[0]), cn = here != null ? here.getLongitude() : (stops.isEmpty() ? dlng : stops.get(0)[1]);
+        java.util.Set<Integer> picked = new HashSet<>();
+        for (int i = 0; i < ids.size(); i++) if (!hasPick.contains(ids.get(i))) picked.add(i);   // already on board: only the drop-off is left
+        java.util.List<double[]> order = new java.util.ArrayList<>();
+        java.util.List<double[]> left = new java.util.ArrayList<>(stops);
+        while (!left.isEmpty()) {
+            double[] best = null; double bd = Double.MAX_VALUE;
+            for (double[] x : left) {
+                if (x[2] == 1 && !picked.contains((int) x[3])) continue;   // a drop-off only after its pickup
+                double dd = meters(cl, cn, x[0], x[1]);
+                if (dd < bd) { bd = dd; best = x; }
+            }
+            if (best == null) best = left.get(0);
+            left.remove(best); order.add(best); cl = best[0]; cn = best[1];
+            if (best[2] == 0) picked.add((int) best[3]);
+        }
+        double[] last = null;
+        if (Double.isNaN(dlat) || Double.isNaN(dlng)) { last = order.remove(order.size() - 1); dlat = last[0]; dlng = last[1]; }
+        StringBuilder wp = new StringBuilder();
+        int n = 0;
+        for (double[] x : order) { if (n++ >= 9) break; if (wp.length() > 0) wp.append('|'); wp.append(x[0]).append(',').append(x[1]); }
+        String u = "https://www.google.com/maps/dir/?api=1&travelmode=driving&dir_action=navigate&destination=" + dlat + "," + dlng + (wp.length() > 0 ? "&waypoints=" + Uri.encode(wp.toString()) : "");
+        return Uri.parse(u);
     }
 
     private void post2(String title, String text, int id) {
