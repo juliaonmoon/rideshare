@@ -65,6 +65,7 @@
   let tripsView = (() => { try { return localStorage.getItem('rs_trips_view') === 'rider' ? 'rider' : 'driver'; } catch (e) { return 'driver'; } })();   // Trips tab: 'driver' (my trip, my riders) or 'rider' (my ride requests, my rides)
   let tripMode = (() => { try { return localStorage.getItem('rs_trip_mode') === 'later' ? 'later' : 'now'; } catch (e) { return 'now'; } })();       // the one trip card: 'now' (offer a ride now) or 'later' (pick a day and time)
   const LV = {};              // what is typed in the 'later' fields, kept across refreshes
+  let PCOK = null, cards = {};   // migration 021 (photo and car details shown to a matched driver or rider, Report a problem) is in place
   let DKOK = null;   // migration 020 (detour limits in km, detour saved with each request) is in place
   let bubbleHidden = false;
   let pastTrips = [];   // my trips that are finished or cancelled
@@ -101,6 +102,32 @@
   let myLiveTrip = null, myLiveReq = null, curTrip = null, curReq = null, positions = {}, nowSel = {}, firstSeen = {};
   const fail = (e) => toast(e && e.message ? e.message : 'Something went wrong');
   const nm = (id) => esc(names[id] || 'Someone');
+  // photo (or the first letter of the name) and car, shown for the person I am matched with
+  const avatar = (id, px) => { const c = cards[id], z = px || 44, base = 'width:' + z + 'px;height:' + z + 'px;border-radius:50%;flex:none;'; return c && c.photo ? '<img src="' + esc(c.photo) + '" alt="" referrerpolicy="no-referrer" style="' + base + 'object-fit:cover;background:var(--line)">' : '<span style="' + base + 'display:inline-flex;align-items:center;justify-content:center;background:var(--line);color:var(--acc);font-weight:700">' + esc((names[id] || '?').trim().charAt(0).toUpperCase()) + '</span>'; };
+  const carLine = (id) => { const c = cards[id]; if (!c) return ''; const bits = [[c.car_color, c.car_make].filter(Boolean).join(' '), c.car_plate].filter(Boolean); return bits.length ? esc(bits.join(' \u00b7 ')) : ''; };
+  const whoCard = (id, role) => '<div style="display:flex;gap:10px;align-items:center">' + avatar(id) + '<div><b>' + nm(id) + '</b>' + badge(id, role) + (carLine(id) ? '<div class="mut">' + carLine(id) + '</div>' : '') + '</div></div>';
+  // photo (and car plate for drivers) must be set before asking for or offering a ride
+  const needProfile = (kind) => { if (!PCOK || !user) return false; const c = cards[user.id] || {}; const miss = !c.photo ? 'Add your photo first. It is at the top of the Me tab.' : (kind === 'drive' && !c.car_plate ? 'Add your car details first. They are at the top of the Me tab.' : ''); if (!miss) return false; toast(miss); const b = document.getElementById('nb-me'); if (b) b.click(); return true; };
+  const REPORT_REASONS = [['late_or_absent', 'Late or did not show up'], ['unsafe', 'I felt unsafe'], ['wrong_car_or_person', 'Wrong car or wrong person'], ['rude', 'Rude or disrespectful'], ['payment', 'Payment problem'], ['other', 'Something else']];
+  function reportDialog(matchId, otherId) {
+    const old = document.getElementById('rp-ov'); if (old) old.remove();
+    const ov = document.createElement('div'); ov.id = 'rp-ov'; ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+    ov.innerHTML = '<div style="background:var(--card);color:var(--ink);border-radius:14px;padding:16px;max-width:420px;width:100%"><h2 style="margin:0 0 6px">Report a problem</h2><p class="mut" style="margin:0 0 8px">About ' + nm(otherId) + '. If you are in danger, call 911 first.</p><label>What happened?</label><select id="rp-reason" style="' + INPUT + '">' + REPORT_REASONS.map(([v, l]) => '<option value="' + v + '">' + l + '</option>').join('') + '</select><label>Tell us more (optional)</label><textarea id="rp-text" rows="3" maxlength="1000" style="' + INPUT + '"></textarea><div style="margin-top:12px;display:flex;gap:8px"><button class="btn" id="rp-send">Send report</button><button class="btn ghost" id="rp-cancel">Cancel</button></div></div>';
+    document.body.appendChild(ov);
+    document.getElementById('rp-cancel').onclick = () => ov.remove();
+    document.getElementById('rp-send').onclick = async () => {
+      const e = (await sb.from('reports').insert({ reported_id: otherId, match_id: matchId, reason: document.getElementById('rp-reason').value, details: document.getElementById('rp-text').value.trim() || null })).error;
+      if (e) { toast('Could not send the report: ' + e.message); return; }
+      ov.remove(); toast('Report sent. Thank you.');
+    };
+  }
+  async function shareTrip(matchId) {
+    const x = matches.find((m) => m.id === matchId); if (!x) return;
+    const other = x.driver_id === user.id ? x.rider_id : x.driver_id, q = [...otherReqs, ...extraReqs, ...(myReq ? [myReq] : [])].find((r) => r.id === x.request_id), t = tripBy(x.trip_id);
+    const text = 'I am sharing a ride with ' + (names[other] || 'someone') + (carLine(other) ? ' (' + carLine(other).replace(/&middot;/g, '-') + ')' : '') + (q ? ' from ' + disp(q, 'pickup') + ' to ' + disp(q, 'dropoff') : '') + (t ? ' at ' + RS.clock(t.depart_min) : '') + ', arranged on RideShare.';
+    try { if (navigator.share) { await navigator.share({ text }); return; } } catch (e) { return; }
+    try { await navigator.clipboard.writeText(text); toast('Copied. Paste it into a message to someone you trust.'); } catch (e) { toast(text); }
+  }
   // Small warning next to a name when someone has recent cancellations (counts only, last 30 days).
   const badge = (id, role) => {
     const r = rel[id]; if (!r) return '';
@@ -185,6 +212,8 @@
       const ids = new Set([uid, ...otherTrips.map((x) => x.user_id), ...otherReqs.map((x) => x.user_id), ...extraTrips.map((x) => x.user_id), ...extraReqs.map((x) => x.user_id), ...matches.flatMap((x) => [x.driver_id, x.rider_id])]);
       const n = await sb.from('profiles').select('id,display_name').in('id', [...ids]);
       (n.data || []).forEach((x) => { names[x.id] = x.display_name; });
+      if (PCOK === null) PCOK = !(await sb.from('profile_cards').select('user_id').limit(1)).error;
+      if (PCOK) { try { const pc = await sb.from('profile_cards').select('*').in('user_id', [...ids]); cards = {}; (pc.data || []).forEach((x) => { cards[x.user_id] = x; }); } catch (e) { cards = {}; } }
       try { const ta = await sb.from('test_accounts').select('user_id,test_mode').eq('user_id', uid).maybeSingle(); isTest = !!ta.data; testMode = !!(ta.data && ta.data.test_mode); } catch (e) { isTest = false; testMode = false; }
       try { const pt = await sb.from('trips').select('*').eq('user_id', uid).eq('active', false).order('created_at', { ascending: false }).limit(12); pastTrips = pt.data || []; } catch (e) { pastTrips = []; }
       try { const ds = await sb.from('drive_sessions').select('*').order('started_at', { ascending: false }).limit(5); drives = ds.data || []; } catch (e) { drives = []; }
@@ -644,8 +673,8 @@
     const reqs = card('Seat requests', inc.length ? inc.map((x) => `<div style="padding:8px 0;border-top:1px solid var(--line)"><b>${nm(x.rider_id)}</b>${badge(x.rider_id, 'rider')} <span class="mut">pays ${x.pay_with === 'points' ? x.points + ' pts' : 'cash gas-share'}</span>${detourLine(reqFit(x))}
         <div style="margin-top:6px"><button class="btn" data-acc="${x.id}">Accept</button> <button class="btn ghost" data-dec="${x.id}">Decline</button></div></div>`).join('') : '<p class="mut">None yet. Riders ask you for a seat; you accept here.</p>');
     const riding = card('Confirmed riders', acc.length ? acc.map((x) => { const q = reqById[x.request_id], ns = nextStep(x, esc(names[x.rider_id] || 'rider')), open = stepsOpen(x), link = mapsLink(x, q);
-      return `<div style="padding:8px 0;border-top:1px solid var(--line)"><b>${nm(x.rider_id)}</b>${badge(x.rider_id, 'rider')} <span class="tag">${esc(STEP_LABEL[stageOf(x)])}</span>${x.rider_confirmed_at ? ' <span class="tag">rider confirmed</span>' : ''}<div class="mut">${x.pay_with === 'points' ? x.points + ' pts held until drop-off' : 'cash gas-share'}${q ? ' &middot; ' + esc(q.pickup) + ' to ' + esc(q.dropoff) : ''}</div>
-        <div style="margin-top:6px">${open ? `<button class="btn" data-step="${x.id}|${ns.step}">${ns.label}</button>` : '<span class="mut">Steps open 2 hours before pickup.</span>'} ${link && open ? `<a class="btn ghost" style="display:inline-block;text-decoration:none" href="${link}" target="_blank" rel="noopener">Open in Google Maps</a>` : ''} ${canNoShow(x) ? `<button class="btn ghost" data-noshow="${x.id}">Rider did not show up</button>` : ''}</div></div>`; }).join('') : '<p class="mut">No riders yet.</p>');
+      return `<div style="padding:8px 0;border-top:1px solid var(--line)">${whoCard(x.rider_id, 'rider')}<div style="margin:4px 0"><span class="tag">${esc(STEP_LABEL[stageOf(x)])}</span>${x.rider_confirmed_at ? ' <span class="tag">rider confirmed</span>' : ''}</div><div class="mut">${x.pay_with === 'points' ? x.points + ' pts held until drop-off' : 'cash gas-share'}${q ? ' &middot; ' + esc(q.pickup) + ' to ' + esc(q.dropoff) : ''}</div>
+        <div style="margin-top:6px">${open ? `<button class="btn" data-step="${x.id}|${ns.step}">${ns.label}</button>` : '<span class="mut">Steps open 2 hours before pickup.</span>'} ${link && open ? `<a class="btn ghost" style="display:inline-block;text-decoration:none" href="${link}" target="_blank" rel="noopener">Open in Google Maps</a>` : ''} ${canNoShow(x) ? `<button class="btn ghost" data-noshow="${x.id}">Rider did not show up</button>` : ''} ${PCOK ? `<button class="btn ghost" data-report="${x.id}|${x.rider_id}">Report a problem</button>` : ''}</div></div>`; }).join('') : '<p class="mut">No riders yet.</p>');
     const near = card('People who need a ride along your route', found.length ? found.map((m) => { const q = reqById[m.rider.id]; return `<div style="padding:6px 0;border-top:1px solid var(--line)"><b>${nm(q.user_id)}</b>${badge(q.user_id, 'rider')}${tagsFor(q.user_id, 'rider')}${q.live ? ' <span class="tag">needs a ride now</span>' : ''} <span class="mut">${esc(q.pickup)} to ${esc(q.dropoff)} &middot; +${Math.round(m.addedDetour)} min detour &middot; pick up ${RS.clock(m.pickupAt)} &middot; drop ${RS.clock(m.dropAt)}</span></div>`; }).join('') : '<p class="mut">Nobody matching on this date.</p>');
     return dateCard + summary + '<div id="seat-requests">' + reqs + '</div><div id="riding-with-me">' + riding + '</div>' + near;
   }
@@ -693,7 +722,7 @@
       const stg = stageOf(accepted), dn = nm(accTrip.user_id);
       const live = { accepted: `${dn} accepted. They will tap <b>On my way</b> when they set off.`, on_my_way: `<b>${dn} is on the way.</b>`, arrived: `<b>${dn} has arrived.</b> Look for them at the pickup spot.`, picked_up: `<b>Ride in progress</b> with ${dn}.`, dropped_off: `<b>You have arrived.</b> Thanks for sharing the ride!` }[stg];
       const inCar = stg === 'picked_up' ? (accepted.rider_confirmed_at ? '<span class="tag">You confirmed you are in the car</span>' : `<button class="btn" data-incar="${accepted.id}">I'm in the car</button>`) : '';
-      html += card('Your ride', `<p>${live}</p>${trackInfo(accepted, accTrip, meO)}${rideStats(accepted)}<p class="mut">${esc(RSD.label(viewR))} &middot; ${accepted.pay_with === 'points' ? accepted.points + ' pts' + (stg === 'dropped_off' ? ' paid' : ' held until drop-off') : 'cash gas-share (settle with your driver)'}</p>${inCar}<p style="margin-top:8px"><button class="btn ghost" id="lr-watch">Preview route</button> <button class="btn ghost" id="lr-stop">Stop</button></p>${stg === 'accepted' || stg === 'on_my_way' ? '<p class="mut">To cancel, open the Upcoming tab.</p>' : ''}`);
+      html += card('Your ride', `<div style="margin-bottom:8px">${whoCard(accepted.driver_id, 'driver')}</div><p>${live}</p>${trackInfo(accepted, accTrip, meO)}${rideStats(accepted)}<p class="mut">${esc(RSD.label(viewR))} &middot; ${accepted.pay_with === 'points' ? accepted.points + ' pts' + (stg === 'dropped_off' ? ' paid' : ' held until drop-off') : 'cash gas-share (settle with your driver)'}</p>${inCar}<p style="margin-top:8px"><button class="btn ghost" id="lr-watch">Preview route</button> <button class="btn ghost" id="lr-stop">Stop</button></p>${stg === 'accepted' || stg === 'on_my_way' ? '<p class="mut">To cancel, open the Upcoming tab.</p>' : ''}`);
     }
     let list = '';
     otherTrips.filter((t) => known(t) && tripOn(t, viewR)).forEach((t) => {
@@ -734,10 +763,11 @@
         if (!isRider && x.status === 'requested') b.push(`<button class="btn" data-acc="${x.id}">Accept</button> <button class="btn ghost" data-dec="${x.id}">Decline</button>`);
         if (canNoShow(x)) b.push(`<button class="btn ghost" data-noshow="${x.id}">Rider did not show up</button>`);
         if ((isRider || x.status === 'accepted') && !x.picked_up_at) b.push(`<button class="btn ghost" data-cancelask="${x.id}">${!isRider ? 'Cancel pickup' : x.status === 'requested' ? 'Cancel request' : 'Cancel ride'}</button>`);
+        if (x.status === 'accepted' && PCOK) b.push(`<button class="btn ghost" data-share="${x.id}">Share my trip</button>`, `<button class="btn ghost" data-report="${x.id}|${other}">Report a problem</button>`);
         actions = b.length ? `<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:8px">${b.join(' ')}</div>` : '';
       }
       const held = x.status === 'accepted' && x.pay_with === 'points' && !x.settled ? ' (held until the ride)' : '';
-      return `<div style="padding:8px 0;border-top:1px solid var(--line)"><b>${when(x)}</b> <span class="tag">${esc(x.status === 'accepted' ? STEP_LABEL[stageOf(x)] : statusText(x.status))}</span><div class="mut">${isRider ? 'Driver' : 'Rider'} ${nm(other)}${badge(other, isRider ? 'driver' : 'rider')} &middot; ${pay}${held}</div>${actions}</div>`;
+      return `<div style="padding:8px 0;border-top:1px solid var(--line)"><b>${when(x)}</b> <span class="tag">${esc(x.status === 'accepted' ? STEP_LABEL[stageOf(x)] : statusText(x.status))}</span>${x.status === 'accepted' ? '<div style="margin:8px 0">' + whoCard(other, isRider ? 'driver' : 'rider') + '</div>' : ''}<div class="mut">${isRider ? 'Driver' : 'Rider'} ${nm(other)}${badge(other, isRider ? 'driver' : 'rider')} &middot; ${pay}${held}</div>${actions}</div>`;
     };
     const riderRows = asRider.length ? asRider.map((x) => row(x, true)).join('') : '<p class="mut">No upcoming rides.</p>';
     const driverRows = asDriver.length ? asDriver.map((x) => row(x, false)).join('') : '<p class="mut">No upcoming passengers.</p>';
@@ -774,7 +804,7 @@
     const chk = (id, on, text) => '<label style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="' + id + '"' + (on ? ' checked' : '') + '> ' + text + '</label>';
     const optIn = (id, v, max) => '<input type="number" id="' + id + '" min="0" max="' + max + '" step="0.5" placeholder="no limit" value="' + (v == null ? '' : v) + '" style="' + INPUT + '">';
     const num = (id, v, max) => '<input type="number" id="' + id + '" min="0" max="' + max + '" value="' + v + '" style="' + INPUT + '">';
-    return card('Driver settings', '<p class="mut">Defaults for new trips. Changing them here does not change trips you already posted.</p>'
+    return profileCard() + card('Driver settings', '<p class="mut">Defaults for new trips. Changing them here does not change trips you already posted.</p>'
       + '<label>Extra minutes I accept for my whole trip</label>' + num('ls-detour', x.d_total_detour == null ? x.d_detour : x.d_total_detour, 120)
       + (DKOK ? '<label>Extra km I accept for my whole trip <span class="mut">(optional, empty = no distance limit)</span></label>' + optIn('ls-detourkm', x.d_total_detour_km == null ? x.d_detour_km : x.d_total_detour_km, 400) + '<p class="mut">A request has to fit every limit you set: minutes and kilometres.</p>' : '')
       + '<label>Payment I accept</label>' + sel('ls-accepts', [['either', 'Points or cash'], ['points', 'Points only'], ['cash', 'Cash gas-share only']], x.d_accepts)
@@ -803,6 +833,17 @@
   };
 
   // ---------- points tab ----------
+  function profileCard() {
+    if (!PCOK || !user) return '';
+    const c = cards[user.id] || {}, g = (user.user_metadata && (user.user_metadata.avatar_url || user.user_metadata.picture)) || '';
+    return card('My profile', '<p class="mut">The person you are matched with sees your photo and first name (and your car, if you drive) once a seat is accepted. Nobody else does.</p>'
+      + '<div style="display:flex;gap:12px;align-items:center;margin:8px 0">' + avatar(user.id, 72) + '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="pc-pick">' + (c.photo ? 'Change photo' : 'Add a photo') + '</button>' + (g && c.photo_source !== 'google' ? '<button class="btn ghost" id="pc-google">Use my Google photo</button>' : '') + (c.photo ? '<button class="btn ghost" id="pc-clear">Remove</button>' : '') + '</div></div>'
+      + '<input type="file" id="pc-file" accept="image/*" style="display:none">'
+      + '<label>Car: make and model (only if you drive)</label><input type="text" id="pc-make" maxlength="40" value="' + esc(c.car_make || '') + '" style="' + INPUT + '">'
+      + '<label>Car colour</label><input type="text" id="pc-color" maxlength="30" value="' + esc(c.car_color || '') + '" style="' + INPUT + '">'
+      + '<label>Licence plate</label><input type="text" id="pc-plate" maxlength="12" value="' + esc(c.car_plate || '') + '" style="' + INPUT + ';text-transform:uppercase">'
+      + '<div style="margin-top:12px"><button class="btn" id="pc-save">Save car details</button></div>');
+  }
   function walletMain() {
     const sum = (list) => list.reduce((a, x) => a + x.points, 0), heldList = matches.filter((x) => x.status === 'accepted' && !x.settled && x.pay_with === 'points');
     const heldAsRider = sum(heldList.filter((x) => x.rider_id === user.id)), pendingAsDriver = sum(heldList.filter((x) => x.driver_id === user.id));
@@ -864,6 +905,7 @@
     });
     on('lt-back', () => { pending = null; formSig = ''; render(); });
     on('lt-confirm', async () => {
+      if (needProfile('drive')) return;
       const row = pending.row; const ok = await run(myTrip ? sb.from('trips').update(row).eq('id', myTrip.id) : sb.from('trips').insert(row), 'Trip saved');
       if (ok) { editing.trip = false; plReset('lt-o', 'lt-d', 'ln-o', 'ln-d'); Object.keys(LV).forEach((k) => delete LV[k]); pending = null; viewD = null; mapSig = {}; formSig = ''; render(); }
     });
@@ -879,6 +921,7 @@
     });
     on('lr-back', () => { pending = null; formSig = ''; render(); });
     on('lr-confirm', async () => {
+      if (needProfile('ride')) return;
       const row = pending.row; const ok = await run(myReq ? sb.from('ride_requests').update(row).eq('id', myReq.id) : sb.from('ride_requests').insert(row), 'Request saved');
       if (ok) { editing.req = false; plReset('lr-p', 'lr-d'); pending = null; viewR = null; mapSig = {}; formSig = ''; render(); }
     });
@@ -890,6 +933,22 @@
       toast('Your account and data were deleted.'); try { await sb.auth.signOut(); } catch (e) {}
     });
     ['ls-save-d', 'ls-save-r'].forEach((id) => on(id, () => run(sb.from('user_settings').upsert(saveSettings()), 'Settings saved')));
+    const saveCard = async (patch, msg) => {
+      const row = Object.assign({ user_id: user.id, updated_at: new Date().toISOString() }, patch), e = (await sb.from('profile_cards').upsert(row)).error;
+      if (e) { toast('Could not save: ' + e.message); return; }
+      cards[user.id] = Object.assign({}, cards[user.id] || {}, row); toast(msg); formSig = ''; render();
+    };
+    on('pc-pick', () => $('pc-file').click());
+    const pcf = $('pc-file');
+    if (pcf) pcf.onchange = () => {
+      const f = pcf.files && pcf.files[0]; if (!f) return;
+      const img = new Image(), url = URL.createObjectURL(f);
+      img.onload = () => { const S = 320, cv = document.createElement('canvas'); cv.width = cv.height = S; const m = Math.min(img.width, img.height); cv.getContext('2d').drawImage(img, (img.width - m) / 2, (img.height - m) / 2, m, m, 0, 0, S, S); URL.revokeObjectURL(url); saveCard({ photo: cv.toDataURL('image/jpeg', 0.8), photo_source: 'upload' }, 'Photo saved'); };
+      img.onerror = () => toast('Could not read that photo'); img.src = url;
+    };
+    on('pc-google', () => { const g = user.user_metadata && (user.user_metadata.avatar_url || user.user_metadata.picture); if (g && /^https:\/\//.test(g)) saveCard({ photo: g, photo_source: 'google' }, 'Google photo saved'); });
+    on('pc-clear', () => saveCard({ photo: null, photo_source: null }, 'Photo removed'));
+    on('pc-save', () => saveCard({ car_make: $('pc-make').value.trim() || null, car_color: $('pc-color').value.trim() || null, car_plate: $('pc-plate').value.trim().toUpperCase() || null }, 'Car details saved'));
     on('lv-savename', () => { const v = $('lv-name').value.trim(); if (!v) { toast('Enter a name'); return; } run(sb.from('profiles').update({ display_name: v }).eq('id', user.id), 'Name saved'); });
     // routeOnly: just show the new route in Google Maps (from the Update route alert); it does not start the trip or tell the riders you are on your way.
     const startNav = async (routeOnly) => {
@@ -924,6 +983,8 @@
     on('lr-watch', () => { if (window.__lrStops) window.RS_UI.startSim('lr', 'map-lr', window.__lrStops, window.__lrDriver, 'rider', window.__lrMe); });
     on('lr-stop', () => window.RS_UI.stopSim('lr'));
     const each = (sel, fn) => document.querySelectorAll(['#v-ldriver', '#v-lrider', '#v-lupcoming'].map((r) => r + ' ' + sel).join(', ')).forEach((b) => (b.onclick = () => fn(b)));
+    each('[data-report]', (b) => { b.onclick = () => { const p = b.dataset.report.split('|'); reportDialog(p[0], p[1]); }; });
+    each('[data-share]', (b) => { b.onclick = () => shareTrip(b.dataset.share); });
     each('[data-tview]', (b) => { tripsView = b.dataset.tview; try { localStorage.setItem('rs_trips_view', tripsView); } catch (e) { /* storage blocked */ } render(); });
     each('[data-tmode]', (b) => { tripMode = b.dataset.tmode; try { localStorage.setItem('rs_trip_mode', tripMode); } catch (e) { /* storage blocked */ } formSig = ''; render(); });
     const sendTest = (d) => run(sb.rpc('send_test_request', { p_delay: d }), d ? 'A test rider will ask for a seat in ' + d + ' seconds' : 'A test rider just asked for a seat');
@@ -968,6 +1029,7 @@
     on('ln-loc', () => useMyLocation('ln-o', 'ln-msg'));
     on('rn-loc', () => useMyLocation('rn-p', 'rn-msg'));
     const goLive = async () => {
+      if (needProfile('drive')) return false;
       const o = $('ln-o').value, d = $('ln-d').value, need = plNeed('ln-o', 'where you start') || plNeed('ln-d', 'where you are going'); if (need) { formMsg('ln-msg', need); return false; }
       if (samePlace(o, d, 'ln-o', 'ln-d')) { formMsg('ln-msg', 'Pick two different places'); return false; }
       formMsg('ln-msg', '');
@@ -988,7 +1050,7 @@
     each('[data-stoplive]', (b) => { const isTrip = b.dataset.stoplive === 'trip', row = isTrip ? myLiveTrip : myLiveReq; if (isTrip && driveSession && !shouldShare()) stopShare(true); if (row) run(sb.from(isTrip ? 'trips' : 'ride_requests').update({ active: false }).eq('id', row.id), 'Stopped'); });
     each('#ld-dates button', (b) => { viewD = b.dataset.date; mapSig = {}; render(); });
     each('#lr-dates button', (b) => { viewR = b.dataset.date; mapSig = {}; render(); });
-    each('[data-req]', (b) => run(sb.rpc('request_seat', { p_trip: b.dataset.req, p_request: myReq.id, p_pay_with: b.dataset.pay, p_points: +b.dataset.pts, p_date: b.dataset.date, ...(DKOK ? { p_detour_min: +b.dataset.dmin, p_detour_km: +b.dataset.dkm } : {}) }), 'Seat requested'));
+    each('[data-req]', (b) => needProfile('ride') ? null : run(sb.rpc('request_seat', { p_trip: b.dataset.req, p_request: myReq.id, p_pay_with: b.dataset.pay, p_points: +b.dataset.pts, p_date: b.dataset.date, ...(DKOK ? { p_detour_min: +b.dataset.dmin, p_detour_km: +b.dataset.dkm } : {}) }), 'Seat requested'));
     each('[data-can]', (b) => run(sb.rpc('cancel_ride', { p_match: b.dataset.can }), 'Cancelled'));
     each('[data-cancelask]', (b) => { askCancel = b.dataset.cancelask; render(); });
     each('[data-cancelno]', () => { askCancel = null; render(); });
