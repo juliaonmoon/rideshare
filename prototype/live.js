@@ -67,6 +67,7 @@
   let rideMode = (() => { try { return localStorage.getItem('rs_ride_mode') === 'later' ? 'later' : 'now'; } catch (e) { return 'now'; } })();   // rider card: 'now' or 'later' (Schedule)
   let tripMode = (() => { try { return localStorage.getItem('rs_trip_mode') === 'later' ? 'later' : 'now'; } catch (e) { return 'now'; } })();       // the one trip card: 'now' (offer a ride now) or 'later' (pick a day and time)
   const LV = {};              // what is typed in the 'later' fields, kept across refreshes
+  let myBlocks = new Set();   // people I chose never to be matched with (migration 029)
   let MSOK = null, msgs = [], myRatings = {}, scores = {}, adminReports = [];   // migration 024 (messages, ratings, admin reports)
   let PCOK = null, cards = {};   // migration 021 (photo and car details shown to a matched driver or rider, Report a problem) is in place
   let DKOK = null;   // migration 020 (detour limits in km, detour saved with each request) is in place
@@ -158,12 +159,13 @@
   async function riderAlertsCheck() {
     const nat = nativeLoc(); if (!nat || !user || driveSession) return;
     const t0 = todayStr();
-    if (!(matches.some((x) => x.rider_id === user.id && x.status === 'accepted' && x.ride_date >= t0) || myLiveReq)) return;
+    if (!(matches.some((x) => x.rider_id === user.id && (x.status === 'accepted' || x.status === 'requested') && x.ride_date >= t0) || myLiveReq || myReq)) return;
     if (Date.now() - riderAlertsAt < 60000) return; riderAlertsAt = Date.now();
     try {
       const st = await nat.status(); if (st && st.running) return;
       const r = await sb.rpc('start_tracking'); if (r.error || !r.data) return;
-      await nat.start({ url: CFG.supabaseUrl, key: CFG.supabaseKey, token: r.data, riderOnly: true });
+      const res = await nat.start({ url: CFG.supabaseUrl, key: CFG.supabaseKey, token: r.data, riderOnly: true });
+      if (res && res.notifications === false) toast('Phone alerts are off. Allow notifications for RideShare in your phone settings to hear when your driver is on the way.');
     } catch (e) { /* permission refused: no phone alerts */ }
   }
   const scoreTag = (id) => { const z = scores[id]; return z && z.n > 0 ? ' <span class="tag">' + Math.round(100 * z.up / z.n) + '% liked (' + z.n + ')</span>' : ''; };
@@ -207,6 +209,7 @@
     document.getElementById('ms-send').onclick = send;
     document.getElementById('ms-text').onkeydown = (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); send(); } };
   }
+  const blockedCard = () => !myBlocks.size ? '' : card('People you blocked', '<p class="mut">You will not be matched with these people.</p>' + [...myBlocks].map((id) => '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-top:1px solid var(--line)"><b>' + nm(id) + '</b><button class="btn ghost" data-unblockme="' + id + '">Unblock</button></div>').join(''));
   const adminCard = () => {
     if (!isTest || !MSOK) return '';
     const rows = adminReports.length ? adminReports.map((r) => '<div style="padding:8px 0;border-top:1px solid var(--line)"><b>' + esc(r.reported_name) + '</b> reported by ' + esc(r.reporter_name) + ' <span class="tag">' + esc(String(r.reason).replace(/_/g, ' ')) + '</span>' + (r.reported_blocked ? ' <span class="tag">blocked</span>' : '')
@@ -220,14 +223,16 @@
   function reportDialog(matchId, otherId) {
     const old = document.getElementById('rp-ov'); if (old) old.remove();
     const ov = document.createElement('div'); ov.id = 'rp-ov'; ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
-    ov.innerHTML = '<div style="background:var(--card);color:var(--ink);border-radius:14px;padding:16px;max-width:420px;width:100%"><h2 style="margin:0 0 6px">Report a problem</h2><p class="mut" style="margin:0 0 8px">About ' + nm(otherId) + '. If you are in danger, call 911 first.</p><label>What happened?</label><select id="rp-reason" style="' + INPUT + '">' + REPORT_REASONS.map(([v, l]) => '<option value="' + v + '">' + l + '</option>').join('') + '</select><label>Tell us more (optional)</label><textarea id="rp-text" rows="3" maxlength="1000" style="' + INPUT + '"></textarea><div style="margin-top:12px;display:flex;gap:8px"><button class="btn" id="rp-send">Send report</button><button class="btn ghost" id="rp-cancel">Cancel</button></div></div>';
+    ov.innerHTML = '<div style="background:var(--card);color:var(--ink);border-radius:14px;padding:16px;max-width:420px;width:100%"><h2 style="margin:0 0 6px">Report a problem</h2><p class="mut" style="margin:0 0 8px">About ' + nm(otherId) + '. If you are in danger, call 911 first.</p><label>What happened?</label><select id="rp-reason" style="' + INPUT + '">' + REPORT_REASONS.map(([v, l]) => '<option value="' + v + '">' + l + '</option>').join('') + '</select><label>Tell us more (optional)</label><textarea id="rp-text" rows="3" maxlength="1000" style="' + INPUT + '"></textarea><label style="display:flex;gap:8px;align-items:center;margin-top:8px"><input type="checkbox" id="rp-block"> Never match me with this person again</label><div style="margin-top:12px;display:flex;gap:8px"><button class="btn" id="rp-send">Send report</button><button class="btn ghost" id="rp-cancel">Cancel</button></div></div>';
     document.body.appendChild(ov);
     document.getElementById('rp-cancel').onclick = () => ov.remove();
     document.getElementById('rp-send').onclick = async () => {
       const rr = await sb.rpc('report_problem', { p_match: matchId, p_reason: document.getElementById('rp-reason').value, p_details: document.getElementById('rp-text').value.trim() || null });
       const e = (noFn(rr) ? await sb.from('reports').insert({ reported_id: otherId, match_id: matchId, reason: document.getElementById('rp-reason').value, details: document.getElementById('rp-text').value.trim() || null }) : rr).error;
       if (e) { toast('Could not send the report: ' + e.message); return; }
-      ov.remove(); toast('Report sent. Thank you.');
+      let msg = 'Report sent. Thank you.';
+      if (document.getElementById('rp-block') && document.getElementById('rp-block').checked) { const be = (await sb.rpc('block_person', { p_user: otherId })).error; msg = be ? msg + ' (Could not block: ' + be.message + ')' : msg + ' You will not be matched with them again.'; loadAll(); }
+      ov.remove(); toast(msg);
     };
   }
   async function shareTrip(matchId) {
@@ -326,6 +331,14 @@
       (n.data || []).forEach((x) => { names[x.id] = x.display_name; });
       if (PCOK === null) PCOK = !(await sb.from('profile_cards').select('user_id').limit(1)).error;
       if (PCOK) { try { const pc = await sb.from('profile_cards').select('*').in('user_id', [...ids]); cards = {}; (pc.data || []).forEach((x) => { cards[x.user_id] = x; }); } catch (e) { cards = {}; } }
+      try {
+        const ub = await sb.from('user_blocks').select('blocked');
+        if (!ub.error) {
+          myBlocks = new Set((ub.data || []).map((z) => z.blocked));
+          otherTrips = otherTrips.filter((x) => !myBlocks.has(x.user_id)); otherReqs = otherReqs.filter((x) => !myBlocks.has(x.user_id));
+          if (myBlocks.size) { const bn = await sb.from('profiles').select('id,display_name').in('id', [...myBlocks]); (bn.data || []).forEach((z) => { names[z.id] = z.display_name; }); }
+        }
+      } catch (e) { /* older database: no personal blocks */ }
       if (MSOK === null) MSOK = !(await sb.from('messages').select('id').limit(1)).error;
       if (MSOK) {
         try {
@@ -931,7 +944,7 @@
     const chk = (id, on, text) => '<label style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="' + id + '"' + (on ? ' checked' : '') + '> ' + text + '</label>';
     const optIn = (id, v, max) => '<input type="number" id="' + id + '" min="0" max="' + max + '" step="0.5" placeholder="no limit" value="' + (v == null ? '' : v) + '" style="' + INPUT + '">';
     const num = (id, v, max) => '<input type="number" id="' + id + '" min="0" max="' + max + '" value="' + v + '" style="' + INPUT + '">';
-    return adminCard() + profileCard() + card('Driver settings', '<p class="mut">Defaults for new trips. Changing them here does not change trips you already posted.</p>'
+    return adminCard() + profileCard() + blockedCard() + card('Driver settings', '<p class="mut">Defaults for new trips. Changing them here does not change trips you already posted.</p>'
       + '<label>Extra minutes I accept for my whole trip</label>' + num('ls-detour', x.d_total_detour == null ? x.d_detour : x.d_total_detour, 60)
       + (DKOK ? '<label>Extra km I accept for my whole trip <span class="mut">(optional, empty = no distance limit)</span></label>' + optIn('ls-detourkm', x.d_total_detour_km == null ? x.d_detour_km : x.d_total_detour_km, 400) + '<p class="mut">A request has to fit every limit you set: minutes and kilometres.</p>' : '')
       + '<label>Payment I accept</label>' + sel('ls-accepts', [['either', 'Points or cash'], ['points', 'Points only'], ['cash', 'Cash gas-share only']], x.d_accepts)
@@ -1067,6 +1080,7 @@
       cards[user.id] = Object.assign({}, cards[user.id] || {}, row); toast(msg); formSig = ''; render();
     };
     document.querySelectorAll('[data-adm]').forEach((b) => { b.onclick = async () => { const p = b.dataset.adm.split('|'), block = p[1] === '1'; const note = window.prompt(block ? 'Why are you blocking this person? (saved with the block)' : 'Note (optional)'); if (note === null) return; const e = (await sb.rpc('admin_resolve_report', { p_id: p[0], p_note: note, p_block: block })).error; if (e) { toast(e.message); return; } toast(block ? 'Handled and blocked' : 'Marked handled'); loadAll(); }; });
+    document.querySelectorAll('[data-unblockme]').forEach((b) => { b.onclick = async () => { const e = (await sb.rpc('unblock_person', { p_user: b.dataset.unblockme })).error; if (e) { toast(e.message); return; } toast('Unblocked'); loadAll(); }; });
     document.querySelectorAll('[data-unblock]').forEach((b) => { b.onclick = async () => { const e = (await sb.rpc('admin_unblock', { p_user: b.dataset.unblock })).error; if (e) { toast(e.message); return; } toast('Unblocked'); loadAll(); }; });
     on('pc-pick', () => $('pc-file').click());
     const pcf = $('pc-file');

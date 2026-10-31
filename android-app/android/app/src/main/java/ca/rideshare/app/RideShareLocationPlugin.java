@@ -36,7 +36,8 @@ public class RideShareLocationPlugin extends Plugin {
             call.reject("Missing token or url");
             return;
         }
-        if (getPermissionState("location") != PermissionState.GRANTED) {
+        boolean riderOnly = Boolean.TRUE.equals(call.getBoolean("riderOnly", false));
+        if (!riderOnly && getPermissionState("location") != PermissionState.GRANTED) {   // a rider only needs notifications, not the location
             requestPermissionForAlias("location", call, "locationResult");
             return;
         }
@@ -72,7 +73,9 @@ public class RideShareLocationPlugin extends Plugin {
                 .putExtra("token", call.getString("token"))
                 .putExtra("riderOnly", Boolean.TRUE.equals(call.getBoolean("riderOnly", false)));
         ContextCompat.startForegroundService(getContext(), i);
-        call.resolve();
+        JSObject r = new JSObject();
+        r.put("notifications", androidx.core.app.NotificationManagerCompat.from(getContext()).areNotificationsEnabled());
+        call.resolve(r);
     }
 
     @PluginMethod
@@ -87,6 +90,7 @@ public class RideShareLocationPlugin extends Plugin {
         r.put("running", LocationService.running);
         r.put("lastOk", LocationService.lastOk);
         r.put("error", LocationService.lastError);
+        r.put("notifications", androidx.core.app.NotificationManagerCompat.from(getContext()).areNotificationsEnabled());
         call.resolve(r);
     }
 

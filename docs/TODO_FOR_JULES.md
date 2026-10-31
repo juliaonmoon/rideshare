@@ -15,7 +15,9 @@ Open https://supabase.com/dashboard/project/iivhfapvkseeomxtsrxf/sql/new, paste 
 | `supabase/migrations/024_messages_ratings_admin.sql` | Messages, ratings, admin reports screen, blocking | Done (Jules ran it on 2026-10-30) |
 | `supabase/migrations/025_booking_integrity.sql` | Safer payouts, safe accepting, whole-trip cancel with refunds, locked bookings, fixed 5-minute wait, report function | **To run** |
 | `supabase/migrations/026_driver_route_token.sql` | Lets the phone rebuild the Google Maps route after you accept a rider while driving | **To run** |
-| `supabase/migrations/027_server_quotes.sql` | The server works out each rider's extra minutes and price (live traffic when switched on, saved drive times otherwise); riders together never pay more than the trip costs | **To run** (big file, about 65 KB, paste it all) |
+| `supabase/migrations/027_server_quotes.sql` | The server works out each rider's extra minutes and price (live traffic when switched on, saved drive times otherwise); riders together never pay more than the trip costs | Done (ran 2026-10-31) |
+| `supabase/migrations/028_fix_live_route.sql` | Fixes two mistakes in the live-traffic lookup | Done (ran 2026-10-31; live traffic tested and working) |
+| `supabase/migrations/029_blocking_and_profile_rules.sql` | Blocking an account cancels its future bookings and hides its offers; "never match me with this person"; the database requires a photo and car plate | **To run** |
 
 How to copy a file to the clipboard: ask Claude, or open the file on GitHub, click "Copy raw file", then paste it into the SQL editor.
 
@@ -97,16 +99,17 @@ The full review is in `design-review/CHATGPT_REVIEW_2.md` (kept on your computer
 - The privacy text now says what we really store.
 - After you accept a rider while driving, the notification has an **Update route** button. One tap restarts Google Maps with all remaining stops, including the new rider. (Needs migration 026.)
 
-### Still open, in plain English
+### Done since (needs migration 029 and the new phone app)
 
-1. **(Done, needs migration 027 and the live-traffic setup below.)** The rider's phone no longer sends the extra minutes or the price. The server works them out, and riders together never pay more than the trip costs.
-2. **Phone fixes (Android).**
-   - *Arrival:* the phone currently says "driver has arrived" when the car comes within 250 metres of the pickup, even if it is only driving past or the GPS is wrong. That starts the 5-minute no-show clock unfairly. The fix: only count it as arrived when the car has nearly stopped and the GPS is accurate.
-   - *No signal:* if the phone has no signal when you tap "Picked up", the tap is lost and the notification says to open RideShare. The fix: save the tap on the phone and send it when the signal returns.
-   - *Rider alerts:* a rider only starts getting phone alerts after a seat is accepted, and the first "Seat confirmed" alert can be missed. The fix: start the alerts as soon as the rider asks for a ride.
-3. **Blocking a person.** Blocking stops them from doing new things, but their existing offers and bookings stay. The fix: blocking should also hide their offers and cancel their future bookings. We also need a "never match me with this person again" button for ordinary users.
-4. **Photo and plate required.** The app asks for a photo (and a car plate for drivers), but the database does not insist. Someone could skip the app and post without them. The fix: the database requires them.
-5. **Identity, support and legal.** See sections 3 and 4 above. These are yours to decide.
+- **Phone app:** "driver has arrived" now needs a fresh, accurate position, the car nearly stopped, for 8 seconds. A trip ends by itself only after 15 seconds of fresh readings at the destination. A tap on Picked up, Dropped off, Accept or Decline without signal is saved and sent when the signal returns (answers expire after 10 minutes). Riders get phone alerts as soon as they ask for a ride (no location permission needed), and "Seat confirmed" is no longer missed after a restart.
+- **Blocking:** an administrator block now cancels the person's future bookings (riders are refunded), switches off their offers and requests, and ends their phone helper access. Any user can also choose "Never match me with this person again" (in the Report a problem window); the list is in the Me tab.
+- **Photo and plate:** the database now refuses to post a trip without a photo and car plate, or a request without a photo.
+- **Live traffic** is working (tested 2026-10-31).
+
+### Backlog (later, your decisions)
+
+- Support contact, identity checks, legal and insurance (sections 3 and 4).
+- Real two-phone test (section 2). This is the most important next step.
 
 ## 11. Switch on live traffic (one time, optional; the app works without it)
 
