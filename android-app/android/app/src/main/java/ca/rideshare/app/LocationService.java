@@ -260,7 +260,7 @@ public class LocationService extends Service {
                     JSONObject p = pend.getJSONObject(i);
                     String id = p.optString("id");
                     if (id.isEmpty() || !notified.add(id)) continue;
-                    if (!firstPoll) announce(id, p.optString("name", "A rider"), p.optString("pickup"), p.optString("dropoff"));
+                    if (!firstPoll) announce(id, p.optString("name", "A rider"), p.optString("pickup"), p.optString("dropoff"), detourText(p));
                 }
             }
             firstPoll = false;
@@ -432,6 +432,8 @@ public class LocationService extends Service {
         checkStops(l);
     }
 
+    // ID ranges (never overlapping): seat requests 100000.., step notes 200000.., stop pop-ups 300000.., error notes 400000.., each + 0..4095
+    static final int ID_REQ = 100000, ID_STEP = 200000, ID_POP = 300000, ID_ERR = 400000;
     private static int idOf(int base, String matchId) { return base + (matchId.hashCode() & 0xfff); }
 
     private PendingIntent stepIntent(String step, String matchId, String name, int nid) {
@@ -454,7 +456,7 @@ public class LocationService extends Service {
             if (r == null) continue;
             String id = r.optString("id"), name = r.optString("name", "Rider"), stage = r.optString("stage");
             boolean picked = "picked_up".equals(stage);
-            int nid = idOf(4000, id);
+            int nid = idOf(ID_STEP, id);
             now.add(nid);
             Notification n = new NotificationCompat.Builder(this, STEPS_CHANNEL)
                     .setContentTitle(picked ? "Drop off " + name : "Pick up " + name)
@@ -468,13 +470,13 @@ public class LocationService extends Service {
                     .build();
             try { nm.notify(nid, n); } catch (Exception ignore) { }
         }
-        for (Integer old : new HashSet<>(stepIds)) if (!now.contains(old)) { nm.cancel(old); nm.cancel(old + 1000); }
+        for (Integer old : new HashSet<>(stepIds)) if (!now.contains(old)) { nm.cancel(old); nm.cancel(old + (ID_POP - ID_STEP)); }
         // also clear step notifications left over from before the helper restarted (a ride that is already finished)
         try {
             for (android.service.notification.StatusBarNotification sbn : nm.getActiveNotifications()) {
                 int id = sbn.getId();
-                boolean step = id >= 4000 && id <= 4000 + 0xfff, pop = id >= 5000 && id <= 5000 + 0xfff;
-                if ((step && !now.contains(id)) || (pop && !now.contains(id - 1000))) nm.cancel(id);
+                boolean step = id >= ID_STEP && id <= ID_STEP + 0xfff, pop = id >= ID_POP && id <= ID_POP + 0xfff;
+                if ((step && !now.contains(id)) || (pop && !now.contains(id - (ID_POP - ID_STEP)))) nm.cancel(id);
             }
         } catch (Exception ignore) { }
         stepIds.clear(); stepIds.addAll(now);
@@ -512,7 +514,7 @@ public class LocationService extends Service {
     }
 
     private void headsUp(String matchId, String title, String text, String step, String button, String name) {
-        int nid = idOf(5000, matchId);
+        int nid = idOf(ID_POP, matchId);
         // Swiping the pop-up away means "stop reminding me for this stop" (the quiet notification with the button stays in the list).
         String key = ("picked_up".equals(step) ? "pick:" : "drop:") + matchId;
         Intent quiet = new Intent(this, LocationService.class).setAction(ACTION_QUIET).putExtra("key", key).putExtra("nid", nid);
@@ -570,11 +572,11 @@ public class LocationService extends Service {
         NotificationManager nm = getSystemService(NotificationManager.class);
         String err = stepCall(matchId, step);
         if (err.isEmpty()) {
-            nm.cancel(idOf(5000, matchId));
-            nm.cancel(idOf(4000, matchId));
+            nm.cancel(idOf(ID_POP, matchId));
+            nm.cancel(idOf(ID_STEP, matchId));
             pollAlerts();   // refresh right away: shows the next step, or clears the finished rider
         } else {
-            post2("Could not update " + name, err, 2000 + (nid & 0xfff));
+            post2("Could not update " + name, err, ID_ERR + (nid & 0xfff));
         }
     }
 
@@ -583,13 +585,26 @@ public class LocationService extends Service {
         return PendingIntent.getService(this, nid * 2 + (ACTION_ACCEPT.equals(action) ? 1 : 2), i, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
     }
 
-    private void announce(String id, String name, String pickup, String dropoff) {
-        final int nid = 1000 + (id.hashCode() & 0xffff);
+    /** "+4 min detour (+1.8 km). Total +9 of 15 min" from the numbers the database sends with the request (empty if it did not send any). */
+    private static String detourText(JSONObject p) {
+        if (p.isNull("detour_min")) return "";
+        StringBuilder b = new StringBuilder("+").append(Math.round(p.optDouble("detour_min", 0))).append(" min detour");
+        if (!p.isNull("detour_km") && p.optDouble("detour_km", 0) > 0.05) b.append(" (+").append(String.format(java.util.Locale.US, "%.1f", p.optDouble("detour_km", 0))).append(" km)");
+        if (!p.isNull("total_min") && !p.isNull("limit_min")) {
+            b.append(". Total +").append(Math.round(p.optDouble("total_min", 0))).append(" of ").append(Math.round(p.optDouble("limit_min", 0))).append(" min");
+            if (!p.isNull("limit_km") && !p.isNull("total_km")) b.append(", +").append(String.format(java.util.Locale.US, "%.1f", p.optDouble("total_km", 0))).append(" of ").append(Math.round(p.optDouble("limit_km", 0))).append(" km");
+        }
+        return b.toString();
+    }
+
+    private void announce(String id, String name, String pickup, String dropoff, String detour) {
+        final int nid = idOf(ID_REQ, id);
         Intent open = new Intent(this, MainActivity.class).setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_NEW_TASK);
         PendingIntent pi = PendingIntent.getActivity(this, 1, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
         Notification n = new NotificationCompat.Builder(this, ALERT_CHANNEL)
                 .setContentTitle(name + " asked for a seat")
-                .setContentText(pickup + " to " + dropoff + ". Tap to open RideShare and accept or decline.")
+                .setContentText(pickup + " to " + dropoff + (detour.isEmpty() ? "" : ". " + detour) + ". Accept or decline below.")
+                .setStyle(new NotificationCompat.BigTextStyle().bigText(pickup + " to " + dropoff + (detour.isEmpty() ? "" : "\n" + detour)))
                 .setSmallIcon(android.R.drawable.ic_dialog_info)
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setDefaults(Notification.DEFAULT_ALL)
@@ -660,10 +675,10 @@ public class LocationService extends Service {
                 String msg = "Please open RideShare and try there.";
                 try { msg = new JSONObject(sb.toString()).optString("message", msg); } catch (Exception ignore) { }
                 nm.cancel(nid);
-                post2("Could not answer " + name, msg, 2000 + (nid & 0xfff));
+                post2("Could not answer " + name, msg, ID_ERR + (nid & 0xfff));
             }
         } catch (Exception e) {
-            post2("Could not answer " + name, "No connection. Open RideShare to answer.", 2000 + (nid & 0xfff));
+            post2("Could not answer " + name, "No connection. Open RideShare to answer.", ID_ERR + (nid & 0xfff));
         } finally {
             if (c != null) c.disconnect();
         }
