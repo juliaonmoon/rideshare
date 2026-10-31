@@ -160,7 +160,7 @@ html[data-ui=b] .uitoggle{display:none}
       <label>Max wait at a pickup <span class="val" id="d-wait-v"></span></label>
       <input type="range" id="d-wait" min="0" max="15" step="1">
       <div class="row">
-        <div><label>I accept</label><select id="d-accepts"><option value="either">Points or cash</option><option value="points">Points only</option><option value="cash">Cash gas-share only</option></select></div>
+        <div><label>Payment I accept</label><select id="d-accepts"><option value="either">Points or cash</option><option value="points">Points only</option><option value="cash">Cash gas-share only</option></select></div>
         <div><label>Cost per km ($)</label><input type="number" id="d-cpk" min="0.05" max="0.60" step="0.01"></div>
       </div>
       <label>Repeat on</label><div class="days" id="d-days"></div>
@@ -172,7 +172,7 @@ html[data-ui=b] .uitoggle{display:none}
     <div class="card" id="sim-d"><span class="mut">Live trip</span><div class="status" id="sim-d-status">Preview route: press the button to watch a car drive your route (a simulation, not real GPS).</div></div>
     <div class="card" id="d-summary"></div>
     <div class="card"><h2>Riders along your route</h2><div id="d-matches"></div></div>
-    <div class="card"><h2>Riding with me</h2><div id="d-accepted"></div></div>
+    <div class="card"><h2>Riders in my car</h2><div id="d-accepted"></div></div>
   </section>
 </main>
 
