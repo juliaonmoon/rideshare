@@ -62,6 +62,7 @@
   let user = null, me = { name: '', points: 0 }, myTrip = null, myReq = null, ledger = [], matches = [];
   let otherTrips = [], otherReqs = [], extraTrips = [], extraReqs = [], names = {}, timer = null, busy = false, formSig = '', mapSig = {};
   let autoAlerts = false;   // started the alert helper for a live trip that was already on when the app opened
+  let tripsView = (() => { try { return localStorage.getItem('rs_trips_view') === 'rider' ? 'rider' : 'driver'; } catch (e) { return 'driver'; } })();   // Trips tab: 'driver' (my trip, my riders) or 'rider' (my ride requests, my rides)
   let tripMode = (() => { try { return localStorage.getItem('rs_trip_mode') === 'later' ? 'later' : 'now'; } catch (e) { return 'now'; } })();       // the one trip card: 'now' (offer a ride now) or 'later' (pick a day and time)
   const LV = {};              // what is typed in the 'later' fields, kept across refreshes
   let DKOK = null;   // migration 020 (detour limits in km, detour saved with each request) is in place
@@ -725,12 +726,12 @@
       let actions = '';
       if (askCancel === x.id) {
         const ci = cancelInfo(x);
-        actions = `<div class="open" style="margin-top:6px">${esc(ci.text)}</div><div style="margin-top:6px">${ci.ok ? `<button class="btn" data-cancelgo="${x.id}">Yes, cancel ride</button> ` : ''}<button class="btn ghost" data-cancelno="1">Keep ride</button></div>`;
+        actions = `<div class="open" style="margin-top:6px">${esc(ci.text)}</div><div style="margin-top:6px">${ci.ok ? `<button class="btn" data-cancelgo="${x.id}">${isRider ? 'Yes, cancel ride' : 'Yes, cancel this rider'}</button> ` : ''}<button class="btn ghost" data-cancelno="1">${isRider ? 'Keep ride' : 'Keep rider'}</button></div>`;
       } else {
         const b = [];
         if (!isRider && x.status === 'requested') b.push(`<button class="btn" data-acc="${x.id}">Accept</button> <button class="btn ghost" data-dec="${x.id}">Decline</button>`);
         if (canNoShow(x)) b.push(`<button class="btn ghost" data-noshow="${x.id}">Rider did not show up</button>`);
-        if ((isRider || x.status === 'accepted') && !x.picked_up_at) b.push(`<button class="btn ghost" data-cancelask="${x.id}">${x.status === 'requested' ? 'Cancel request' : 'Cancel ride'}</button>`);
+        if ((isRider || x.status === 'accepted') && !x.picked_up_at) b.push(`<button class="btn ghost" data-cancelask="${x.id}">${!isRider ? 'Cancel this rider' : x.status === 'requested' ? 'Cancel request' : 'Cancel ride'}</button>`);
         actions = b.length ? `<div style="margin-top:6px">${b.join(' ')}</div>` : '';
       }
       const held = x.status === 'accepted' && x.pay_with === 'points' && !x.settled ? ' (held until the ride)' : '';
@@ -750,12 +751,17 @@
       return '<div style="padding:8px 0;border-top:1px solid var(--line)"><b>' + esc(disp(t, 'origin')) + ' to ' + esc(disp(t, 'dest')) + '</b> <span class="tag">' + (done.length ? 'completed' : 'no riders') + '</span><div class="mut">' + esc(RSD.label(t.trip_date)) + ' at ' + RS.clock(t.depart_min) + (who ? ' &middot; ' + who : '') + ' &middot; ' + done.length + ' rider' + (done.length === 1 ? '' : 's') + (km ? ' &middot; ' + km.toFixed(1) + ' km' : '') + '</div></div>';
     }).join('');
     const rideRows = past.filter((x) => x.rider_id === user.id).map((x) => '<div style="padding:8px 0;border-top:1px solid var(--line)"><b>Ride with ' + nm(x.driver_id) + '</b> <span class="tag">' + esc(statusText(x.status)) + '</span><div class="mut">' + when(x) + ' &middot; ' + (x.pay_with === 'points' ? x.points + ' pts' : 'cash') + '</div></div>').join('');
-    const hasComing = !!(curTrip || curReq || asRider.length || asDriver.length);
-    const coming = hasComing
-      ? (curTrip ? card('My trip', mineTrip) : '') + (curReq ? card('My ride request', mineReq) : '') + (asRider.length ? card('Your upcoming rides', riderRows) : '') + (asDriver.length ? card('Your upcoming riders', driverRows) : '')
-      : card('Coming up', '<p class="mut">Nothing yet. Switch on <b>Offer seats to riders</b> on Home, or post a trip for a set day and time.</p>');
+    const segT = (v, label) => '<button type="button" class="btn' + (tripsView === v ? '' : ' ghost') + '" data-tview="' + v + '" style="flex:1;min-width:0">' + label + '</button>';
+    const toggle = '<div style="display:flex;gap:8px;margin:0 0 12px">' + segT('driver', 'As a driver') + segT('rider', 'As a rider') + '</div>';
     window.__rules = card('Cancellation rules', policy);
-    return coming + card('Past trips', (tripRows + rideRows) || '<p class="mut">Nothing yet. Finished trips and rides show up here.</p>');
+    if (tripsView === 'rider') {
+      const comingR = (curReq ? card('Upcoming ride request', mineReq) : '') + (asRider.length ? card('Upcoming rides', riderRows) : '')
+        || card('Upcoming rides', '<p class="mut">Nothing yet. Ask for a ride on <b>Home</b> and your driver will show up here.</p>');
+      return toggle + comingR + card('Past rides', rideRows || '<p class="mut">Nothing yet. Rides you have taken show up here.</p>');
+    }
+    const comingD = (curTrip ? card('Upcoming trip', mineTrip) : '') + (asDriver.length ? card('Upcoming riders', driverRows) : '')
+      || card('Upcoming trip', '<p class="mut">Nothing yet. Switch on <b>Offer seats to riders</b> on Home, or post a trip for a set day and time.</p>');
+    return toggle + comingD + card('Past trips', tripRows || '<p class="mut">Nothing yet. Finished trips show up here.</p>');
   }
 
   // ---------- settings tab ----------
@@ -821,7 +827,7 @@
     if (!busyIn('lr-top')) $('lr-top').innerHTML = guard('ride now', riderNow) + guard('rider summary', riderTop);
     $('ld-lists').innerHTML = guard('riders list', driverLists);
     $('lr-lists').innerHTML = guard('drivers list', riderLists);
-    $('lu-main').innerHTML = guard('upcoming', upcomingMain) + guard('drive log', driveLogCard) + (window.__rules || '');
+    const upHtml = guard('upcoming', upcomingMain); $('lu-main').innerHTML = upHtml + (tripsView === 'driver' ? guard('drive log', driveLogCard) : '') + (window.__rules || '');
     applyCar(); syncSharing();
     try { wire(); } catch (e) { console.error('wire', e); showErr('buttons: ' + (e && e.message || e)); }
   }
@@ -915,6 +921,7 @@
     on('lr-watch', () => { if (window.__lrStops) window.RS_UI.startSim('lr', 'map-lr', window.__lrStops, window.__lrDriver, 'rider', window.__lrMe); });
     on('lr-stop', () => window.RS_UI.stopSim('lr'));
     const each = (sel, fn) => document.querySelectorAll(['#v-ldriver', '#v-lrider', '#v-lupcoming'].map((r) => r + ' ' + sel).join(', ')).forEach((b) => (b.onclick = () => fn(b)));
+    each('[data-tview]', (b) => { tripsView = b.dataset.tview; try { localStorage.setItem('rs_trips_view', tripsView); } catch (e) { /* storage blocked */ } render(); });
     each('[data-tmode]', (b) => { tripMode = b.dataset.tmode; try { localStorage.setItem('rs_trip_mode', tripMode); } catch (e) { /* storage blocked */ } formSig = ''; render(); });
     const sendTest = (d) => run(sb.rpc('send_test_request', { p_delay: d }), d ? 'A test rider will ask for a seat in ' + d + ' seconds' : 'A test rider just asked for a seat');
     each('[data-testsend]', (b) => sendTest(+b.dataset.testsend));
