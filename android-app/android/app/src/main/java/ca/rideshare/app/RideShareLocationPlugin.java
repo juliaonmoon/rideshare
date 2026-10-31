@@ -128,6 +128,15 @@ public class RideShareLocationPlugin extends Plugin {
         call.resolve();
     }
 
+    /** setAutopilot({ on }): admin test mode only. The helper drives the pretend car to each stop by itself. */
+    @PluginMethod
+    public void setAutopilot(PluginCall call) {
+        boolean on = Boolean.TRUE.equals(call.getBoolean("on", false));
+        LocationService.autopilot = on;
+        if (!on) LocationService.fakeUntil = 0;
+        call.resolve();
+    }
+
     @PluginMethod
     public void clearFakeLocation(PluginCall call) {
         LocationService.fakeUntil = 0;
