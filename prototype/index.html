@@ -172,7 +172,7 @@ html[data-ui=b] .uitoggle{display:none}
     <div class="card" id="sim-d"><span class="mut">Live trip</span><div class="status" id="sim-d-status">Preview route: press the button to watch a car drive your route (a simulation, not real GPS).</div></div>
     <div class="card" id="d-summary"></div>
     <div class="card"><h2>Riders along your route</h2><div id="d-matches"></div></div>
-    <div class="card"><h2>Riders in my car</h2><div id="d-accepted"></div></div>
+    <div class="card"><h2>Confirmed riders</h2><div id="d-accepted"></div></div>
   </section>
 </main>
 
@@ -183,8 +183,8 @@ html[data-ui=b] .uitoggle{display:none}
       <label>Pick me up near</label><select id="r-pickup"></select>
       <label>Drop me near</label><select id="r-dropoff"></select>
       <div class="row">
-        <div><label>Ready from</label><input type="time" id="r-from"></div>
-        <div><label>Ready until</label><input type="time" id="r-to"></div>
+        <div><label>Earliest pickup</label><input type="time" id="r-from"></div>
+        <div><label>Latest pickup</label><input type="time" id="r-to"></div>
       </div>
       <label>I'll pay with</label>
       <select id="r-pays"><option value="points">Points</option><option value="cash">Cash gas-share</option></select>
