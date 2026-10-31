@@ -240,6 +240,7 @@ public class LocationService extends Service {
     /** Asks the server about this driver: ride in progress? still on duty? any new seat requests? */
     private void pollAlerts() {
         pollRider();
+        pollMessages();
         HttpURLConnection c = null;
         try {
             c = (HttpURLConnection) new URL(url + "/rest/v1/rpc/driver_alerts_token").openConnection();
@@ -597,6 +598,35 @@ public class LocationService extends Service {
             }
             riderStage.keySet().retainAll(seen);
             firstRiderPoll = false;
+        } catch (Exception ignore) { /* try again next time */ }
+    }
+
+    private final Set<String> msgSeen = new HashSet<>();
+    static final int ID_MSG = 600000;
+
+    /** A short message from the driver or rider of a seat: show it as a notification (tap to open the app). */
+    private void pollMessages() {
+        try {
+            String b = rpc("messages_token", new JSONObject().put("p_token", token));
+            if (b == null) return;   // no network, or an older database without messages
+            JSONArray a = new JSONArray(b);
+            for (int i = 0; i < a.length(); i++) {
+                JSONObject m = a.optJSONObject(i);
+                if (m == null) continue;
+                String id = m.optString("id");
+                if (id.isEmpty() || !msgSeen.add(id)) continue;
+                String body = m.optString("body");
+                Notification n = new NotificationCompat.Builder(this, ALERT_CHANNEL)
+                        .setContentTitle("Message from " + m.optString("from_name", "your ride"))
+                        .setContentText(body)
+                        .setStyle(new NotificationCompat.BigTextStyle().bigText(body))
+                        .setSmallIcon(android.R.drawable.ic_dialog_email)
+                        .setPriority(NotificationCompat.PRIORITY_HIGH)
+                        .setAutoCancel(true)
+                        .setContentIntent(openIntent())
+                        .build();
+                try { getSystemService(NotificationManager.class).notify(idOf(ID_MSG, id), n); } catch (Exception ignore) { }
+            }
         } catch (Exception ignore) { /* try again next time */ }
     }
 
