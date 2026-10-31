@@ -728,12 +728,12 @@
       let actions = '';
       if (askCancel === x.id) {
         const ci = cancelInfo(x);
-        actions = `<div class="open" style="margin-top:6px">${esc(ci.text)}</div><div style="margin-top:6px">${ci.ok ? `<button class="btn" data-cancelgo="${x.id}">${isRider ? 'Yes, cancel ride' : 'Yes, cancel this rider'}</button> ` : ''}<button class="btn ghost" data-cancelno="1">${isRider ? 'Keep ride' : 'Keep rider'}</button></div>`;
+        actions = `<div class="open" style="margin-top:6px">${esc(ci.text)}</div><div style="margin-top:6px">${ci.ok ? `<button class="btn" data-cancelgo="${x.id}">${isRider ? 'Yes, cancel ride' : 'Yes, cancel pickup'}</button> ` : ''}<button class="btn ghost" data-cancelno="1">${isRider ? 'Keep ride' : 'Keep pickup'}</button></div>`;
       } else {
         const b = [];
         if (!isRider && x.status === 'requested') b.push(`<button class="btn" data-acc="${x.id}">Accept</button> <button class="btn ghost" data-dec="${x.id}">Decline</button>`);
         if (canNoShow(x)) b.push(`<button class="btn ghost" data-noshow="${x.id}">Rider did not show up</button>`);
-        if ((isRider || x.status === 'accepted') && !x.picked_up_at) b.push(`<button class="btn ghost" data-cancelask="${x.id}">${!isRider ? 'Cancel this rider' : x.status === 'requested' ? 'Cancel request' : 'Cancel ride'}</button>`);
+        if ((isRider || x.status === 'accepted') && !x.picked_up_at) b.push(`<button class="btn ghost" data-cancelask="${x.id}">${!isRider ? 'Cancel pickup' : x.status === 'requested' ? 'Cancel request' : 'Cancel ride'}</button>`);
         actions = b.length ? `<div style="margin-top:6px">${b.join(' ')}</div>` : '';
       }
       const held = x.status === 'accepted' && x.pay_with === 'points' && !x.settled ? ' (held until the ride)' : '';
