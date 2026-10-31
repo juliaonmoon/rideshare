@@ -79,10 +79,12 @@
 
   // The most extra minutes ALL pickups together may add. If the driver set no separate total, it is the same as max detour.
   const totalCap = (driver) => (driver.maxTotal == null ? driver.maxDetour : Math.max(driver.maxTotal, driver.maxDetour));
+  // The most extra km ALL pickups together may add (null = the driver set no distance limit at all).
+  const totalKmCap = (driver) => (driver.maxTotalKm == null && driver.maxKm == null ? null : Math.max(driver.maxTotalKm == null ? driver.maxKm : driver.maxTotalKm, driver.maxKm || 0));
   // Cheapest feasible insertion of a rider's pickup+dropoff into an existing route.
   // relaxed = true is for riders the driver has ALREADY accepted: they stay on the route even if the timing or detour no longer fits.
   function bestInsertion(stops, rider, driver, relaxed) {
-    const directMin = minutes(driver.origin, driver.dest, driver.departMin, driver.dow);
+    const directMin = minutes(driver.origin, driver.dest, driver.departMin, driver.dow), directKm = km(baseStops(driver)), kmCap = totalKmCap(driver);
     let best = null;
     for (let i = 1; i < stops.length; i++) {
       for (let j = i; j < stops.length; j++) {
@@ -90,9 +92,9 @@
         next.splice(j, 0, { loc: rider.dropoff, type: 'dropoff', rider });
         next.splice(i, 0, { loc: rider.pickup, type: 'pickup', rider });
         const ev = evaluate(next, driver.departMin, driver.maxWait, driver.dow);
-        const detour = ev.totalMin - directMin;
-        if ((relaxed || (ev.ok && detour <= totalCap(driver) + 1e-9)) && (!best || detour < best.detour)) {
-          best = { stops: next, ev, detour };
+        const detour = ev.totalMin - directMin, detourKm = km(next) - directKm;
+        if ((relaxed || (ev.ok && detour <= totalCap(driver) + 1e-9 && (kmCap == null || detourKm <= kmCap + 1e-9))) && (!best || detour < best.detour)) {
+          best = { stops: next, ev, detour, detourKm };
         }
       }
     }
@@ -126,15 +128,17 @@
     if (!current) return [];
     const baseDetour = evaluate(current, driver.departMin, driver.maxWait, driver.dow).totalMin -
       minutes(driver.origin, driver.dest, driver.departMin, driver.dow);
+    const baseDetourKm = km(current) - km(baseStops(driver));
     const out = [];
     for (const r of riders) {
       if (accepted.includes(r) || !compatible(driver.accepts, r.pays)) continue;
       const b = bestInsertion(current, r, driver);
       if (!b) continue;
       if (b.detour - baseDetour > driver.maxDetour + 1e-9) continue;   // this one pickup costs more time than the driver allows
+      if (driver.maxKm != null && b.detourKm - baseDetourKm > driver.maxKm + 1e-9) continue;   // ... or more distance than the driver allows
       const pick = b.ev.timeline.find((x) => x.stop.type === 'pickup' && x.stop.rider === r);
       const drop = b.ev.timeline.find((x) => x.stop.type === 'dropoff' && x.stop.rider === r);
-      out.push({ rider: r, stops: b.stops, detour: b.detour, addedDetour: b.detour - baseDetour,
+      out.push({ rider: r, stops: b.stops, detour: b.detour, addedDetour: b.detour - baseDetour, detourKm: b.detourKm, addedKm: b.detourKm - baseDetourKm,
         pickupAt: pick.depart, wait: pick.wait, dropAt: drop.arrive });
     }
     return out.sort((a, b) => a.addedDetour - b.addedDetour);

@@ -166,6 +166,21 @@ t('An accepted rider stays on the route even when the pickup window has passed',
   const stops = RS.buildRoute(driver, [late], true);
   assert.ok(stops && stops.length === 4 && stops[1].type === 'pickup', 'but the accepted rider still gets a stop');
 });
+t('Distance limits: a rider that adds too many km is left out, and the minutes rule still applies', () => {
+  RS.setTraffic(T, LOCS);
+  const o = LOCS['Surrey Central'], d = LOCS['BCIT / Willingdon (Burnaby)'], p = LOCS['Production Way (Burnaby)'];
+  const base = { origin: o, dest: d, departMin: 12 * 60, maxDetour: 60, maxWait: 60, accepts: 'either', dow: 2 };
+  const r = { id: 'k', pickup: p, dropoff: d, readyFrom: 0, readyTo: 1439, pays: 'cash' };
+  const free = RS.findMatches(base, [r], []);
+  assert.strictEqual(free.length, 1); assert.ok(free[0].addedKm >= 0, 'the match reports its extra km');
+  const strictKm = RS.findMatches(Object.assign({}, base, { maxKm: Math.max(0, free[0].addedKm - 0.5) }), [r], []);
+  assert.strictEqual(strictKm.length, 0, 'over the km limit: not shown');
+  const okKm = RS.findMatches(Object.assign({}, base, { maxKm: free[0].addedKm + 0.5 }), [r], []);
+  assert.strictEqual(okKm.length, 1, 'inside the km limit: shown');
+  const strictMin = RS.findMatches(Object.assign({}, base, { maxDetour: Math.max(0, free[0].addedDetour - 0.5), maxKm: 100 }), [r], []);
+  assert.strictEqual(strictMin.length, 0, 'inside km but over minutes: still not shown (must fit both)');
+  RS.setTraffic(null);
+});
 t('Google times: an address between neighbourhoods is scaled by the Google time of the nearest centres', () => {
   RS.setTraffic(T, LOCS);
   const o = { lat: LOCS['Surrey Central'].lat + 0.004, lng: LOCS['Surrey Central'].lng + 0.004 }, d = { lat: LOCS['BCIT / Willingdon (Burnaby)'].lat - 0.004, lng: LOCS['BCIT / Willingdon (Burnaby)'].lng + 0.003 };
