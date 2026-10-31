@@ -13,6 +13,7 @@ Open https://supabase.com/dashboard/project/iivhfapvkseeomxtsrxf/sql/new, paste 
 | `supabase/migrations/022_no_show_needs_arrival.sql` | No-show only after arrival and waiting | Done |
 | `supabase/migrations/023_meet_spot_auto_end_rider_alerts.sql` | Meeting spot, trip ends on arrival, rider phone alerts | Please confirm you ran it. Claude cannot see the database from here. If the Set meeting spot button is missing on an accepted ride, it was not run. |
 | `supabase/migrations/024_messages_ratings_admin.sql` | Messages, ratings, admin reports screen, blocking | Done (Jules ran it on 2026-10-30) |
+| `supabase/migrations/025_booking_integrity.sql` | Safer payouts, safe accepting, whole-trip cancel with refunds, locked bookings, fixed 5-minute wait, report function | **To run** |
 
 How to copy a file to the clipboard: ask Claude, or open the file on GitHub, click "Copy raw file", then paste it into the SQL editor.
 
@@ -74,3 +75,18 @@ The app has only been tested with sample riders, a practice database and an emul
 
 - A custom web address (for example rideshare.ca) instead of juliaonmoon.github.io/rideshare. Optional.
 - Test accounts: sample riders appear only for the admin account in test mode.
+
+## 10. Second ChatGPT review (31 problems): where we are
+
+The full review is in `design-review/CHATGPT_REVIEW_2.md` (kept on your computer only). Its verdict: **not ready for real strangers yet**. Claude's progress:
+
+**Fixed (live, plus migration 025 above):** new buttons needed two taps; the Request button could use the wrong request; payout without a real pickup (now the held points go back to the rider, and an open report pauses payout); two drivers or two accepts taking the same seat; accepting a withdrawn or switched-off request; cancelling a whole trip now refunds every booked rider in one step; a booked trip can no longer be deleted or have its time or route changed behind the app's back; the 5-minute wait is enforced on the server; reports go through a checked function and also work for cancelled and no-show rides; the meeting spot must stay within 2 km and cannot move once the driver is on the way; signing out revokes the phone helper's access; the privacy text now matches what is stored.
+
+**Still open (Claude will keep working through these, in this order):**
+1. Server-checked price and detour (today the rider's phone sends them). Needs a bigger change.
+2. Total cost of several riders can exceed the real trip cost (each rider is quoted as if alone).
+3. Android: arrival only after a fresh, accurate, stopped position; saved-and-retried driver taps when offline; rider alerts that start as soon as a request is pending; per-trip scope for the phone helper's access.
+4. Blocking a person should also hide their offers and cancel their future bookings; a "never match me with this person" option.
+5. Server rule that a photo (and car plate for drivers) must exist before posting or requesting.
+
+**Decision needed from you (new):** after a driver starts navigation in Google Maps, Google Maps cannot add a new pickup by itself. The review says to **stop offering new requests once navigation has started** (requests would only be accepted before departure). Today a notification Accept after departure opens RideShare to rebuild the route, which breaks the "never switch apps" rule. Do you want: (A) only accept requests before the driver starts (safest, my recommendation), or (B) keep accepting mid-drive and accept that the driver may have to open RideShare?

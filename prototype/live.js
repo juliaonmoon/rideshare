@@ -172,6 +172,10 @@
   const rateLine = (m, otherId) => !MSOK || !m || m.status !== 'completed' ? '' : (m.id in myRatings
     ? '<div class="mut" style="margin-top:4px">You rated ' + nm(otherId) + ': ' + (myRatings[m.id] ? 'good' : 'not good') + '</div>'
     : '<div style="margin-top:6px"><div class="mut">Rate ' + nm(otherId) + ':</div><div style="display:flex;gap:8px;margin-top:4px"><button class="btn ghost" style="flex:1" data-rate="' + m.id + '|1">Good</button><button class="btn ghost" style="flex:1" data-rate="' + m.id + '|0">Not good</button></div></div>');
+  const noFn = (r) => !!(r && r.error && /could not find the function|PGRST202|schema cache/i.test((r.error.message || '') + ' ' + (r.error.code || '')));
+  const cancelTrip = async (id) => { const r = await sb.rpc('cancel_trip', { p_trip: id }); return noFn(r) ? sb.from('trips').update({ active: false }).eq('id', id) : r; };
+  const cancelRequest = async (id) => { const r = await sb.rpc('cancel_request', { p_request: id }); return noFn(r) ? sb.from('ride_requests').update({ active: false }).eq('id', id) : r; };
+  const reportLine = (m, otherId) => (PCOK && m && ['completed', 'cancelled', 'no_show'].includes(m.status) ? '<div style="margin-top:6px"><button class="btn ghost" data-report="' + m.id + '|' + otherId + '">Report a problem</button></div>' : '');
   let msgTimer = null;
   function msgDialog(matchId) {
     const x = matches.find((m) => m.id === matchId); if (!x) return;
@@ -220,7 +224,8 @@
     document.body.appendChild(ov);
     document.getElementById('rp-cancel').onclick = () => ov.remove();
     document.getElementById('rp-send').onclick = async () => {
-      const e = (await sb.from('reports').insert({ reported_id: otherId, match_id: matchId, reason: document.getElementById('rp-reason').value, details: document.getElementById('rp-text').value.trim() || null })).error;
+      const rr = await sb.rpc('report_problem', { p_match: matchId, p_reason: document.getElementById('rp-reason').value, p_details: document.getElementById('rp-text').value.trim() || null });
+      const e = (noFn(rr) ? await sb.from('reports').insert({ reported_id: otherId, match_id: matchId, reason: document.getElementById('rp-reason').value, details: document.getElementById('rp-text').value.trim() || null }) : rr).error;
       if (e) { toast('Could not send the report: ' + e.message); return; }
       ov.remove(); toast('Report sent. Thank you.');
     };
@@ -346,7 +351,7 @@
     bar.classList.toggle('signedin', !!user);
     if (user) {
       bar.innerHTML = `<div class="card" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:space-between"><span>Signed in as <b>${esc(me.name || user.email)}</b> <span class="mut">&middot; ${me.points} pts</span></span><button class="btn ghost" id="lv-out">Sign out</button></div>`;
-      $('lv-out').onclick = () => sb.auth.signOut();
+      $('lv-out').onclick = async () => { try { await sb.rpc('stop_sharing'); } catch (e) { /* signing out matters more */ } try { const nat = nativeLoc(); if (nat) nat.stop(); } catch (e) { /* ignore */ } sb.auth.signOut(); };
       return;
     }
     bar.innerHTML = `<div class="card"><h2>Sign in</h2>
@@ -903,9 +908,9 @@
     const tripRows = pastTrips.filter((t) => (known(t) || t.origin) && (matches.some((x) => x.trip_id === t.id && x.status === 'completed') || kmOf(t.id) > 0)).slice(0, 8).map((t) => {
       const ms = matches.filter((x) => x.trip_id === t.id), done = ms.filter((x) => x.status === 'completed'), km = kmOf(t.id);
       const who = done.length ? done.map((x) => nm(x.rider_id)).join(', ') : '';
-      return '<div style="padding:8px 0;border-top:1px solid var(--line)"><b>' + esc(disp(t, 'origin')) + ' to ' + esc(disp(t, 'dest')) + '</b> <span class="tag">' + (done.length ? 'completed' : 'no riders') + '</span><div class="mut">' + esc(RSD.label(t.trip_date)) + ' at ' + clk(t.depart_min) + (who ? ' &middot; ' + who : '') + ' &middot; ' + done.length + ' rider' + (done.length === 1 ? '' : 's') + (km ? ' &middot; ' + km.toFixed(1) + ' km' : '') + '</div>' + done.map((x) => rateLine(x, x.rider_id)).join('') + '</div>';
+      return '<div style="padding:8px 0;border-top:1px solid var(--line)"><b>' + esc(disp(t, 'origin')) + ' to ' + esc(disp(t, 'dest')) + '</b> <span class="tag">' + (done.length ? 'completed' : 'no riders') + '</span><div class="mut">' + esc(RSD.label(t.trip_date)) + ' at ' + clk(t.depart_min) + (who ? ' &middot; ' + who : '') + ' &middot; ' + done.length + ' rider' + (done.length === 1 ? '' : 's') + (km ? ' &middot; ' + km.toFixed(1) + ' km' : '') + '</div>' + done.map((x) => rateLine(x, x.rider_id) + reportLine(x, x.rider_id)).join('') + '</div>';
     }).join('');
-    const rideRows = past.filter((x) => x.rider_id === user.id).map((x) => '<div style="padding:8px 0;border-top:1px solid var(--line)"><b>Ride with ' + nm(x.driver_id) + '</b> <span class="tag">' + esc(statusText(x.status)) + '</span><div class="mut">' + when(x) + ' &middot; ' + (x.pay_with === 'points' ? x.points + ' pts' : 'cash') + '</div>' + rateLine(x, x.driver_id) + '</div>').join('');
+    const rideRows = past.filter((x) => x.rider_id === user.id).map((x) => '<div style="padding:8px 0;border-top:1px solid var(--line)"><b>Ride with ' + nm(x.driver_id) + '</b> <span class="tag">' + esc(statusText(x.status)) + '</span><div class="mut">' + when(x) + ' &middot; ' + (x.pay_with === 'points' ? x.points + ' pts' : 'cash') + '</div>' + rateLine(x, x.driver_id) + reportLine(x, x.driver_id) + '</div>').join('');
     const segT = (v, label) => '<button type="button" class="btn' + (tripsView === v ? '' : ' ghost') + '" data-tview="' + v + '" style="flex:1;min-width:0">' + label + '</button>';
     const toggle = '<div style="display:flex;gap:8px;margin:0 0 12px">' + segT('driver', 'As a driver') + segT('rider', 'As a rider') + '</div>';
     window.__rules = card('Cancellation rules', policy);
@@ -973,7 +978,7 @@
       <div style="margin-top:8px"><button class="btn ghost" id="lv-savename">Save name</button></div>
       <div class="stat" style="margin-top:12px"><div><span class="mut">Points balance</span><b>${me.points}</b></div><div><span class="mut">Held for your rides</span><b>${heldAsRider}</b></div><div><span class="mut">Coming to you</span><b>${pendingAsDriver}</b></div><div><span class="mut">Value</span><b>1 pt = $0.10</b></div></div>
       <p class="mut">Earn points by driving riders who pay in points. Spend them when you ride. Out of points? You can still ride by paying a driver a cash gas-share. Points can't be cashed out or transferred, and they never exceed the real cost of the trip, so nobody profits.</p>`)
-      + card('Your data', '<p class="mut">We store your first name, email, the neighbourhood-level areas you post, your rides and your points. Your live location is shared only while you are driving a ride, and deleted when it ends. <a href="privacy.html">Privacy policy</a> &middot; <a href="terms.html">Terms</a></p><label>To erase your account and all your data, type DELETE</label><input type="text" id="del-confirm" autocomplete="off" style="' + INPUT + '"><div style="margin-top:8px"><button class="btn ghost" id="del-go" disabled>Delete my account</button></div><p class="warn" id="del-msg" role="alert"></p>')
+      + card('Your data', '<p class="mut">We store your first name, email, photo and car details, the places and map points you post, your rides, messages, ratings and points. Your live location is shared with your riders only while you drive, and the latest position is deleted when the ride ends. The person you are matched with can see your photo, first name and car during the ride and for 30 days after. <a href="privacy.html">Privacy policy</a> &middot; <a href="terms.html">Terms</a></p><label>To erase your account and all your data, type DELETE</label><input type="text" id="del-confirm" autocomplete="off" style="' + INPUT + '"><div style="margin-top:8px"><button class="btn ghost" id="del-go" disabled>Delete my account</button></div><p class="warn" id="del-msg" role="alert"></p>')
       + (isTest ? card('Track yourself', '<p class="mut">Walk or drive and watch yourself move on the map, with speed, distance and a trail. Your location stays on this device.</p><a class="btn" href="gps.html" style="display:inline-block;text-decoration:none">Open GPS test</a>') : '')
       + card('History', ledger.length ? ledger.map((x) => `<div style="padding:4px 0">${(x.delta > 0 ? '+' : '') + x.delta} pts <span class="mut">${esc(x.reason)}</span></div>`).join('') : '<p class="mut">Nothing yet.</p>');
   }
@@ -1140,7 +1145,7 @@
       if (!end && !window.confirm('Reset this trip?\n\nRiders who are not picked up yet are cancelled (their points go back to them). ' + (live ? 'Your Offer a ride now trip is cancelled. ' : 'Your posted trip stays. ') + 'Driving mode turns off. You can start a new trip right after.')) return;
       const todo = matches.filter((x) => x.driver_id === user.id && (x.status === 'accepted' || x.status === 'requested') && !x.picked_up_at);
       for (const x of todo) { try { await (x.status === 'requested' ? sb.rpc('respond_match', { p_match: x.id, p_accept: false }) : sb.rpc('cancel_ride', { p_match: x.id })); } catch (e) { /* already finished */ } }
-      if (myLiveTrip) { try { await sb.from('trips').update({ active: false }).eq('id', myLiveTrip.id); } catch (e) { /* ignore */ } }
+      if (myLiveTrip) { try { const ce = (await cancelTrip(myLiveTrip.id)).error; if (ce) toast(ce.message); } catch (e) { /* ignore */ } }
       stopShare(true); editing.trip = false; pending = null; viewD = null; mapSig = {}; formSig = '';
       try { localStorage.removeItem('rs_trip_on'); } catch (e) { /* storage blocked */ }
       toast(end ? 'Trip ended. Thank you for driving!' : 'Trip reset. You can start a new one.'); await loadAll();
@@ -1168,7 +1173,7 @@
     };
     on('ln-go', goLive);
     const swOn = $('ln-sw'); if (swOn) swOn.onchange = async () => { if (swOn.checked) { const ok = await goLive(); if (!ok) swOn.checked = false; } };
-    const swOff = $('ln-sw-off'); if (swOff) swOff.onchange = () => { if (!swOff.checked && myLiveTrip) { if (driveSession && !shouldShare()) stopShare(true); run(sb.from('trips').update({ active: false }).eq('id', myLiveTrip.id), 'Stopped offering seats'); } };
+    const swOff = $('ln-sw-off'); if (swOff) swOff.onchange = () => { if (!swOff.checked && myLiveTrip) { if (driveSession && !shouldShare()) stopShare(true); run(cancelTrip(myLiveTrip.id), 'Stopped offering seats'); } };
     on('rn-go', async () => {
       const p = $('rn-p').value, d = $('rn-d').value, need = plNeed('rn-p', 'where to pick you up') || plNeed('rn-d', 'where to drop you off'); if (need) { formMsg('rn-msg', need); return; }
       if (samePlace(p, d, 'rn-p', 'rn-d')) { formMsg('rn-msg', 'Pick two different places'); return; }
@@ -1189,8 +1194,8 @@
     each('[data-noshow]', (b) => !window.confirm('Mark this rider as a no-show?\n\nYou keep the points. This goes on the rider\'s record.') ? null : run(sb.rpc('mark_no_show', { p_match: b.dataset.noshow }), 'Marked as a no-show. You keep the points.'));
     each('[data-acc]', (b) => run(sb.rpc('respond_match', { p_match: b.dataset.acc, p_accept: true }), 'Accepted'));
     each('[data-dec]', (b) => run(sb.rpc('respond_match', { p_match: b.dataset.dec, p_accept: false }), 'Declined'));
-    each('[data-offtrip]', (b) => run(sb.from('trips').update({ active: false }).eq('id', b.dataset.offtrip), 'Trip cancelled'));
-    each('[data-offreq]', (b) => run(sb.from('ride_requests').update({ active: false }).eq('id', b.dataset.offreq), 'Request cancelled'));
+    each('[data-offtrip]', (b) => !window.confirm('Cancel this trip?\n\nAny rider who is booked is cancelled and gets their points back.') ? null : run(cancelTrip(b.dataset.offtrip), 'Trip cancelled'));
+    each('[data-offreq]', (b) => !window.confirm('Cancel this request?\n\nIf a driver has accepted, the cancellation rules apply.') ? null : run(cancelRequest(b.dataset.offreq), 'Request cancelled'));
     each('[data-go]', (b) => $(b.dataset.go).click());
   }
 
