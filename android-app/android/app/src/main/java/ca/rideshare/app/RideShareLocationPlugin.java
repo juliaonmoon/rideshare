@@ -69,7 +69,8 @@ public class RideShareLocationPlugin extends Plugin {
         Intent i = new Intent(getContext(), LocationService.class)
                 .putExtra("url", call.getString("url"))
                 .putExtra("key", call.getString("key", ""))
-                .putExtra("token", call.getString("token"));
+                .putExtra("token", call.getString("token"))
+                .putExtra("riderOnly", Boolean.TRUE.equals(call.getBoolean("riderOnly", false)));
         ContextCompat.startForegroundService(getContext(), i);
         call.resolve();
     }
