@@ -158,7 +158,9 @@
     const keep = Math.floor(pts / 2);
     return { ok: true, text: 'Late cancel (within 2 hours) and your free one this month is used: your driver keeps ' + keep + ' points and you get ' + (pts - keep) + ' back.' };
   }
-  const canNoShow = (m) => { const t = tripBy(m.trip_id), pk = pickupMs(m); return m.status === 'accepted' && !m.picked_up_at && m.driver_id === user.id && t && pk != null && Date.now() >= pk + t.max_wait * 60000; };
+  const canNoShow = (m) => { const t = tripBy(m.trip_id), pk = pickupMs(m); return m.status === 'accepted' && !m.picked_up_at && m.driver_id === user.id && t && pk != null && !!m.arrived_at && Date.now() >= Date.parse(m.arrived_at) + t.max_wait * 60000; };
+  // after arriving, the driver waits a set time before a no-show is possible; show how long is left
+  const noShowHint = (m) => { const t = tripBy(m.trip_id); if (!t || m.status !== 'accepted' || m.picked_up_at || m.driver_id !== user.id || !m.arrived_at) return ''; const left = Math.ceil((Date.parse(m.arrived_at) + t.max_wait * 60000 - Date.now()) / 60000); return left > 0 ? '<span class="mut">You can mark a no-show in ' + left + ' min.</span>' : ''; };
   // Ride steps (driver taps, rider sees): accepted -> on_my_way -> arrived -> picked_up -> dropped_off (completed)
   const stageOf = (m) => (m.status === 'completed' && m.dropped_off_at ? 'dropped_off' : m.picked_up_at ? 'picked_up' : m.arrived_at ? 'arrived' : m.en_route_at ? 'on_my_way' : 'accepted');
   const STEP_LABEL = { accepted: 'seat confirmed', on_my_way: 'driver on the way', arrived: 'driver has arrived', picked_up: 'ride in progress', dropped_off: 'completed' };
@@ -679,8 +681,8 @@
         <div style="margin-top:6px"><button class="btn" data-acc="${x.id}">Accept</button> <button class="btn ghost" data-dec="${x.id}">Decline</button></div></div>`).join('') : '<p class="mut">None yet. Riders ask you for a seat; you accept here.</p>');
     const riding = card('Confirmed riders', acc.length ? acc.map((x) => { const q = reqById[x.request_id], ns = nextStep(x, esc(names[x.rider_id] || 'rider')), open = stepsOpen(x), link = mapsLink(x, q);
       return `<div style="padding:8px 0;border-top:1px solid var(--line)">${whoCard(x.rider_id, 'rider')}<div style="margin:4px 0"><span class="tag">${esc(STEP_LABEL[stageOf(x)])}</span>${x.rider_confirmed_at ? ' <span class="tag">rider confirmed</span>' : ''}</div><div class="mut">${x.pay_with === 'points' ? x.points + ' pts held until drop-off' : 'cash gas-share'}${q ? ' &middot; ' + esc(q.pickup) + ' to ' + esc(q.dropoff) : ''}</div>
-        <div style="margin-top:6px">${open ? `<button class="btn" data-step="${x.id}|${ns.step}">${ns.label}</button>` : '<span class="mut">Steps open 2 hours before pickup.</span>'} ${link && open ? `<a class="btn ghost" style="display:inline-block;text-decoration:none" href="${link}" target="_blank" rel="noopener">Open in Google Maps</a>` : ''} ${canNoShow(x) ? `<button class="btn ghost" data-noshow="${x.id}">Rider did not show up</button>` : ''} ${PCOK ? `<button class="btn ghost" data-report="${x.id}|${x.rider_id}">Report a problem</button>` : ''}</div></div>`; }).join('') : '<p class="mut">No riders yet.</p>');
-    const near = card('People who need a ride along your route', found.length ? found.map((m) => { const q = reqById[m.rider.id]; return `<div style="padding:6px 0;border-top:1px solid var(--line)"><b>${nm(q.user_id)}</b>${badge(q.user_id, 'rider')}${tagsFor(q.user_id, 'rider')}${q.live ? ' <span class="tag">needs a ride now</span>' : ''} <span class="mut">${esc(q.pickup)} to ${esc(q.dropoff)} &middot; +${Math.round(m.addedDetour)} min detour &middot; pick up ${clk(m.pickupAt)} &middot; drop ${clk(m.dropAt)}</span></div>`; }).join('') : '<p class="mut">Nobody matching on this date.</p>');
+        <div style="margin-top:6px">${open ? `<button class="btn" data-step="${x.id}|${ns.step}">${ns.label}</button>` : '<span class="mut">Steps open 2 hours before pickup.</span>'} ${link && open ? `<a class="btn ghost" style="display:inline-block;text-decoration:none" href="${link}" target="_blank" rel="noopener">Open in Google Maps</a>` : ''} ${canNoShow(x) ? `<button class="btn ghost" data-noshow="${x.id}">Rider did not show up</button>` : noShowHint(x)} ${PCOK ? `<button class="btn ghost" data-report="${x.id}|${x.rider_id}">Report a problem</button>` : ''}</div></div>`; }).join('') : '<p class="mut">No riders yet.</p>');
+    const near = !found.length ? '' : card('Matching ride requests', found.map((m) => { const q = reqById[m.rider.id]; return `<div style="padding:6px 0;border-top:1px solid var(--line)"><b>${nm(q.user_id)}</b>${badge(q.user_id, 'rider')}${tagsFor(q.user_id, 'rider')}${q.live ? ' <span class="tag">needs a ride now</span>' : ''} <span class="mut">${esc(q.pickup)} to ${esc(q.dropoff)} &middot; +${Math.round(m.addedDetour)} min detour &middot; pick up ${clk(m.pickupAt)} &middot; drop ${clk(m.dropAt)}</span></div>`; }).join(''));
     return dateCard + summary + '<div id="seat-requests">' + reqs + '</div><div id="riding-with-me">' + riding + '</div>' + near;
   }
 
@@ -737,7 +739,7 @@
       const payWith = curReq.pays === 'either' ? (t.accepts === 'cash' ? 'cash' : 'points') : curReq.pays;
       if (!(t.accepts === 'either' || t.accepts === payWith)) return;
       const st = mine.find((x) => x.trip_id === t.id);
-      const price = payWith === 'points' ? pts + ' pts' : RS.money(dollars);
+      const price = payWith === 'points' ? pts + ' pts (' + RS.money(pts * RS.POINT_VALUE) + ')' : RS.money(dollars);
       const btn = st ? `<span class="tag">${esc(st.status === 'requested' ? 'seat requested' : statusText(st.status))}</span>${st.status === 'requested' ? ` <button class="btn ghost" data-can="${st.id}">Cancel</button>` : ''}` : `<button class="btn" data-req="${t.id}" data-pay="${payWith}" data-pts="${pts}" data-date="${viewR}" data-dmin="${Math.max(0, m.addedDetour).toFixed(1)}" data-dkm="${Math.max(0, m.addedKm || 0).toFixed(1)}">Request &middot; ${price}</button>`;
       list += `<div style="padding:8px 0;border-top:1px solid var(--line)"><b>${nm(t.user_id)}</b>${badge(t.user_id, 'driver')}${tagsFor(t.user_id, 'driver')}${t.live ? ' <span class="tag">leaving now</span>' : ''} <span class="mut">leaves ${clk(t.depart_min)} &middot; picks you up ${clk(m.pickupAt)} &middot; drops ${clk(m.dropAt)} &middot; adds ${Math.round(m.addedDetour)} min for them</span><div style="margin-top:6px">${btn}</div></div>`;
     });
@@ -767,7 +769,7 @@
       } else {
         const b = [];
         if (!isRider && x.status === 'requested') b.push(`<button class="btn" data-acc="${x.id}">Accept</button> <button class="btn ghost" data-dec="${x.id}">Decline</button>`);
-        if (canNoShow(x)) b.push(`<button class="btn ghost" data-noshow="${x.id}">Rider did not show up</button>`);
+        if (canNoShow(x)) b.push(`<button class="btn ghost" data-noshow="${x.id}">Rider did not show up</button>`); else if (noShowHint(x)) b.push(noShowHint(x));
         if ((isRider || x.status === 'accepted') && !x.picked_up_at) b.push(`<button class="btn ghost" data-cancelask="${x.id}">${!isRider ? 'Cancel pickup' : x.status === 'requested' ? 'Cancel request' : 'Cancel ride'}</button>`);
         if (x.status === 'accepted' && PCOK) b.push(`<button class="btn ghost" data-share="${x.id}">Share my trip</button>`, `<button class="btn ghost" data-report="${x.id}|${other}">Report a problem</button>`);
         actions = b.length ? `<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:8px">${b.join(' ')}</div>` : '';
@@ -856,7 +858,7 @@
     return card('Your name and points', `<label>First name shown to others</label><input type="text" id="lv-name" maxlength="30" value="${esc(me.name)}" style="${INPUT}">
       <div style="margin-top:8px"><button class="btn ghost" id="lv-savename">Save name</button></div>
       <div class="stat" style="margin-top:12px"><div><span class="mut">Points balance</span><b>${me.points}</b></div><div><span class="mut">Held for your rides</span><b>${heldAsRider}</b></div><div><span class="mut">Coming to you</span><b>${pendingAsDriver}</b></div><div><span class="mut">Value</span><b>1 pt = $0.10</b></div></div>
-      <p class="mut">Earn points by driving riders who pay in points. Spend them when you ride. Points can't be cashed out or transferred, and they never exceed the real cost of the trip, so nobody profits.</p>`)
+      <p class="mut">Earn points by driving riders who pay in points. Spend them when you ride. Out of points? You can still ride by paying a driver a cash gas-share. Points can't be cashed out or transferred, and they never exceed the real cost of the trip, so nobody profits.</p>`)
       + card('Your data', '<p class="mut">We store your first name, email, the neighbourhood-level areas you post, your rides and your points. Your live location is shared only while you are driving a ride, and deleted when it ends. <a href="privacy.html">Privacy policy</a> &middot; <a href="terms.html">Terms</a></p><label>To erase your account and all your data, type DELETE</label><input type="text" id="del-confirm" autocomplete="off" style="' + INPUT + '"><div style="margin-top:8px"><button class="btn ghost" id="del-go" disabled>Delete my account</button></div><p class="warn" id="del-msg" role="alert"></p>')
       + (isTest ? card('Track yourself', '<p class="mut">Walk or drive and watch yourself move on the map, with speed, distance and a trail. Your location stays on this device.</p><a class="btn" href="gps.html" style="display:inline-block;text-decoration:none">Open GPS test</a>') : '')
       + card('History', ledger.length ? ledger.map((x) => `<div style="padding:4px 0">${(x.delta > 0 ? '+' : '') + x.delta} pts <span class="mut">${esc(x.reason)}</span></div>`).join('') : '<p class="mut">Nothing yet.</p>');
@@ -1065,7 +1067,7 @@
     each('[data-cancelgo]', (b) => { askCancel = null; run(sb.rpc('cancel_ride', { p_match: b.dataset.cancelgo }), 'Ride cancelled. See your points history for any refund.'); });
     each('[data-step]', (b) => { const [id, st] = b.dataset.step.split('|'); run(sb.rpc('ride_step', { p_match: id, p_step: st }), st === 'dropped_off' ? 'Dropped off. That rider\'s ride is complete and the points are paid. Keep driving to your destination.' : 'Updated'); });
     each('[data-incar]', (b) => run(sb.rpc('rider_in_car', { p_match: b.dataset.incar }), 'Thanks, confirmed'));
-    each('[data-noshow]', (b) => run(sb.rpc('mark_no_show', { p_match: b.dataset.noshow }), 'Marked as a no-show. You keep the points.'));
+    each('[data-noshow]', (b) => !window.confirm('Mark this rider as a no-show?\n\nYou keep the points. This goes on the rider\'s record.') ? null : run(sb.rpc('mark_no_show', { p_match: b.dataset.noshow }), 'Marked as a no-show. You keep the points.'));
     each('[data-acc]', (b) => run(sb.rpc('respond_match', { p_match: b.dataset.acc, p_accept: true }), 'Accepted'));
     each('[data-dec]', (b) => run(sb.rpc('respond_match', { p_match: b.dataset.dec, p_accept: false }), 'Declined'));
     each('[data-offtrip]', (b) => run(sb.from('trips').update({ active: false }).eq('id', b.dataset.offtrip), 'Trip cancelled'));
