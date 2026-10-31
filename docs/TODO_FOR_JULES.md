@@ -11,8 +11,8 @@ Open https://supabase.com/dashboard/project/iivhfapvkseeomxtsrxf/sql/new, paste 
 | `supabase/migrations/020_detour_limits.sql` | Detour limits in minutes and km | Done |
 | `supabase/migrations/021_profile_cards_reports.sql` | Photos, car details, Report a problem | Done |
 | `supabase/migrations/022_no_show_needs_arrival.sql` | No-show only after arrival and waiting | Done |
-| `supabase/migrations/023_meet_spot_auto_end_rider_alerts.sql` | Meeting spot, trip ends on arrival, rider phone alerts | Run it (Jules said "done" for 022; ask Claude if unsure about 023) |
-| `supabase/migrations/024_messages_ratings_admin.sql` | Messages, ratings, admin reports screen, blocking | **To run** |
+| `supabase/migrations/023_meet_spot_auto_end_rider_alerts.sql` | Meeting spot, trip ends on arrival, rider phone alerts | Please confirm you ran it. Claude cannot see the database from here. If the Set meeting spot button is missing on an accepted ride, it was not run. |
+| `supabase/migrations/024_messages_ratings_admin.sql` | Messages, ratings, admin reports screen, blocking | Done (Jules ran it on 2026-10-30) |
 
 How to copy a file to the clipboard: ask Claude, or open the file on GitHub, click "Copy raw file", then paste it into the SQL editor.
 
