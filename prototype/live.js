@@ -65,6 +65,7 @@
   let tripMode = (() => { try { return localStorage.getItem('rs_trip_mode') === 'later' ? 'later' : 'now'; } catch (e) { return 'now'; } })();       // the one trip card: 'now' (offer a ride now) or 'later' (pick a day and time)
   const LV = {};              // what is typed in the 'later' fields, kept across refreshes
   let bubbleHidden = false;
+  let pastTrips = [];   // my trips that are finished or taken down
   let apOn = null;   // test autopilot state last sent to the Android helper
   function syncAutopilot() {
     const n = nativeLoc && nativeLoc(); if (!n || !n.setAutopilot) return;
@@ -182,6 +183,7 @@
       const n = await sb.from('profiles').select('id,display_name').in('id', [...ids]);
       (n.data || []).forEach((x) => { names[x.id] = x.display_name; });
       try { const ta = await sb.from('test_accounts').select('user_id,test_mode').eq('user_id', uid).maybeSingle(); isTest = !!ta.data; testMode = !!(ta.data && ta.data.test_mode); } catch (e) { isTest = false; testMode = false; }
+      try { const pt = await sb.from('trips').select('*').eq('user_id', uid).eq('active', false).order('created_at', { ascending: false }).limit(12); pastTrips = pt.data || []; } catch (e) { pastTrips = []; }
       try { const ds = await sb.from('drive_sessions').select('*').order('started_at', { ascending: false }).limit(5); drives = ds.data || []; } catch (e) { drives = []; }
       try { const st = await sb.from('user_settings').select('*').eq('user_id', uid).maybeSingle(); mySet = st.data || null; const sr = await sb.rpc('ride_styles', { p_ids: [...ids] }); styles = {}; (sr.data || []).forEach((x) => { styles[x.user_id] = x; }); } catch (e) { /* older database without settings: ignore */ }
       const rl = await sb.from('reliability').select('*'); rel = {}; (rl.data || []).forEach((x) => { rel[x.user_id] = x; });
@@ -711,7 +713,20 @@
     const pastRows = past.length ? past.map((x) => { const isRider = x.rider_id === user.id; return `<div style="padding:6px 0;border-top:1px solid var(--line)">${when(x)} <span class="tag">${esc(statusText(x.status))}</span><div class="mut">${isRider ? 'Driver' : 'Rider'} ${nm(isRider ? x.driver_id : x.rider_id)} &middot; ${x.pay_with === 'points' ? x.points + ' pts' : 'cash'}${x.refunded ? ' &middot; ' + x.refunded + ' pts returned' : ''}</div></div>`; }).join('') : '<p class="mut">Nothing yet.</p>';
     const policy = `<p class="mut">Points are held when a driver accepts, and paid to the driver after the ride.</p>
       <ul class="mut" style="margin:6px 0 0 18px;padding:0"><li>Cancel more than 2 hours before pickup: all points back.</li><li>Cancel within 2 hours: your first one each month is free; after that the driver keeps half.</li><li>You can't cancel after the pickup time. If a rider doesn't show, the driver can mark a no-show after waiting.</li><li>If a driver cancels, the rider gets all points back.</li><li>Cash rides: no points move.</li></ul>`;
-    return card('My trip', mineTrip) + card('My ride request', mineReq) + card('Upcoming rides (as a rider)', riderRows) + card('Upcoming passengers (as a driver)', driverRows) + card('Recent', pastRows) + card('Cancellation rules', policy);
+    // Past trips: my finished trips (route, date, who rode, distance) and the rides I took as a rider
+    const kmOf = (id) => drives.filter((d) => d.trip_id === id).reduce((a, d) => a + (+d.distance_km || 0), 0);
+    const tripRows = pastTrips.filter((t) => known(t) || t.origin).slice(0, 8).map((t) => {
+      const ms = matches.filter((x) => x.trip_id === t.id), done = ms.filter((x) => x.status === 'completed'), km = kmOf(t.id);
+      const who = done.length ? done.map((x) => nm(x.rider_id)).join(', ') : '';
+      return '<div style="padding:8px 0;border-top:1px solid var(--line)"><b>' + esc(disp(t, 'origin')) + ' to ' + esc(disp(t, 'dest')) + '</b> <span class="tag">' + (done.length ? 'completed' : 'no riders') + '</span><div class="mut">' + esc(RSD.label(t.trip_date)) + ' at ' + RS.clock(t.depart_min) + (who ? ' &middot; ' + who : '') + ' &middot; ' + done.length + ' rider' + (done.length === 1 ? '' : 's') + (km ? ' &middot; ' + km.toFixed(1) + ' km' : '') + '</div></div>';
+    }).join('');
+    const rideRows = past.filter((x) => x.rider_id === user.id).map((x) => '<div style="padding:8px 0;border-top:1px solid var(--line)"><b>Ride with ' + nm(x.driver_id) + '</b> <span class="tag">' + esc(statusText(x.status)) + '</span><div class="mut">' + when(x) + ' &middot; ' + (x.pay_with === 'points' ? x.points + ' pts' : 'cash') + '</div></div>').join('');
+    const hasComing = !!(curTrip || curReq || asRider.length || asDriver.length);
+    const coming = hasComing
+      ? (curTrip ? card('My trip', mineTrip) : '') + (curReq ? card('My ride request', mineReq) : '') + (asRider.length ? card('Upcoming rides (as a rider)', riderRows) : '') + (asDriver.length ? card('Upcoming passengers (as a driver)', driverRows) : '')
+      : card('Coming up', '<p class="mut">Nothing yet. Switch on <b>Offer seats to riders</b> on Home, or post a trip for a set day and time.</p>');
+    window.__rules = card('Cancellation rules', policy);
+    return coming + card('Past trips', (tripRows + rideRows) || '<p class="mut">Nothing yet. Finished trips and rides show up here.</p>');
   }
 
   // ---------- settings tab ----------
@@ -777,7 +792,7 @@
     if (!busyIn('lr-top')) $('lr-top').innerHTML = guard('ride now', riderNow) + guard('rider summary', riderTop);
     $('ld-lists').innerHTML = guard('riders list', driverLists);
     $('lr-lists').innerHTML = guard('drivers list', riderLists);
-    $('lu-main').innerHTML = guard('upcoming', upcomingMain) + guard('drive log', driveLogCard);
+    $('lu-main').innerHTML = guard('upcoming', upcomingMain) + guard('drive log', driveLogCard) + (window.__rules || '');
     applyCar(); syncSharing();
     try { wire(); } catch (e) { console.error('wire', e); showErr('buttons: ' + (e && e.message || e)); }
   }
