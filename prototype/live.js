@@ -856,11 +856,11 @@
       const payWith = curReq.pays === 'either' ? (t.accepts === 'cash' ? 'cash' : 'points') : curReq.pays;
       if (!(t.accepts === 'either' || t.accepts === payWith)) return;
       const st = mine.find((x) => x.trip_id === t.id);
-      const price = payWith === 'points' ? pts + ' pts (' + RS.money(pts * RS.POINT_VALUE) + ')' : RS.money(dollars);
+      const price = 'about ' + (payWith === 'points' ? pts + ' pts (' + RS.money(pts * RS.POINT_VALUE) + ')' : RS.money(dollars));
       const btn = st ? `<span class="tag">${esc(st.status === 'requested' ? 'seat requested' : statusText(st.status))}</span>${st.status === 'requested' ? ` <button class="btn ghost" data-can="${st.id}">Cancel</button>` : ''}` : `<button class="btn" data-req="${t.id}" data-rq="${curReq.id}" data-pay="${payWith}" data-pts="${pts}" data-date="${viewR}" data-dmin="${Math.max(0, m.addedDetour).toFixed(1)}" data-dkm="${Math.max(0, m.addedKm || 0).toFixed(1)}">Request &middot; ${price}</button>`;
       list += `<div style="padding:8px 0;border-top:1px solid var(--line)"><b>${nm(t.user_id)}</b>${badge(t.user_id, 'driver')}${scoreTag(t.user_id)}${tagsFor(t.user_id, 'driver')}${t.live ? ' <span class="tag">leaving now</span>' : ''} <span class="mut">leaves ${clk(t.depart_min)} &middot; picks you up ${clk(m.pickupAt)} &middot; drops ${clk(m.dropAt)} &middot; adds ${Math.round(m.addedDetour)} min for them</span><div style="margin-top:6px">${btn}</div></div>`;
     });
-    html += card('Drivers going your way on ' + esc(RSD.label(viewR)), list || '<p class="mut">No drivers match on this date. Check back soon.</p>');
+    html += card('Drivers going your way on ' + esc(RSD.label(viewR)), (list ? '<p class="mut" style="margin:0 0 6px">These prices are estimates. When you ask for a seat, RideShare works out the final extra time and price itself, using live traffic. Your price goes down as more riders join.</p>' : '') + (list || '<p class="mut">No drivers match on this date. Check back soon.</p>'));
     const sig = routeSig(mapStops) + viewR; if (mapSig.r !== sig) { mapSig.r = sig; window.RS_UI.drawMap('map-lr', mapStops); }
     return html;
   }
@@ -1184,7 +1184,8 @@
     each('[data-stoplive]', (b) => { const isTrip = b.dataset.stoplive === 'trip', row = isTrip ? myLiveTrip : myLiveReq; if (isTrip && driveSession && !shouldShare()) stopShare(true); if (row) run(sb.from(isTrip ? 'trips' : 'ride_requests').update({ active: false }).eq('id', row.id), 'Stopped'); });
     each('#ld-dates button', (b) => { viewD = b.dataset.date; mapSig = {}; render(); });
     each('#lr-dates button', (b) => { viewR = b.dataset.date; mapSig = {}; render(); });
-    each('[data-req]', (b) => needProfile('ride') ? null : run(sb.rpc('request_seat', { p_trip: b.dataset.req, p_request: b.dataset.rq, p_pay_with: b.dataset.pay, p_points: +b.dataset.pts, p_date: b.dataset.date, ...(DKOK ? { p_detour_min: +b.dataset.dmin, p_detour_km: +b.dataset.dkm } : {}) }), 'Seat requested'));
+    each('[data-req]', (b) => { if (needProfile('ride')) return; const base = { p_trip: b.dataset.req, p_request: b.dataset.rq, p_pay_with: b.dataset.pay, p_date: b.dataset.date };
+      run((async () => { const r = await sb.rpc('request_seat', base); return noFn(r) ? sb.rpc('request_seat', { ...base, p_points: +b.dataset.pts, ...(DKOK ? { p_detour_min: +b.dataset.dmin, p_detour_km: +b.dataset.dkm } : {}) }) : r; })(), 'Seat requested'); });
     each('[data-can]', (b) => run(sb.rpc('cancel_ride', { p_match: b.dataset.can }), 'Cancelled'));
     each('[data-cancelask]', (b) => { askCancel = b.dataset.cancelask; render(); });
     each('[data-cancelno]', () => { askCancel = null; render(); });
