@@ -104,7 +104,10 @@ public class LocationService extends Service {
     private volatile boolean riderActive = false;   // the rider has a request or ride that matters today
     private volatile double destLat = Double.NaN, destLng = Double.NaN;   // where the driver's trip ends
     private boolean wasFar = false, ending = false; private int nearEnd = 0; private long lastEndTry = 0;
-    private boolean firstRiderPoll = true;
+    static final String NO_NET = "NO_NET";
+    private long endSince = 0;
+    private final java.util.Map<String, Long> arriveSince = new java.util.HashMap<>();
+    private final Set<String> arriveSent = new HashSet<>();
     private final java.util.Map<String, String> riderStage = new java.util.HashMap<>();
     static final int ID_RIDER = 500000, END_M = 250;
     private volatile boolean tripOn = false;   // the driver has a trip on today (so the floating button shows for the whole trip, not only while a rider is on board)
@@ -137,6 +140,7 @@ public class LocationService extends Service {
         key = sp.getString("key", "");
         token = sp.getString("token", "");
         riderOnly = sp.getBoolean("riderOnly", false);
+        if (riderStage.isEmpty()) loadRiderStages();
         if (token.isEmpty() || url.isEmpty()) {
             stopSelf();
             return START_NOT_STICKY;
@@ -153,7 +157,7 @@ public class LocationService extends Service {
                 .setCategory(NotificationCompat.CATEGORY_SERVICE)
                 .build();
         if (Build.VERSION.SDK_INT >= 29) {
-            startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION);
+            startForeground(1, n, riderOnly ? ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC : ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION);
         } else {
             startForeground(1, n);
         }
@@ -239,6 +243,7 @@ public class LocationService extends Service {
 
     /** Asks the server about this driver: ride in progress? still on duty? any new seat requests? */
     private void pollAlerts() {
+        flushPending();
         pollRider();
         pollMessages();
         HttpURLConnection c = null;
@@ -511,6 +516,7 @@ public class LocationService extends Service {
             if (r == null) continue;
             String id = r.optString("id"), name = r.optString("name", "Rider"), stage = r.optString("stage");
             long now = System.currentTimeMillis();
+            if ("on_my_way".equals(stage) && r.optBoolean("pickup_exact", false) && !r.isNull("pickup_lat")) autoArrive(id, name, loc, r.optDouble("pickup_lat"), r.optDouble("pickup_lng"), now);
             if ("picked_up".equals(stage)) {
                 if (r.optBoolean("dropoff_exact", false) && !r.isNull("dropoff_lat")
                         && meters(loc.getLatitude(), loc.getLongitude(), r.optDouble("dropoff_lat"), r.optDouble("dropoff_lng")) <= DROP_M && dueAlert("drop:" + id, now)) {
@@ -518,7 +524,6 @@ public class LocationService extends Service {
                 }
             } else if (r.optBoolean("pickup_exact", false) && !r.isNull("pickup_lat")
                     && meters(loc.getLatitude(), loc.getLongitude(), r.optDouble("pickup_lat"), r.optDouble("pickup_lng")) <= ARRIVE_M && dueAlert("pick:" + id, now)) {
-                if ("on_my_way".equals(stage)) stepCall(id, "arrived");   // automatic: the rider sees "your driver has arrived"
                 headsUp(id, "At " + name + "'s pickup", "Tap when " + name + " is in the car." + (r.optString("meet_note", "").isEmpty() ? "" : " Meeting spot: " + r.optString("meet_note")), "picked_up", "Picked up " + name, name);
             }
         }
@@ -530,9 +535,11 @@ public class LocationService extends Service {
         if (ending || !tripOn || Double.isNaN(destLat) || Double.isNaN(destLng)) return;
         double m = meters(loc.getLatitude(), loc.getLongitude(), destLat, destLng);
         if (m > 1500) wasFar = true;   // the trip really started somewhere else, so starting out near the destination does not end it
-        if (!wasFar || m > END_M) { nearEnd = 0; return; }
+        if (!wasFar || m > END_M || !freshAccurate(loc, false)) { endSince = 0; return; }
         if (rides.length() > 0) return;   // somebody is still on board or waiting
-        if (++nearEnd < 3) return;        // a few readings in a row, so driving past does not count
+        long ft = fakeActive() ? System.currentTimeMillis() : loc.getTime();
+        if (endSince == 0) { endSince = ft; return; }
+        if (ft - endSince < 15000) return;   // fresh, accurate readings at the destination for 15 seconds, so driving past does not count
         long now = System.currentTimeMillis();
         if (now - lastEndTry < 30000) return;
         lastEndTry = now; ending = true;
@@ -593,11 +600,11 @@ public class LocationService extends Service {
                     String id = r.optString("id"), stage = r.optString("stage");
                     seen.add(id);
                     String prev = riderStage.put(id, stage);
-                    if (!firstRiderPoll && !stage.equals(prev) && !"picked_up".equals(stage)) notifyRider(r, stage);
+                    if (!stage.equals(prev) && !"picked_up".equals(stage)) notifyRider(r, stage);
                 }
             }
             riderStage.keySet().retainAll(seen);
-            firstRiderPoll = false;
+            saveRiderStages();
         } catch (Exception ignore) { /* try again next time */ }
     }
 
@@ -713,7 +720,7 @@ public class LocationService extends Service {
             try { msg = new JSONObject(sb.toString()).optString("message", msg); } catch (Exception ignore) { }
             return msg;
         } catch (Exception e) {
-            return "No connection. Open RideShare to update this step.";
+            return NO_NET;
         } finally {
             if (c != null) c.disconnect();
         }
@@ -727,6 +734,9 @@ public class LocationService extends Service {
             nm.cancel(idOf(ID_POP, matchId));
             nm.cancel(idOf(ID_STEP, matchId));
             pollAlerts();   // refresh right away: shows the next step, or clears the finished rider
+        } else if (NO_NET.equals(err)) {
+            queueStep(matchId, step, name);
+            post2("Saved: " + name, "No signal right now. Your tap is saved and will be sent when you are back online.", ID_ERR + (nid & 0xfff));
         } else {
             post2("Could not update " + name, err, ID_ERR + (nid & 0xfff));
         }
@@ -796,10 +806,9 @@ public class LocationService extends Service {
         io.execute(() -> answer(id, name, accept, nid));
     }
 
-    /** Accepts or declines a request with the same rules as the app. */
-    private void answer(String id, String name, boolean accept, int nid) {
+    /** Accepts or declines a request with the same rules as the app. Returns "" on success, NO_NET without signal, or the reason it failed. */
+    private String answerCall(String id, boolean accept) {
         HttpURLConnection c = null;
-        NotificationManager nm = getSystemService(NotificationManager.class);
         try {
             c = (HttpURLConnection) new URL(url + "/rest/v1/rpc/respond_match_token").openConnection();
             c.setRequestMethod("POST");
@@ -812,7 +821,8 @@ public class LocationService extends Service {
                 os.write(new JSONObject().put("p_token", token).put("p_match", id).put("p_accept", accept).toString().getBytes(StandardCharsets.UTF_8));
             }
             int code = c.getResponseCode();
-            InputStream is = code >= 200 && code < 300 ? c.getInputStream() : c.getErrorStream();
+            if (code >= 200 && code < 300) return "";
+            InputStream is = c.getErrorStream();
             StringBuilder sb = new StringBuilder();
             if (is != null) {
                 try (BufferedReader br = new BufferedReader(new InputStreamReader(is))) {
@@ -820,20 +830,120 @@ public class LocationService extends Service {
                     while ((line = br.readLine()) != null && sb.length() < 4000) sb.append(line);
                 }
             }
-            if (code >= 200 && code < 300) {
-                nm.cancel(nid);
-                if (accept) routeAlert(name);
-            } else {
-                String msg = "Please open RideShare and try there.";
-                try { msg = new JSONObject(sb.toString()).optString("message", msg); } catch (Exception ignore) { }
-                nm.cancel(nid);
-                post2("Could not answer " + name, msg, ID_ERR + (nid & 0xfff));
-            }
+            String msg = "Please open RideShare and try there.";
+            try { msg = new JSONObject(sb.toString()).optString("message", msg); } catch (Exception ignore) { }
+            return msg;
         } catch (Exception e) {
-            post2("Could not answer " + name, "No connection. Open RideShare to answer.", ID_ERR + (nid & 0xfff));
+            return NO_NET;
         } finally {
             if (c != null) c.disconnect();
         }
+    }
+
+    private void answer(String id, String name, boolean accept, int nid) {
+        NotificationManager nm = getSystemService(NotificationManager.class);
+        String e = answerCall(id, accept);
+        if (e.isEmpty()) {
+            nm.cancel(nid);
+            if (accept) routeAlert(name);
+        } else if (NO_NET.equals(e)) {
+            queueAnswer(id, name, accept);
+            post2("Saved: " + (accept ? "Accept " : "Decline ") + name, "No signal right now. Your answer is saved and will be sent when you are back online (for up to 10 minutes).", ID_ERR + (nid & 0xfff));
+        } else {
+            nm.cancel(nid);
+            post2("Could not answer " + name, e, ID_ERR + (nid & 0xfff));
+        }
+    }
+
+    // ---------- taps made without signal are saved on the phone and sent later, in order ----------
+    private final Object pendLock = new Object();
+    private void queueItem(JSONObject o) {
+        synchronized (pendLock) {
+            try {
+                SharedPreferences sp = getSharedPreferences("rideshare_pending", MODE_PRIVATE);
+                JSONArray a = new JSONArray(sp.getString("items", "[]"));
+                for (int i = 0; i < a.length(); i++) {
+                    JSONObject x = a.optJSONObject(i);
+                    if (x != null && x.optString("t").equals(o.optString("t")) && x.optString("match").equals(o.optString("match")) && x.optString("step").equals(o.optString("step"))) return;
+                }
+                a.put(o);
+                sp.edit().putString("items", a.toString()).apply();
+            } catch (Exception ignore) { }
+        }
+    }
+    private void queueStep(String id, String step, String name) {
+        try { queueItem(new JSONObject().put("t", "step").put("match", id).put("step", step).put("name", name).put("ts", System.currentTimeMillis())); } catch (Exception ignore) { }
+    }
+    private void queueAnswer(String id, String name, boolean accept) {
+        try { queueItem(new JSONObject().put("t", "answer").put("match", id).put("accept", accept).put("name", name).put("ts", System.currentTimeMillis())); } catch (Exception ignore) { }
+    }
+    private void flushPending() {
+        synchronized (pendLock) {
+            try {
+                SharedPreferences sp = getSharedPreferences("rideshare_pending", MODE_PRIVATE);
+                JSONArray a = new JSONArray(sp.getString("items", "[]"));
+                if (a.length() == 0) return;
+                JSONArray keep = new JSONArray();
+                boolean offline = false;
+                long now = System.currentTimeMillis();
+                NotificationManager nm = getSystemService(NotificationManager.class);
+                for (int i = 0; i < a.length(); i++) {
+                    JSONObject it = a.optJSONObject(i);
+                    if (it == null) continue;
+                    if (offline) { keep.put(it); continue; }
+                    boolean isAnswer = "answer".equals(it.optString("t"));
+                    long age = now - it.optLong("ts", 0);
+                    String id = it.optString("match"), name = it.optString("name", "The rider");
+                    if (age > (isAnswer ? 10 * 60 * 1000L : 3 * 3600 * 1000L)) {
+                        if (isAnswer) post2("Answer not sent", name + ": it took too long without signal. Open RideShare to check.", ID_ERR + (idOf(ID_ERR, id) & 0xfff));
+                        continue;
+                    }
+                    String e = isAnswer ? answerCall(id, it.optBoolean("accept")) : stepCall(id, it.optString("step"));
+                    if (NO_NET.equals(e)) { offline = true; keep.put(it); continue; }
+                    if (e.isEmpty()) {
+                        if (isAnswer) { nm.cancel(idOf(ID_REQ, id)); if (it.optBoolean("accept")) routeAlert(name); }
+                        else { nm.cancel(idOf(ID_POP, id)); nm.cancel(idOf(ID_STEP, id)); }
+                    }
+                    // any other reason (already done, no longer allowed): drop it quietly
+                }
+                sp.edit().putString("items", keep.toString()).apply();
+            } catch (Exception ignore) { }
+        }
+    }
+
+    // ---------- a fresh, accurate, nearly stopped position ----------
+    private boolean freshAccurate(Location loc, boolean needSlow) {
+        if (fakeActive()) return true;
+        if (loc == null || System.currentTimeMillis() - loc.getTime() > 20000) return false;
+        if (loc.hasAccuracy() && loc.getAccuracy() > 50f) return false;
+        return !needSlow || !loc.hasSpeed() || loc.getSpeed() < 3.0f;   // under about 11 km/h
+    }
+
+    /** "Your driver has arrived" is sent only when the car is close to the pickup, nearly stopped, and the position is fresh and accurate for 8 seconds. */
+    private void autoArrive(String id, String name, Location loc, double lat, double lng, long now) {
+        boolean close = meters(loc.getLatitude(), loc.getLongitude(), lat, lng) <= ARRIVE_M;
+        if (!close || !freshAccurate(loc, true)) { arriveSince.remove(id); return; }
+        Long since = arriveSince.get(id);
+        if (since == null) { arriveSince.put(id, now); return; }
+        if (now - since < 8000 || !arriveSent.add(id)) return;
+        String e = stepCall(id, "arrived");
+        if (NO_NET.equals(e)) queueStep(id, "arrived", name);
+        else if (!e.isEmpty()) arriveSent.remove(id);
+    }
+
+    private void loadRiderStages() {
+        try {
+            JSONObject o = new JSONObject(getSharedPreferences("rideshare_tracking", MODE_PRIVATE).getString("rider_stages", "{}"));
+            java.util.Iterator<String> it = o.keys();
+            while (it.hasNext()) { String k = it.next(); riderStage.put(k, o.optString(k)); }
+        } catch (Exception ignore) { }
+    }
+    private void saveRiderStages() {
+        try {
+            JSONObject o = new JSONObject();
+            for (java.util.Map.Entry<String, String> e : riderStage.entrySet()) o.put(e.getKey(), e.getValue());
+            getSharedPreferences("rideshare_tracking", MODE_PRIVATE).edit().putString("rider_stages", o.toString()).apply();
+        } catch (Exception ignore) { }
     }
 
     /** After an accept: one tap in the notification re-starts Google Maps with every remaining stop, including the new rider.
