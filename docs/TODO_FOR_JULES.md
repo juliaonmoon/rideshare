@@ -66,7 +66,7 @@ The app has only been tested with sample riders, a practice database and an emul
 
 ## 8. Google Cloud (Claude never changes these)
 
-- Set a **billing budget alert** (for example CA$20) in Google Cloud so a surprise bill cannot happen.
+- Set a **billing budget alert** (for example CA$20) in Google Cloud. An alert only emails you; it does NOT stop spending. To actually limit spending, also set daily **quotas** on the Maps APIs (Google Cloud, APIs and services, Quotas). Claude never changes these for you.
 - The Maps key is restricted to the website. If a new domain is used, it must be added to the key's allowed websites.
 - The app limits itself to 300 road-route lookups per phone per day.
 
