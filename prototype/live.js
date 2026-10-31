@@ -108,6 +108,63 @@
   const avatar = (id, px) => { const c = cards[id], z = px || 44, base = 'width:' + z + 'px;height:' + z + 'px;border-radius:50%;flex:none;'; return c && c.photo ? '<img src="' + esc(c.photo) + '" alt="" referrerpolicy="no-referrer" style="' + base + 'object-fit:cover;background:var(--line)">' : '<span style="' + base + 'display:inline-flex;align-items:center;justify-content:center;background:var(--line);color:var(--acc);font-weight:700">' + esc((names[id] || '?').trim().charAt(0).toUpperCase()) + '</span>'; };
   const carLine = (id) => { const c = cards[id]; if (!c) return ''; const bits = [[c.car_color, c.car_make].filter(Boolean).join(' '), c.car_plate].filter(Boolean); return bits.length ? esc(bits.join(' \u00b7 ')) : ''; };
   const whoCard = (id, role) => '<div style="display:flex;gap:10px;align-items:center">' + avatar(id) + '<div><b>' + nm(id) + '</b>' + badge(id, role) + (carLine(id) ? '<div class="mut">' + carLine(id) + '</div>' : '') + '</div></div>';
+  const withMeet = (m, q) => (m && q && m.meet_lat != null ? Object.assign({}, q, { pickup_lat: m.meet_lat, pickup_lng: m.meet_lng }) : q);
+  const meetLine = (m) => (m && (m.meet_note || m.meet_lat != null) ? '<div class="mut" style="margin-top:4px">Meeting spot' + (m.meet_note ? ': ' + esc(m.meet_note) : ' set') + (m.meet_lat != null ? ' &middot; <a href="https://www.google.com/maps/search/?api=1&query=' + m.meet_lat + ',' + m.meet_lng + '" target="_blank" rel="noopener">see it on the map</a>' : '') + '</div>' : '');
+  const meetButton = (m) => (m && 'meet_lat' in m && m.status === 'accepted' && !m.picked_up_at ? '<button class="btn ghost" data-meet="' + m.id + '">' + (m.meet_lat != null || m.meet_note ? 'Change meeting spot' : 'Set meeting spot') + '</button>' : '');
+  function meetDialog(matchId) {
+    const x = matches.find((m) => m.id === matchId); if (!x) return;
+    const q = [...otherReqs, ...extraReqs, ...(myReq ? [myReq] : [])].find((r) => r.id === x.request_id);
+    const exactStart = x.meet_lat != null ? { lat: +x.meet_lat, lng: +x.meet_lng } : (q && q.pickup_lat != null ? { lat: +q.pickup_lat, lng: +q.pickup_lng } : null);
+    const start = exactStart || (q && pt(q, 'pickup')) || { lat: 49.2827, lng: -123.1207 };
+    let spot = exactStart;   // saved with the note; if the address was only a neighbourhood, the rider has to tap the map once
+    const old = document.getElementById('mt-ov'); if (old) old.remove();
+    const ov = document.createElement('div'); ov.id = 'mt-ov'; ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:12px;overflow:auto';
+    const hasMap = !!(window.google && google.maps);
+    ov.innerHTML = '<div style="background:var(--card);color:var(--ink);border-radius:14px;padding:16px;max-width:460px;width:100%"><h2 style="margin:0 0 6px">Where should your driver meet you?</h2>'
+      + (hasMap ? '<p class="mut" style="margin:0 0 8px">Move the pin, or tap the map, to the exact spot.</p><div id="mt-map" style="height:260px;border-radius:10px;background:var(--line)"></div>' : '<p class="mut">The map is not available right now. Use your current location, and add a note.</p>')
+      + '<div style="margin:8px 0"><button class="btn ghost" id="mt-here">Use my current location</button></div>'
+      + '<label>Note for the driver (optional)</label><textarea id="mt-note" rows="2" maxlength="200" placeholder="For example: outside the Tim Hortons, by the bus stop" style="' + INPUT + '">' + esc(x.meet_note || '') + '</textarea>'
+      + '<p class="warn" id="mt-msg" role="alert"></p><div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="mt-save">Save</button>' + (x.meet_lat != null || x.meet_note ? '<button class="btn ghost" id="mt-clear">Remove</button>' : '') + '<button class="btn ghost" id="mt-cancel">Cancel</button></div></div>';
+    document.body.appendChild(ov);
+    let marker = null, map = null;
+    const place = (p) => { spot = p; if (marker) marker.setPosition(p); };
+    if (hasMap) {
+      try {
+        map = new google.maps.Map(document.getElementById('mt-map'), { center: start, zoom: 17, mapTypeControl: false, streetViewControl: false, fullscreenControl: false, gestureHandling: 'greedy' });
+        marker = new google.maps.Marker({ position: start, map, draggable: true, title: 'Meeting spot' });
+        marker.addListener('dragend', (e) => { spot = { lat: e.latLng.lat(), lng: e.latLng.lng() }; });
+        map.addListener('click', (e) => place({ lat: e.latLng.lat(), lng: e.latLng.lng() }));
+      } catch (e) { map = null; }
+    }
+    document.getElementById('mt-here').onclick = () => {
+      if (!navigator.geolocation) { document.getElementById('mt-msg').textContent = 'This device cannot share its location'; return; }
+      navigator.geolocation.getCurrentPosition((p) => { const c = { lat: p.coords.latitude, lng: p.coords.longitude }; place(c); if (map) map.setCenter(c); }, () => { document.getElementById('mt-msg').textContent = 'Could not get your location'; }, { enableHighAccuracy: true, timeout: 15000 });
+    };
+    const send = async (lat, lng, note, msg) => {
+      const e = (await sb.rpc('set_meet_spot', { p_match: matchId, p_lat: lat, p_lng: lng, p_note: note })).error;
+      if (e) { document.getElementById('mt-msg').textContent = e.message; return; }
+      Object.assign(x, { meet_lat: lat, meet_lng: lng, meet_note: note || null }); ov.remove(); toast(msg); formSig = ''; render(); loadAll();
+    };
+    document.getElementById('mt-cancel').onclick = () => ov.remove();
+    document.getElementById('mt-save').onclick = () => {
+      if (!spot) { document.getElementById('mt-msg').textContent = 'Tap the map or use your current location to set the exact spot.'; return; }
+      send(spot.lat, spot.lng, document.getElementById('mt-note').value.trim(), 'Meeting spot saved. Your driver will see it.');
+    };
+    const clr = document.getElementById('mt-clear'); if (clr) clr.onclick = () => send(null, null, '', 'Meeting spot removed');
+  }
+  // alerts for a rider (seat confirmed, driver on the way, driver arrived) come from the same phone helper the drivers use
+  let riderAlertsAt = 0;
+  async function riderAlertsCheck() {
+    const nat = nativeLoc(); if (!nat || !user || driveSession) return;
+    const t0 = todayStr();
+    if (!(matches.some((x) => x.rider_id === user.id && x.status === 'accepted' && x.ride_date >= t0) || myLiveReq)) return;
+    if (Date.now() - riderAlertsAt < 60000) return; riderAlertsAt = Date.now();
+    try {
+      const st = await nat.status(); if (st && st.running) return;
+      const r = await sb.rpc('start_tracking'); if (r.error || !r.data) return;
+      await nat.start({ url: CFG.supabaseUrl, key: CFG.supabaseKey, token: r.data, riderOnly: true });
+    } catch (e) { /* permission refused: no phone alerts */ }
+  }
   // photo (and car plate for drivers) must be set before asking for or offering a ride
   const needProfile = (kind) => { if (!PCOK || !user) return false; const c = cards[user.id] || {}; const miss = !c.photo ? 'Add your photo first. It is at the top of the Me tab.' : (kind === 'drive' && !c.car_plate ? 'Add your car details first. They are at the top of the Me tab.' : ''); if (!miss) return false; toast(miss); const b = document.getElementById('nb-me'); if (b) b.click(); return true; };
   const REPORT_REASONS = [['late_or_absent', 'Late or did not show up'], ['unsafe', 'I felt unsafe'], ['wrong_car_or_person', 'Wrong car or wrong person'], ['rude', 'Rude or disrespectful'], ['payment', 'Payment problem'], ['other', 'Something else']];
@@ -169,7 +226,7 @@
   // Opens the Google Maps app with directions to the next stop (pickup, then drop-off). Areas are neighbourhood centres, not exact addresses.
   function mapsLink(m, req) {
     if (!req) return '';
-    const spot = pt(req, stageOf(m) === 'picked_up' ? 'dropoff' : 'pickup'); if (!spot) return '';
+    const spot = stageOf(m) !== 'picked_up' && m.meet_lat != null ? { lat: +m.meet_lat, lng: +m.meet_lng } : pt(req, stageOf(m) === 'picked_up' ? 'dropoff' : 'pickup'); if (!spot) return '';
     return 'https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=' + spot.lat + ',' + spot.lng;
   }
   const statusText = (s) => ({ requested: 'requested', accepted: 'accepted', completed: 'completed', cancelled: 'cancelled', declined: 'declined', no_show: 'no-show' }[s] || s);
@@ -205,6 +262,7 @@
       ledger = l.data || [];
       myLiveTrip = (t.data || []).find(stillLive) || null; myTrip = (t.data || []).find((x) => !x.live) || null; curTrip = myLiveTrip || myTrip;
       if (!myLiveTrip) autoAlerts = false; else if (!autoAlerts && !driveSession && nativeLoc()) { autoAlerts = true; startAlerts(nativeLoc()); }
+      riderAlertsCheck();
       myLiveReq = (r.data || []).find(stillLive) || null; myReq = (r.data || []).find((x) => !x.live) || null; curReq = myLiveReq || myReq;
       matches = m.data || []; otherTrips = ot.data || []; otherReqs = orq.data || [];
       const tIds = [...new Set(matches.map((x) => x.trip_id))], rIds = [...new Set(matches.map((x) => x.request_id))];
@@ -294,7 +352,7 @@
     }
     let dr = driverObj(curTrip, d);
     if (curTrip.live) { const n = new Date(); dr = Object.assign({}, dr, { departMin: n.getHours() * 60 + n.getMinutes() + 2 }); }   // an Offer a ride now trip leaves about now
-    const objs = acc.map((x) => riderObj(reqById[x.request_id]));
+    const objs = acc.map((x) => riderObj(withMeet(x, reqById[x.request_id])));
     const stops = RS.buildRoute(dr, objs) || RS.buildRoute(dr, objs, true) || RS.buildRoute(dr, []);
     const direct = RS.minutes(dr.origin, dr.dest, dr.departMin, dr.dow);
     let ev = RS.evaluate(stops, dr.departMin, dr.maxWait, dr.dow);
@@ -680,7 +738,7 @@
     const reqs = card('Seat requests', inc.length ? inc.map((x) => `<div style="padding:8px 0;border-top:1px solid var(--line)"><b>${nm(x.rider_id)}</b>${badge(x.rider_id, 'rider')} <span class="mut">pays ${x.pay_with === 'points' ? x.points + ' pts' : 'cash gas-share'}</span>${detourLine(reqFit(x))}
         <div style="margin-top:6px"><button class="btn" data-acc="${x.id}">Accept</button> <button class="btn ghost" data-dec="${x.id}">Decline</button></div></div>`).join('') : '<p class="mut">None yet. Riders ask you for a seat; you accept here.</p>');
     const riding = card('Confirmed riders', acc.length ? acc.map((x) => { const q = reqById[x.request_id], ns = nextStep(x, esc(names[x.rider_id] || 'rider')), open = stepsOpen(x), link = mapsLink(x, q);
-      return `<div style="padding:8px 0;border-top:1px solid var(--line)">${whoCard(x.rider_id, 'rider')}<div style="margin:4px 0"><span class="tag">${esc(STEP_LABEL[stageOf(x)])}</span>${x.rider_confirmed_at ? ' <span class="tag">rider confirmed</span>' : ''}</div><div class="mut">${x.pay_with === 'points' ? x.points + ' pts held until drop-off' : 'cash gas-share'}${q ? ' &middot; ' + esc(q.pickup) + ' to ' + esc(q.dropoff) : ''}</div>
+      return `<div style="padding:8px 0;border-top:1px solid var(--line)">${whoCard(x.rider_id, 'rider')}<div style="margin:4px 0"><span class="tag">${esc(STEP_LABEL[stageOf(x)])}</span>${x.rider_confirmed_at ? ' <span class="tag">rider confirmed</span>' : ''}</div><div class="mut">${x.pay_with === 'points' ? x.points + ' pts held until drop-off' : 'cash gas-share'}${q ? ' &middot; ' + esc(q.pickup) + ' to ' + esc(q.dropoff) : ''}</div>${meetLine(x)}
         <div style="margin-top:6px">${open ? `<button class="btn" data-step="${x.id}|${ns.step}">${ns.label}</button>` : '<span class="mut">Steps open 2 hours before pickup.</span>'} ${link && open ? `<a class="btn ghost" style="display:inline-block;text-decoration:none" href="${link}" target="_blank" rel="noopener">Open in Google Maps</a>` : ''} ${canNoShow(x) ? `<button class="btn ghost" data-noshow="${x.id}">Rider did not show up</button>` : noShowHint(x)} ${PCOK ? `<button class="btn ghost" data-report="${x.id}|${x.rider_id}">Report a problem</button>` : ''}</div></div>`; }).join('') : '<p class="mut">No riders yet.</p>');
     const near = !found.length ? '' : card('Matching ride requests', found.map((m) => { const q = reqById[m.rider.id]; return `<div style="padding:6px 0;border-top:1px solid var(--line)"><b>${nm(q.user_id)}</b>${badge(q.user_id, 'rider')}${tagsFor(q.user_id, 'rider')}${q.live ? ' <span class="tag">needs a ride now</span>' : ''} <span class="mut">${esc(q.pickup)} to ${esc(q.dropoff)} &middot; +${Math.round(m.addedDetour)} min detour &middot; pick up ${clk(m.pickupAt)} &middot; drop ${clk(m.dropAt)}</span></div>`; }).join(''));
     return dateCard + summary + '<div id="seat-requests">' + reqs + '</div><div id="riding-with-me">' + riding + '</div>' + near;
@@ -730,7 +788,7 @@
       const stg = stageOf(accepted), dn = nm(accTrip.user_id);
       const live = { accepted: `${dn} accepted. They will tap <b>On my way</b> when they set off.`, on_my_way: `<b>${dn} is on the way.</b>`, arrived: `<b>${dn} has arrived.</b> Look for them at the pickup spot.`, picked_up: `<b>Ride in progress</b> with ${dn}.`, dropped_off: `<b>You have arrived.</b> Thanks for sharing the ride!` }[stg];
       const inCar = stg === 'picked_up' ? (accepted.rider_confirmed_at ? '<span class="tag">You confirmed you are in the car</span>' : `<button class="btn" data-incar="${accepted.id}">I'm in the car</button>`) : '';
-      html += card('Your ride', `<div style="margin-bottom:8px">${whoCard(accepted.driver_id, 'driver')}</div><p>${live}</p>${trackInfo(accepted, accTrip, meO)}${rideStats(accepted)}<p class="mut">${esc(RSD.label(viewR))} &middot; ${accepted.pay_with === 'points' ? accepted.points + ' pts' + (stg === 'dropped_off' ? ' paid' : ' held until drop-off') : 'cash gas-share (settle with your driver)'}</p>${inCar}<p style="margin-top:8px"><button class="btn ghost" id="lr-watch">Preview route</button> <button class="btn ghost" id="lr-stop">Stop</button></p>${stg === 'accepted' || stg === 'on_my_way' ? '<p class="mut">To cancel, open the Upcoming tab.</p>' : ''}`);
+      html += card('Your ride', `<div style="margin-bottom:8px">${whoCard(accepted.driver_id, 'driver')}${meetLine(accepted)}${meetButton(accepted) ? '<div style="margin-top:8px">' + meetButton(accepted) + '</div>' : ''}</div><p>${live}</p>${trackInfo(accepted, accTrip, meO)}${rideStats(accepted)}<p class="mut">${esc(RSD.label(viewR))} &middot; ${accepted.pay_with === 'points' ? accepted.points + ' pts' + (stg === 'dropped_off' ? ' paid' : ' held until drop-off') : 'cash gas-share (settle with your driver)'}</p>${inCar}<p style="margin-top:8px"><button class="btn ghost" id="lr-watch">Preview route</button> <button class="btn ghost" id="lr-stop">Stop</button></p>${stg === 'accepted' || stg === 'on_my_way' ? '<p class="mut">To cancel, open the Upcoming tab.</p>' : ''}`);
     }
     let list = '';
     otherTrips.filter((t) => known(t) && tripOn(t, viewR)).forEach((t) => {
@@ -771,11 +829,12 @@
         if (!isRider && x.status === 'requested') b.push(`<button class="btn" data-acc="${x.id}">Accept</button> <button class="btn ghost" data-dec="${x.id}">Decline</button>`);
         if (canNoShow(x)) b.push(`<button class="btn ghost" data-noshow="${x.id}">Rider did not show up</button>`); else if (noShowHint(x)) b.push(noShowHint(x));
         if ((isRider || x.status === 'accepted') && !x.picked_up_at) b.push(`<button class="btn ghost" data-cancelask="${x.id}">${!isRider ? 'Cancel pickup' : x.status === 'requested' ? 'Cancel request' : 'Cancel ride'}</button>`);
+        if (isRider && meetButton(x)) b.push(meetButton(x));
         if (x.status === 'accepted' && PCOK) b.push(`<button class="btn ghost" data-share="${x.id}">Share my trip</button>`, `<button class="btn ghost" data-report="${x.id}|${other}">Report a problem</button>`);
         actions = b.length ? `<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:8px">${b.join(' ')}</div>` : '';
       }
       const held = x.status === 'accepted' && x.pay_with === 'points' && !x.settled ? ' (held until the ride)' : '';
-      return `<div style="padding:8px 0;border-top:1px solid var(--line)"><b>${when(x)}</b> <span class="tag">${esc(x.status === 'accepted' ? STEP_LABEL[stageOf(x)] : statusText(x.status))}</span>${x.status === 'accepted' ? '<div style="margin:8px 0">' + whoCard(other, isRider ? 'driver' : 'rider') + '</div>' : ''}<div class="mut">${isRider ? 'Driver' : 'Rider'} ${nm(other)}${badge(other, isRider ? 'driver' : 'rider')} &middot; ${pay}${held}</div>${actions}</div>`;
+      return `<div style="padding:8px 0;border-top:1px solid var(--line)"><b>${when(x)}</b> <span class="tag">${esc(x.status === 'accepted' ? STEP_LABEL[stageOf(x)] : statusText(x.status))}</span>${x.status === 'accepted' ? '<div style="margin:8px 0">' + whoCard(other, isRider ? 'driver' : 'rider') + '</div>' + meetLine(x) : ''}<div class="mut">${isRider ? 'Driver' : 'Rider'} ${nm(other)}${badge(other, isRider ? 'driver' : 'rider')} &middot; ${pay}${held}</div>${actions}</div>`;
     };
     const riderRows = asRider.length ? asRider.map((x) => row(x, true)).join('') : '<p class="mut">No upcoming rides.</p>';
     const driverRows = asDriver.length ? asDriver.map((x) => row(x, false)).join('') : '<p class="mut">No upcoming passengers.</p>';
@@ -994,6 +1053,7 @@
     const each = (sel, fn) => document.querySelectorAll(['#v-ldriver', '#v-lrider', '#v-lupcoming'].map((r) => r + ' ' + sel).join(', ')).forEach((b) => (b.onclick = () => fn(b)));
     each('[data-report]', (b) => { b.onclick = () => { const p = b.dataset.report.split('|'); reportDialog(p[0], p[1]); }; });
     each('[data-share]', (b) => { b.onclick = () => shareTrip(b.dataset.share); });
+    each('[data-meet]', (b) => { b.onclick = () => meetDialog(b.dataset.meet); });
     each('[data-rmode]', (b) => { b.onclick = () => { rideMode = b.dataset.rmode; try { localStorage.setItem('rs_ride_mode', rideMode); } catch (e) { /* storage blocked */ } formSig = ''; render(); }; });
     each('[data-tview]', (b) => { tripsView = b.dataset.tview; try { localStorage.setItem('rs_trips_view', tripsView); } catch (e) { /* storage blocked */ } render(); });
     each('[data-tmode]', (b) => { tripMode = b.dataset.tmode; try { localStorage.setItem('rs_trip_mode', tripMode); } catch (e) { /* storage blocked */ } formSig = ''; render(); });

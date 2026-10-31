@@ -100,6 +100,13 @@ public class LocationService extends Service {
     private boolean firstPoll = true;             // requests already waiting when we start are not announced
     private int inactive = 0;
     private final Set<String> notified = new HashSet<>();
+    private volatile boolean riderOnly = false;     // started for a rider: watch rides and alert, but do not use or send the location
+    private volatile boolean riderActive = false;   // the rider has a request or ride that matters today
+    private volatile double destLat = Double.NaN, destLng = Double.NaN;   // where the driver's trip ends
+    private boolean wasFar = false, ending = false; private int nearEnd = 0; private long lastEndTry = 0;
+    private boolean firstRiderPoll = true;
+    private final java.util.Map<String, String> riderStage = new java.util.HashMap<>();
+    static final int ID_RIDER = 500000, END_M = 250;
     private volatile boolean tripOn = false;   // the driver has a trip on today (so the floating button shows for the whole trip, not only while a rider is on board)
     private volatile JSONArray rides = new JSONArray();   // riders on the way (from the last check): who, which step, where
     private volatile Location lastLoc = null;
@@ -124,11 +131,12 @@ public class LocationService extends Service {
         SharedPreferences sp = getSharedPreferences("rideshare_tracking", MODE_PRIVATE);
         if (intent != null && intent.hasExtra("token")) {
             sp.edit().putString("url", intent.getStringExtra("url")).putString("key", intent.getStringExtra("key"))
-                    .putString("token", intent.getStringExtra("token")).apply();
+                    .putString("token", intent.getStringExtra("token")).putBoolean("riderOnly", intent.getBooleanExtra("riderOnly", false)).apply();
         }
         url = sp.getString("url", "");
         key = sp.getString("key", "");
         token = sp.getString("token", "");
+        riderOnly = sp.getBoolean("riderOnly", false);
         if (token.isEmpty() || url.isEmpty()) {
             stopSelf();
             return START_NOT_STICKY;
@@ -137,8 +145,8 @@ public class LocationService extends Service {
         Intent open = new Intent(this, MainActivity.class).setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_NEW_TASK);
         PendingIntent pi = PendingIntent.getActivity(this, 0, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
         Notification n = new NotificationCompat.Builder(this, CHANNEL)
-                .setContentTitle("RideShare is on while you drive")
-                .setContentText("Riders on a ride with you can see where you are, and you get an alert if someone asks for a seat.")
+                .setContentTitle("RideShare is on")
+                .setContentText("You get alerts about your rides and seat requests.")
                 .setSmallIcon(android.R.drawable.ic_menu_mylocation)
                 .setOngoing(true)
                 .setContentIntent(pi)
@@ -149,7 +157,7 @@ public class LocationService extends Service {
         } else {
             startForeground(1, n);
         }
-        startUpdates();
+        if (!riderOnly) startUpdates();
         if (!polling) { polling = true; main.post(poller); }
         if (!fakeLooping) { fakeLooping = true; main.post(fakeLoop); }
         running = true;
@@ -231,6 +239,7 @@ public class LocationService extends Service {
 
     /** Asks the server about this driver: ride in progress? still on duty? any new seat requests? */
     private void pollAlerts() {
+        pollRider();
         HttpURLConnection c = null;
         try {
             c = (HttpURLConnection) new URL(url + "/rest/v1/rpc/driver_alerts_token").openConnection();
@@ -261,7 +270,9 @@ public class LocationService extends Service {
             JSONObject o = new JSONObject(body);
             ride = o.optBoolean("ride", false);
             tripOn = o.optBoolean("active", false);
-            if (o.optBoolean("active", false)) inactive = 0;
+            destLat = o.isNull("dest_lat") ? Double.NaN : o.optDouble("dest_lat");
+            destLng = o.isNull("dest_lng") ? Double.NaN : o.optDouble("dest_lng");
+            if (o.optBoolean("active", false) || riderActive) inactive = 0;
             else if (++inactive >= 4) { main.post(this::stopSelf); return; }   // nothing on today: about a minute of quiet, then off
             JSONArray pend = o.optJSONArray("pending");
             if (pend != null) {
@@ -469,7 +480,7 @@ public class LocationService extends Service {
             now.add(nid);
             Notification n = new NotificationCompat.Builder(this, STEPS_CHANNEL)
                     .setContentTitle(picked ? "Drop off " + name : "Pick up " + name)
-                    .setContentText(picked ? r.optString("dropoff_name") : r.optString("pickup_name"))
+                    .setContentText(picked ? r.optString("dropoff_name") : r.optString("pickup_name") + (r.optString("meet_note", "").isEmpty() ? "" : " - " + r.optString("meet_note")))
                     .setSmallIcon(android.R.drawable.ic_menu_directions)
                     .setPriority(NotificationCompat.PRIORITY_LOW)
                     .setOnlyAlertOnce(true)
@@ -507,9 +518,111 @@ public class LocationService extends Service {
             } else if (r.optBoolean("pickup_exact", false) && !r.isNull("pickup_lat")
                     && meters(loc.getLatitude(), loc.getLongitude(), r.optDouble("pickup_lat"), r.optDouble("pickup_lng")) <= ARRIVE_M && dueAlert("pick:" + id, now)) {
                 if ("on_my_way".equals(stage)) stepCall(id, "arrived");   // automatic: the rider sees "your driver has arrived"
-                headsUp(id, "At " + name + "'s pickup", "Tap when " + name + " is in the car.", "picked_up", "Picked up " + name, name);
+                headsUp(id, "At " + name + "'s pickup", "Tap when " + name + " is in the car." + (r.optString("meet_note", "").isEmpty() ? "" : " Meeting spot: " + r.optString("meet_note")), "picked_up", "Picked up " + name, name);
             }
         }
+        autoEnd(loc);
+    }
+
+    /** Like Google navigation: when the driver reaches the destination and nobody is left to pick up or drop off, the trip ends by itself. */
+    private void autoEnd(Location loc) {
+        if (ending || !tripOn || Double.isNaN(destLat) || Double.isNaN(destLng)) return;
+        double m = meters(loc.getLatitude(), loc.getLongitude(), destLat, destLng);
+        if (m > 1500) wasFar = true;   // the trip really started somewhere else, so starting out near the destination does not end it
+        if (!wasFar || m > END_M) { nearEnd = 0; return; }
+        if (rides.length() > 0) return;   // somebody is still on board or waiting
+        if (++nearEnd < 3) return;        // a few readings in a row, so driving past does not count
+        long now = System.currentTimeMillis();
+        if (now - lastEndTry < 30000) return;
+        lastEndTry = now; ending = true;
+        try {
+            String b = rpc("end_trip_token", new JSONObject().put("p_token", token));
+            if (b != null && b.trim().equals("true")) {
+                tripOn = false; wasFar = false; nearEnd = 0;
+                Notification n = new NotificationCompat.Builder(this, STEPS_CHANNEL)
+                        .setContentTitle("Trip ended").setContentText("You have arrived. Thank you for driving!")
+                        .setSmallIcon(android.R.drawable.ic_menu_directions).setPriority(NotificationCompat.PRIORITY_LOW)
+                        .setAutoCancel(true).setContentIntent(openIntent()).build();
+                try { getSystemService(NotificationManager.class).notify(3100, n); } catch (Exception ignore) { }
+                main.post(this::syncBubble);
+            }
+        } catch (Exception ignore) { /* try again later */ }
+        ending = false;
+    }
+
+    private String rpc(String fn, JSONObject body) {
+        HttpURLConnection c = null;
+        try {
+            c = (HttpURLConnection) new URL(url + "/rest/v1/rpc/" + fn).openConnection();
+            c.setRequestMethod("POST");
+            c.setConnectTimeout(8000);
+            c.setReadTimeout(8000);
+            c.setDoOutput(true);
+            c.setRequestProperty("Content-Type", "application/json");
+            c.setRequestProperty("apikey", key);
+            try (OutputStream os = c.getOutputStream()) { os.write(body.toString().getBytes(StandardCharsets.UTF_8)); }
+            int code = c.getResponseCode();
+            if (code < 200 || code >= 300) return null;
+            StringBuilder sb = new StringBuilder();
+            try (BufferedReader br = new BufferedReader(new InputStreamReader(c.getInputStream()))) {
+                String line;
+                while ((line = br.readLine()) != null && sb.length() < 8000) sb.append(line);
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            return null;
+        } finally {
+            if (c != null) c.disconnect();
+        }
+    }
+
+    /** The rider's side: an alert when the seat is confirmed, when the driver is on the way, and when the driver has arrived and is waiting. */
+    private void pollRider() {
+        try {
+            String b = rpc("rider_alerts_token", new JSONObject().put("p_token", token));
+            if (b == null) return;   // no network, or an older database without rider alerts
+            JSONObject o = new JSONObject(b);
+            riderActive = o.optBoolean("active", false);
+            JSONArray rs = o.optJSONArray("rides");
+            Set<String> seen = new HashSet<>();
+            if (rs != null) {
+                for (int i = 0; i < rs.length(); i++) {
+                    JSONObject r = rs.optJSONObject(i);
+                    if (r == null) continue;
+                    String id = r.optString("id"), stage = r.optString("stage");
+                    seen.add(id);
+                    String prev = riderStage.put(id, stage);
+                    if (!firstRiderPoll && !stage.equals(prev) && !"picked_up".equals(stage)) notifyRider(r, stage);
+                }
+            }
+            riderStage.keySet().retainAll(seen);
+            firstRiderPoll = false;
+        } catch (Exception ignore) { /* try again next time */ }
+    }
+
+    private void notifyRider(JSONObject r, String stage) {
+        String id = r.optString("id"), who = r.optString("driver_name", "Your driver"), car = r.optString("car", ""), note = r.optString("meet_note", "");
+        String title, text;
+        if ("arrived".equals(stage)) {
+            title = who + " has arrived";
+            text = (car.isEmpty() ? "Look for your driver." : "Look for " + car + ".") + " " + who + " will wait about " + r.optInt("wait_min", 5) + " minutes.";
+        } else if ("on_my_way".equals(stage)) {
+            title = who + " is on the way";
+            text = car.isEmpty() ? "Get ready at the meeting spot." : "Look for " + car + ".";
+        } else {
+            title = "Seat confirmed";
+            text = who + " accepted your seat." + (car.isEmpty() ? "" : " " + car + ".");
+        }
+        if (!note.isEmpty()) text += " Meeting spot: " + note;
+        Notification n = new NotificationCompat.Builder(this, ALERT_CHANNEL)
+                .setContentTitle(title).setContentText(text)
+                .setStyle(new NotificationCompat.BigTextStyle().bigText(text))
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setAutoCancel(true)
+                .setContentIntent(openIntent())
+                .build();
+        try { getSystemService(NotificationManager.class).notify(idOf(ID_RIDER, id), n); } catch (Exception ignore) { }
     }
 
     /** Android keeps a pop-up on screen for only a few seconds, so while the car is at a stop and the button has not been tapped,
