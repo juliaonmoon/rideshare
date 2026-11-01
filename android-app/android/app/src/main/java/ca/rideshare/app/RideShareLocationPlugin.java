@@ -94,6 +94,14 @@ public class RideShareLocationPlugin extends Plugin {
         call.resolve(r);
     }
 
+    /** testLeave({ minutes }): admin test. Pretends a rider must be left for that many minutes from now, so the leave-by reminders can be seen. */
+    @PluginMethod
+    public void testLeave(PluginCall call) {
+        Integer m = call.getInt("minutes", 6);
+        LocationService.leaveTestAt = System.currentTimeMillis() + (m == null ? 6 : m) * 60000L;
+        call.resolve();
+    }
+
     /** overlayStatus(): { allowed } is true when the floating RideShare button may be shown over other apps. */
     @PluginMethod
     public void overlayStatus(PluginCall call) {
