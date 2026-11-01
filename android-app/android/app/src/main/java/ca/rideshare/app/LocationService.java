@@ -106,6 +106,7 @@ public class LocationService extends Service {
     private boolean wasFar = false, ending = false; private int nearEnd = 0; private long lastEndTry = 0;
     static final String NO_NET = "NO_NET";
     private long endSince = 0;
+    private long lastQuietPost = 0;
     private final java.util.Map<String, Long> arriveSince = new java.util.HashMap<>();
     private final Set<String> arriveSent = new HashSet<>();
     private final java.util.Map<String, String> riderStage = new java.util.HashMap<>();
@@ -192,7 +193,10 @@ public class LocationService extends Service {
     }
 
     private void post(Location loc) {
-        if (!ride) return;   // no ride in progress: nothing is sent
+        if (!ride && !tripOn) return;   // no trip on today: nothing is sent
+        long nowMs = System.currentTimeMillis();
+        if (!ride && nowMs - lastQuietPost < 8000) return;   // no rider yet: one reading every 8 seconds is enough to measure the drive
+        lastQuietPost = nowMs;
         HttpURLConnection c = null;
         try {
             JSONObject body = new JSONObject();
