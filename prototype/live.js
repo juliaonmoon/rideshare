@@ -334,6 +334,16 @@
     }
     return t ? t.depart_min : null;
   };
+  // the clock time (minutes since midnight, Vancouver) of a timestamp
+  const vanMin = (iso) => {
+    try {
+      const p = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Vancouver', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(new Date(iso));
+      const g = (k) => +p.find((z) => z.type === k).value;
+      return (g('hour') % 24) * 60 + g('minute');
+    } catch (e) { return null; }
+  };
+  // a request is never hidden because the app thinks it is outside the limits: it is shown with a note, and the database decides when the driver taps Accept
+  const fitWarn = (x) => { const f = reqFit(x); return f && !f.fits ? '<div class="warn" style="margin-top:4px">This may be outside your detour limits. The app checks again when you tap Accept.</div>' : ''; };
   const lateUsedThisMonth = (excludeId) => matches.some((x) => x.rider_id === user.id && x.id !== excludeId && x.late && x.cancelled_by === user.id && x.cancelled_at && RSD.vanMonth(Date.parse(x.cancelled_at)) === RSD.vanMonth(Date.now()));
   // Plain-language result of cancelling this match now (mirrors the database rules).
   function cancelInfo(m) {
@@ -584,13 +594,30 @@
   function renderRequests() {
     const wrap = $('req-wrap'); if (!wrap) return;
     const reqById = {}; [...otherReqs, ...extraReqs].forEach((q) => { reqById[q.id] = q; });
-    const t0 = todayStr();
-    const asks = user ? matches.filter((x) => x.driver_id === user.id && x.status === 'requested' && x.ride_date >= t0 && reqById[x.request_id] && fitsOk(x)) : [];
-    if (!asks.length) { wrap.classList.add('hide'); return; }
+    const t0 = todayStr(), nowMs = Date.now();
+    const mineAll = user ? matches.filter((x) => x.driver_id === user.id && x.ride_date >= t0) : [];
+    const gone = (x) => { const q = reqById[x.request_id]; return !q || q.active === false || (q.expires_at && Date.parse(q.expires_at) < nowMs); };
+    const asks = mineAll.filter((x) => x.status === 'requested' && !gone(x));
+    // riders I accepted who are still waiting for me to set off, with the time I must leave by
+    const waiting = mineAll.filter((x) => x.status === 'accepted' && !x.en_route_at && !x.picked_up_at && leaveInfo[x.id] && !leaveInfo[x.id].moving && leaveInfo[x.id].leave_by_ms)
+      .sort((p, q) => leaveInfo[p.id].leave_by_ms - leaveInfo[q.id].leave_by_ms);
+    const missed = mineAll.filter((x) => (x.status === 'requested' && gone(x)) || x.status === 'declined' || (x.status === 'cancelled' && x.cancelled_by !== user.id))
+      .filter((x) => x.created_at && nowMs - Date.parse(x.created_at) < 24 * 3600 * 1000).sort((p, q) => Date.parse(q.created_at) - Date.parse(p.created_at)).slice(0, 6);
+    if (!asks.length && !missed.length && !waiting.length) { wrap.classList.add('hide'); return; }
     wrap.classList.remove('hide');
-    $('req-title').textContent = asks.length > 1 ? asks.length + ' riders are asking for a seat' : 'A rider is asking for a seat';
-    $('req-body').innerHTML = asks.map((x) => { const q = reqById[x.request_id];
-      return '<div style="padding:8px 0;border-top:1px solid var(--line)"><b style="font-size:17px">' + nm(x.rider_id) + '</b>' + badge(x.rider_id, 'rider') + tagsFor(x.rider_id, 'rider') + '<div class="mut">' + esc(disp(q, 'pickup')) + ' to ' + esc(disp(q, 'dropoff')) + ' &middot; ' + (x.pay_with === 'points' ? x.points + ' pts' : 'cash gas-share') + '</div>' + detourLine(reqFit(x)) + leaveLine(x.id) + '<div style="margin-top:8px"><button class="btn" data-acc="' + x.id + '" style="padding:12px 22px;font-size:16px">Accept</button> <button class="btn ghost" data-dec="' + x.id + '">Decline</button></div></div>'; }).join('');
+    $('req-title').textContent = asks.length ? (asks.length > 1 ? asks.length + ' riders are asking for a seat' : 'A rider is asking for a seat') : waiting.length ? 'Time to leave' : 'Earlier seat requests';
+    let banner = '';
+    if (waiting.length) {
+      const w = waiting[0], ms = leaveInfo[w.id].leave_by_ms, left = Math.round((ms - nowMs) / 60000);
+      const when = left > 1 ? 'in ' + left + ' min' : left === 1 ? 'in 1 min' : left === 0 ? 'now' : Math.abs(left) + ' min ago';
+      banner = '<div class="' + (left <= 5 ? 'warn' : '') + '" style="padding:8px 0"><b>' + (left <= 0 ? 'Leave now to reach ' : 'Leave by ' + clk(vanMin(new Date(ms).toISOString())) + ' (' + when + ') to reach ') + nm(w.rider_id) + '.</b>' + (left <= 0 ? ' <span class="mut">Your leave-by time was ' + clk(vanMin(new Date(ms).toISOString())) + ' (' + when + ').</span>' : '') + '</div>';
+    }
+    const cards = asks.map((x) => { const q = reqById[x.request_id];
+      return '<div style="padding:8px 0;border-top:1px solid var(--line)"><b style="font-size:17px">' + nm(x.rider_id) + '</b>' + badge(x.rider_id, 'rider') + tagsFor(x.rider_id, 'rider') + '<div class="mut">' + esc(disp(q, 'pickup')) + ' to ' + esc(disp(q, 'dropoff')) + ' &middot; ' + (x.pay_with === 'points' ? x.points + ' pts' : 'cash gas-share') + '</div>' + detourLine(reqFit(x)) + fitWarn(x) + leaveLine(x.id) + '<div style="margin-top:8px"><button class="btn" data-acc="' + x.id + '" style="padding:12px 22px;font-size:16px">Accept</button> <button class="btn ghost" data-dec="' + x.id + '">Decline</button></div></div>'; }).join('');
+    const outcome = (x) => x.status === 'declined' ? 'You declined' : x.status === 'cancelled' ? 'The rider cancelled' : 'Ended before you answered';
+    const earlier = missed.length ? '<div style="padding:8px 0 2px;border-top:1px solid var(--line)"><b>Earlier requests</b></div>' + missed.map((x) => { const q = reqById[x.request_id], t = vanMin(x.created_at);
+      return '<div class="mut" style="padding:3px 0">' + nm(x.rider_id) + ' asked at ' + (t == null ? '' : clk(t)) + (q ? ' &middot; ' + esc(disp(q, 'pickup')) + ' to ' + esc(disp(q, 'dropoff')) : '') + ' &middot; ' + outcome(x) + '</div>'; }).join('') : '';
+    $('req-body').innerHTML = banner + cards + earlier;
   }
   // The plan card has its own map (map-plan) that is never rebuilt, so it does not flicker when the page refreshes.
   function renderPlan() {
@@ -606,7 +633,7 @@
     if (false) return card('Start here', `<p><b>1.</b> Fill in the form below: where you drive from and to, the date and time.</p><p><b>2.</b> Tap <b>Review trip</b>, then <b>Confirm and post</b>.</p><p><b>3.</b> Riders who ask for a seat will appear on this page for you to accept.</p><p>${goTo('ld-form')}Go to the form</button></p>`);
     const dates = RSD.nextOccurrences(curTrip.live ? todayStr() : curTrip.trip_date, curTrip.repeat_days, new Date(), 7), d = pickView(viewD, dates);
     const mine = d ? matches.filter((x) => x.driver_id === user.id && x.ride_date === d) : [];
-    const asks = mine.filter((x) => x.status === 'requested' && fitsOk(x)).length, acc = mine.filter((x) => x.status === 'accepted').length;
+    const asks = mine.filter((x) => x.status === 'requested').length, acc = mine.filter((x) => x.status === 'accepted').length;
     const isToday = d === todayStr();
     const line = asks ? `<b>${asks} rider${asks > 1 ? 's' : ''} asked for a seat.</b> Tap <b>See riders</b> to accept.` : acc ? `<b>${acc} rider${acc > 1 ? 's' : ''} accepted.</b> ${isToday ? 'Tap <b>Start trip</b> when you set off.' : 'You can start on the day of the trip.'}` : 'No riders yet. They will show up here when they ask for a seat.';
     return card('Your trip', `<p><b>${esc(disp(curTrip, 'origin'))}</b> to <b>${esc(disp(curTrip, 'dest'))}</b></p><p class="mut">${whenText(curTrip.trip_date, curTrip.depart_min, curTrip.repeat_days)}</p><p>${line}</p>
@@ -892,7 +919,7 @@
     const dateCard = card('Date', dateChips('ld-dates', dates, viewD) + `<p class="mut" style="margin-top:8px">${whenText(curTrip.trip_date, curTrip.depart_min, curTrip.repeat_days)}</p>`);
     if (!viewD) return dateCard;
     const mine = matches.filter((x) => x.driver_id === user.id && x.ride_date === viewD);
-    const inc = mine.filter((x) => x.status === 'requested' && fitsOk(x));
+    const inc = mine.filter((x) => x.status === 'requested');
     const acc = mine.filter((x) => x.status === 'accepted' && reqById[x.request_id] && known(reqById[x.request_id]));
     const accObjs = acc.map((x) => riderObj(reqById[x.request_id]));
     const stops = RS.buildRoute(dr, accObjs) || RS.buildRoute(dr, accObjs, true) || RS.buildRoute(dr, []);
@@ -905,7 +932,7 @@
       <p class="mut">${RS.km(stops).toFixed(1)} km total &middot; riders pay only their share, never more.</p>
       <button class="btn ghost" id="ld-start">Preview route (watch the car)</button> <button class="btn ghost" id="ld-stop">Stop preview</button>
       <p class="mut" style="margin-top:8px">${viewD === todayStr() ? 'When you set off, tap Start trip at the top. It opens Google Maps with your destination and your riders as stops, and tells your riders you are on the way.' : 'Start trip is available on the day of the trip.'}</p>`);
-    const reqs = card('Seat requests', inc.length ? inc.map((x) => `<div style="padding:8px 0;border-top:1px solid var(--line)"><b>${nm(x.rider_id)}</b>${badge(x.rider_id, 'rider')} <span class="mut">pays ${x.pay_with === 'points' ? x.points + ' pts' : 'cash gas-share'}</span>${detourLine(reqFit(x))}${leaveLine(x.id)}
+    const reqs = card('Seat requests', inc.length ? inc.map((x) => `<div style="padding:8px 0;border-top:1px solid var(--line)"><b>${nm(x.rider_id)}</b>${badge(x.rider_id, 'rider')} <span class="mut">pays ${x.pay_with === 'points' ? x.points + ' pts' : 'cash gas-share'}</span>${detourLine(reqFit(x))}${fitWarn(x)}${leaveLine(x.id)}
         <div style="margin-top:6px"><button class="btn" data-acc="${x.id}">Accept</button> <button class="btn ghost" data-dec="${x.id}">Decline</button></div></div>`).join('') : '<p class="mut">None yet. Riders ask you for a seat; you accept here.</p>');
     const riding = card('Confirmed riders', acc.length ? acc.map((x) => { const q = reqById[x.request_id], ns = nextStep(x, esc(names[x.rider_id] || 'rider')), open = stepsOpen(x), link = mapsLink(x, q);
       return `<div style="padding:8px 0;border-top:1px solid var(--line)">${whoCard(x.rider_id, 'rider')}<div style="margin:4px 0"><span class="tag">${esc(STEP_LABEL[stageOf(x)])}</span>${x.rider_confirmed_at ? ' <span class="tag">rider confirmed</span>' : ''}</div><div class="mut">${x.pay_with === 'points' ? x.points + ' pts held until drop-off' : 'cash gas-share'}${q ? ' &middot; ' + esc(q.pickup) + ' to ' + esc(q.dropoff) : ''}</div>${leaveLine(x.id)}${meetLine(x)}
