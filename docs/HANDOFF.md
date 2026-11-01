@@ -82,3 +82,5 @@ Picking this up in Claude Code on the owner's own computer? Read this first.
 - **Leave now starts navigation:** the Leave now form on Home has a Start navigation in Google Maps button (`ln-nav`) that opens turn-by-turn directions to the chosen destination without offering seats.
 
 - **One Leave now button:** the Home form has a single primary button, Leave now, which opens Google Maps navigation (no separate navigation button). Scheduling is a small 'Plan a trip for later instead' link, and 'Leave now instead' goes back.
+
+- **Leave now starts the trip:** the Leave now button runs go_live (offer seats, phone helper, floating button) and then opens Google Maps. There is no separate Offer seats switch on that form; the Offering seats switch on the live card stops it.
