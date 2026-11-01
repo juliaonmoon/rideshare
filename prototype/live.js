@@ -606,11 +606,9 @@
     // riders I accepted who are still waiting for me to set off, with the time I must leave by
     const waiting = mineAll.filter((x) => x.status === 'accepted' && !x.en_route_at && !x.picked_up_at && leaveInfo[x.id] && !leaveInfo[x.id].moving && leaveInfo[x.id].leave_by_ms)
       .sort((p, q) => leaveInfo[p.id].leave_by_ms - leaveInfo[q.id].leave_by_ms);
-    const missed = mineAll.filter((x) => (x.status === 'requested' && gone(x) && fitServer[x.id] !== false) || x.status === 'declined' || (x.status === 'cancelled' && x.cancelled_by !== user.id))
-      .filter((x) => x.created_at && nowMs - Date.parse(x.created_at) < 24 * 3600 * 1000).sort((p, q) => Date.parse(q.created_at) - Date.parse(p.created_at)).slice(0, 6);
-    if (!asks.length && !missed.length && !waiting.length) { wrap.classList.add('hide'); return; }
+    if (!asks.length && !waiting.length) { wrap.classList.add('hide'); return; }
     wrap.classList.remove('hide');
-    $('req-title').textContent = asks.length ? (asks.length > 1 ? asks.length + ' riders are asking for a seat' : 'A rider is asking for a seat') : waiting.length ? 'Time to leave' : 'Earlier seat requests';
+    $('req-title').textContent = asks.length ? (asks.length > 1 ? asks.length + ' riders are asking for a seat' : 'A rider is asking for a seat') : 'Time to leave';
     let banner = '';
     if (waiting.length) {
       const w = waiting[0], ms = leaveInfo[w.id].leave_by_ms, left = Math.round((ms - nowMs) / 60000);
@@ -619,10 +617,20 @@
     }
     const cards = asks.map((x) => { const q = reqById[x.request_id];
       return '<div style="padding:8px 0;border-top:1px solid var(--line)"><b style="font-size:17px">' + nm(x.rider_id) + '</b>' + badge(x.rider_id, 'rider') + tagsFor(x.rider_id, 'rider') + '<div class="mut">' + esc(disp(q, 'pickup')) + ' to ' + esc(disp(q, 'dropoff')) + ' &middot; ' + (x.pay_with === 'points' ? x.points + ' pts' : 'cash gas-share') + '</div>' + detourLine(reqFit(x)) + leaveLine(x.id) + '<div style="margin-top:8px"><button class="btn" data-acc="' + x.id + '" style="padding:12px 22px;font-size:16px">Accept</button> <button class="btn ghost" data-dec="' + x.id + '">Decline</button></div></div>'; }).join('');
+    $('req-body').innerHTML = banner + cards;
+  }
+  // Requests that ended without a seat: kept out of the Home card; shown small at the bottom of the Riders list for 24 hours.
+  function earlierRequests() {
+    if (!user) return '';
+    const reqById = {}; [...otherReqs, ...extraReqs].forEach((q) => { reqById[q.id] = q; });
+    const t0 = todayStr(), nowMs = Date.now();
+    const gone = (x) => { const q = reqById[x.request_id]; return !q || q.active === false || (q.expires_at && Date.parse(q.expires_at) < nowMs); };
+    const missed = matches.filter((x) => x.driver_id === user.id && x.ride_date >= t0 && ((x.status === 'requested' && gone(x) && fitServer[x.id] !== false) || x.status === 'declined' || (x.status === 'cancelled' && x.cancelled_by !== user.id)))
+      .filter((x) => x.created_at && nowMs - Date.parse(x.created_at) < 24 * 3600 * 1000).sort((p, q) => Date.parse(q.created_at) - Date.parse(p.created_at)).slice(0, 6);
+    if (!missed.length) return '';
     const outcome = (x) => x.status === 'declined' ? 'You declined' : x.status === 'cancelled' ? 'The rider cancelled' : 'Ended before you answered';
-    const earlier = missed.length ? '<div style="padding:8px 0 2px;border-top:1px solid var(--line)"><b>Earlier requests</b></div>' + missed.map((x) => { const q = reqById[x.request_id], t = vanMin(x.created_at);
-      return '<div class="mut" style="padding:3px 0">' + nm(x.rider_id) + ' asked at ' + (t == null ? '' : clk(t)) + (q ? ' &middot; ' + esc(disp(q, 'pickup')) + ' to ' + esc(disp(q, 'dropoff')) : '') + ' &middot; ' + outcome(x) + '</div>'; }).join('') : '';
-    $('req-body').innerHTML = banner + cards + earlier;
+    return '<details class="card"><summary class="mut" style="cursor:pointer">Earlier requests (' + missed.length + ')</summary>' + missed.map((x) => { const q = reqById[x.request_id], t = vanMin(x.created_at);
+      return '<div class="mut" style="padding:3px 0">' + nm(x.rider_id) + ' asked at ' + (t == null ? '' : clk(t)) + (q ? ' &middot; ' + esc(disp(q, 'pickup')) + ' to ' + esc(disp(q, 'dropoff')) : '') + ' &middot; ' + outcome(x) + '</div>'; }).join('') + '</details>';
   }
   // The plan card has its own map (map-plan) that is never rebuilt, so it does not flicker when the page refreshes.
   function renderPlan() {
@@ -944,7 +952,7 @@
       return `<div style="padding:8px 0;border-top:1px solid var(--line)">${whoCard(x.rider_id, 'rider')}<div style="margin:4px 0"><span class="tag">${esc(STEP_LABEL[stageOf(x)])}</span>${x.rider_confirmed_at ? ' <span class="tag">rider confirmed</span>' : ''}</div><div class="mut">${x.pay_with === 'points' ? x.points + ' pts held until drop-off' : 'cash gas-share'}${q ? ' &middot; ' + esc(q.pickup) + ' to ' + esc(q.dropoff) : ''}</div>${leaveLine(x.id)}${meetLine(x)}
         <div style="margin-top:6px">${open ? `<button class="btn" data-step="${x.id}|${ns.step}">${ns.label}</button>` : '<span class="mut">Steps open 2 hours before pickup.</span>'} ${link && open ? `<a class="btn ghost" style="display:inline-block;text-decoration:none" href="${link}" target="_blank" rel="noopener">Open in Google Maps</a>` : ''} ${canNoShow(x) ? `<button class="btn ghost" data-noshow="${x.id}">Rider isn't here</button>` : ''} ${msgButton(x)} ${PCOK ? `<button class="btn ghost" data-report="${x.id}|${x.rider_id}">Report a problem</button>` : ''}</div></div>`; }).join('') : '<p class="mut">No riders yet.</p>');
     const near = !found.length ? '' : card('Matching ride requests', found.map((m) => { const q = reqById[m.rider.id]; return `<div style="padding:6px 0;border-top:1px solid var(--line)"><b>${nm(q.user_id)}</b>${badge(q.user_id, 'rider')}${tagsFor(q.user_id, 'rider')}${q.live ? ' <span class="tag">needs a ride now</span>' : ''} <span class="mut">${esc(q.pickup)} to ${esc(q.dropoff)} &middot; +${Math.round(m.addedDetour)} min detour &middot; pick up ${clk(m.pickupAt)} &middot; drop ${clk(m.dropAt)}</span></div>`; }).join(''));
-    return dateCard + summary + '<div id="seat-requests">' + reqs + '</div><div id="riding-with-me">' + riding + '</div>' + near;
+    return dateCard + summary + '<div id="seat-requests">' + reqs + '</div><div id="riding-with-me">' + riding + '</div>' + near + earlierRequests();
   }
 
   function drawDriverMap(stops, grey, date) {
