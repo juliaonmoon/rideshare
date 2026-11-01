@@ -352,7 +352,7 @@
       try { await sb.rpc('expire_live'); } catch (e) { /* older database: ignore */ }
       if (dndOn === null) refreshDnd();
       if (DKOK === null) DKOK = !(await sb.from('trips').select('max_detour_km').limit(1)).error;
-      if (PLOK === null) PLOK = !!(window.RS_PLACES && window.RS_PLACES.available()) && !(await sb.from('trips').select('origin_lat').limit(1)).error;
+      if (!PLOK) { const was = PLOK; PLOK = !!(window.RS_PLACES && window.RS_PLACES.available()) && !(await sb.from('trips').select('origin_lat').limit(1)).error; if (PLOK && was === false) formSig = ''; }
       const [p, w, l, t, r, m, ot, orq] = await Promise.all([
         sb.from('profiles').select('display_name').eq('id', uid).maybeSingle(),
         sb.from('wallets').select('points').eq('user_id', uid).maybeSingle(),
@@ -1308,6 +1308,6 @@
   let liveTimer = 0; const soon = () => { clearTimeout(liveTimer); liveTimer = setTimeout(loadAll, 800); };
   sb.channel('rs-live').on('postgres_changes', { event: '*', schema: 'public', table: 'trips' }, soon).on('postgres_changes', { event: '*', schema: 'public', table: 'ride_requests' }, soon)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'driver_positions' }, (p) => { if (p.new && p.new.driver_id) positions[p.new.driver_id] = p.new; else if (p.old && p.old.driver_id) delete positions[p.old.driver_id]; render(); }).subscribe();
-  window.addEventListener('rs-google-ready', () => { mapSig = {}; render(); if (lastPos) applyMe(false); });
+  window.addEventListener('rs-google-ready', () => { mapSig = {}; if (!PLOK && user) { loadAll(); } render(); if (lastPos) applyMe(false); });
   ['t-driver', 't-rider', 't-upcoming', 't-wallet'].forEach((id) => $(id).addEventListener('click', () => { mapSig = {}; render(); loadAll(); }));
 })();
