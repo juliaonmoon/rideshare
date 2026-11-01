@@ -91,6 +91,13 @@ public class LocationService extends Service {
     // The floating button is only for when the driver or rider is in another app (Maps). While RideShare itself is open, it is hidden.
     private static volatile boolean appVisible = false;
     private static volatile LocationService live;
+    // RideShare just handed over to Google Maps: show the floating button for the drive even before the server confirms the trip.
+    private static volatile long navUntil = 0;
+    static void navStarted() {
+        navUntil = System.currentTimeMillis() + 45 * 60 * 1000L;
+        LocationService s = live;
+        if (s != null) s.main.post(s::syncBubble);
+    }
     static void appVisible(boolean visible) {
         appVisible = visible;
         LocationService s = live;
@@ -333,8 +340,9 @@ public class LocationService extends Service {
     static boolean canOverlay(android.content.Context c) { return Build.VERSION.SDK_INT < 23 || Settings.canDrawOverlays(c); }
 
     private void syncBubble() {
-        boolean need = (tripOn || rides.length() > 0) && !appVisible && !getSharedPreferences("rideshare_bubble", MODE_PRIVATE).getBoolean("hidden", false);
-        if (!tripOn && rides.length() == 0) bubbleDismissed = false;   // a new ride brings it back
+        boolean navOn = navUntil > System.currentTimeMillis();
+        boolean need = (tripOn || rides.length() > 0 || navOn) && !appVisible && !getSharedPreferences("rideshare_bubble", MODE_PRIVATE).getBoolean("hidden", false);
+        if (!tripOn && rides.length() == 0 && !navOn) bubbleDismissed = false;   // a new ride brings it back
         if (need && !bubbleDismissed && bubble == null && canOverlay(this)) showBubble(); else if ((!need || bubbleDismissed) && bubble != null) hideBubble();
     }
 
@@ -565,7 +573,7 @@ public class LocationService extends Service {
         try {
             String b = rpc("end_trip_token", new JSONObject().put("p_token", token));
             if (b != null && b.trim().equals("true")) {
-                tripOn = false; wasFar = false; nearEnd = 0;
+                tripOn = false; wasFar = false; nearEnd = 0; navUntil = 0;
                 Notification n = new NotificationCompat.Builder(this, STEPS_CHANNEL)
                         .setContentTitle("Trip ended").setContentText("You have arrived. Thank you for driving!")
                         .setSmallIcon(android.R.drawable.ic_menu_directions).setPriority(NotificationCompat.PRIORITY_LOW)

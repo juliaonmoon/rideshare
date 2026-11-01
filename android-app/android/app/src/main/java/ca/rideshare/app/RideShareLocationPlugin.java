@@ -206,6 +206,7 @@ public class RideShareLocationPlugin extends Plugin {
             return;
         }
         Intent i = new Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        LocationService.navStarted();   // whenever RideShare hands over to Google Maps, the floating button shows
         try {
             i.setPackage("com.google.android.apps.maps");
             getContext().startActivity(i);
