@@ -92,7 +92,7 @@
   const editing = { trip: false, req: false };   // the full form stays hidden behind the summary card until Edit is tapped
   let pending = null, viewD = null, viewR = null, askCancel = null, rel = {}, mySet = null, styles = {}, isTest = false, testMode = false, drives = [];
   // Personal settings: defaults for new trips and requests (every trip can still be changed before posting).
-  const SD = { d_detour_km: null, d_total_detour_km: null, d_detour: 10, d_total_detour: 15, d_wait: 5, d_accepts: 'either', d_seats: 1, d_auto_accept: false, d_chat: 'some', d_pets: true, r_pays: 'points', r_chat: 'some', r_pets: false };
+  const SD = { d_detour_km: null, d_total_detour_km: null, d_detour: 10, d_total_detour: 15, d_wait: 0, d_accepts: 'either', d_seats: 1, d_auto_accept: false, d_chat: 'some', d_pets: true, r_pays: 'points', r_chat: 'some', r_pets: false };
   const S_ = () => Object.assign({}, SD, mySet || {});
   // Ride-style tags next to a name (quiet ride, no pets...). Only shown when they differ from the usual.
   const tagsFor = (id, role) => {
@@ -270,7 +270,7 @@
   };
   // photo (and car plate for drivers) must be set before asking for or offering a ride
   const needProfile = (kind) => { if (!PCOK || !user) return false; const c = cards[user.id] || {}; const miss = !c.photo ? 'Add your photo first. It is at the top of the Me tab.' : (kind === 'drive' && !c.car_plate ? 'Add your car details first. They are at the top of the Me tab.' : ''); if (!miss) return false; toast(miss); const b = document.getElementById('nb-me'); if (b) b.click(); return true; };
-  const REPORT_REASONS = [['late_or_absent', 'Late or did not show up'], ['unsafe', 'I felt unsafe'], ['wrong_car_or_person', 'Wrong car or wrong person'], ['rude', 'Rude or disrespectful'], ['payment', 'Payment problem'], ['other', 'Something else']];
+  const REPORT_REASONS = [['late_or_absent', 'Late or not at the pickup spot'], ['unsafe', 'I felt unsafe'], ['wrong_car_or_person', 'Wrong car or wrong person'], ['rude', 'Rude or disrespectful'], ['payment', 'Payment problem'], ['other', 'Something else']];
   function reportDialog(matchId, otherId) {
     const old = document.getElementById('rp-ov'); if (old) old.remove();
     const ov = document.createElement('div'); ov.id = 'rp-ov'; ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
@@ -297,13 +297,23 @@
   const badge = (id, role) => {
     const r = rel[id]; if (!r) return '';
     const bits = role === 'driver' ? (r.driver_cancels ? [r.driver_cancels + ' cancelled ride' + (r.driver_cancels > 1 ? 's' : '')] : [])
-      : [r.late_cancels ? r.late_cancels + ' late cancel' + (r.late_cancels > 1 ? 's' : '') : '', r.no_shows ? r.no_shows + ' no-show' + (r.no_shows > 1 ? 's' : '') : ''].filter(Boolean);
+      : [r.late_cancels ? r.late_cancels + ' late cancel' + (r.late_cancels > 1 ? 's' : '') : '', r.no_shows ? r.no_shows + ' missed pickup' + (r.no_shows > 1 ? 's' : '') : ''].filter(Boolean);
     return bits.length ? ` <span class="tag" style="background:var(--warnbg);color:var(--warn)">${bits.join(', ')} (30 days)</span>` : '';
   };
   const who = (id, role) => nm(id) + badge(id, role);
   const LATE_MIN = 120;
   const tripBy = (id) => [...otherTrips, ...extraTrips, ...(myTrip ? [myTrip] : []), ...(myLiveTrip ? [myLiveTrip] : [])].find((t) => t.id === id);
-  const pickupMs = (m) => { const t = tripBy(m.trip_id); return t ? RSD.vanEpoch(m.ride_date, t.depart_min) : null; };
+  const pickupMs = (m) => { if (m.pickup_time) return Date.parse(m.pickup_time); const t = tripBy(m.trip_id); return t ? RSD.vanEpoch(m.ride_date, t.depart_min) : null; };
+  const pickMin = (m, t) => {
+    if (m.pickup_time) {
+      try {
+        const p = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Vancouver', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(new Date(m.pickup_time));
+        const g = (k) => +p.find((z) => z.type === k).value;
+        return (g('hour') % 24) * 60 + g('minute');
+      } catch (e) { /* use the trip's leave time */ }
+    }
+    return t ? t.depart_min : null;
+  };
   const lateUsedThisMonth = (excludeId) => matches.some((x) => x.rider_id === user.id && x.id !== excludeId && x.late && x.cancelled_by === user.id && x.cancelled_at && RSD.vanMonth(Date.parse(x.cancelled_at)) === RSD.vanMonth(Date.now()));
   // Plain-language result of cancelling this match now (mirrors the database rules).
   function cancelInfo(m) {
@@ -311,9 +321,8 @@
     if (m.status === 'requested') return { ok: true, text: 'Free to cancel. No points have moved.' };
     if (!isRider) return { ok: true, text: 'If you cancel, ' + nm(m.rider_id) + ' gets ' + (pts ? 'all ' + pts + ' points' : 'nothing charged') + ' back. Cancelling often shows as a warning next to your name.' };
     const pk = pickupMs(m); if (pk == null) return { ok: true, text: 'Cancel this ride.' };
-    const tr = tripBy(m.trip_id);
-    if (tr && !m.arrived_at && Date.now() >= pk + (tr.max_wait + 10) * 60000) return { ok: true, text: 'Your driver is very late. You can cancel and get ' + (pts ? 'all ' + pts + ' points' : 'nothing charged') + ' back.' };
-    if (Date.now() >= pk) return { ok: false, text: 'The pickup time has passed, so this ride can no longer be cancelled. Your driver can mark a no-show.' };
+    if (!m.arrived_at && Date.now() >= pk + 15 * 60000) return { ok: true, text: 'Your driver is very late. You can cancel and get ' + (pts ? 'all ' + pts + ' points' : 'nothing charged') + ' back.' };
+    if (Date.now() >= pk) return { ok: false, text: 'The pickup time has passed, so this ride can no longer be cancelled. Your driver can close the ride as a missed pickup.' };
     const late = pk - Date.now() < LATE_MIN * 60000;
     if (!pts) return { ok: true, text: late ? 'Late cancel (within 2 hours). No points involved, but it counts toward your cancellation record.' : 'Free to cancel. No points involved.' };
     if (!late) return { ok: true, text: 'Free to cancel: you get all ' + pts + ' points back.' };
@@ -321,9 +330,8 @@
     const keep = Math.floor(pts / 2);
     return { ok: true, text: 'Late cancel (within 2 hours) and your free one this month is used: your driver keeps ' + keep + ' points and you get ' + (pts - keep) + ' back.' };
   }
-  const canNoShow = (m) => { const t = tripBy(m.trip_id), pk = pickupMs(m); return m.status === 'accepted' && !m.picked_up_at && m.driver_id === user.id && t && pk != null && !!m.arrived_at && Date.now() >= Date.parse(m.arrived_at) + t.max_wait * 60000; };
-  // after arriving, the driver waits a set time before a no-show is possible; show how long is left
-  const noShowHint = (m) => { const t = tripBy(m.trip_id); if (!t || m.status !== 'accepted' || m.picked_up_at || m.driver_id !== user.id || !m.arrived_at) return ''; const left = Math.ceil((Date.parse(m.arrived_at) + t.max_wait * 60000 - Date.now()) / 60000); return left > 0 ? '<span class="mut">You can mark a no-show in ' + left + ' min.</span>' : ''; };
+  // the driver has arrived at the pickup, and it is the rider's pickup time or later
+  const canNoShow = (m) => { const pk = pickupMs(m); return m.status === 'accepted' && !m.picked_up_at && m.driver_id === user.id && pk != null && !!m.arrived_at && Date.now() >= pk; };
   // Ride steps (driver taps, rider sees): accepted -> on_my_way -> arrived -> picked_up -> dropped_off (completed)
   const stageOf = (m) => (m.status === 'completed' && m.dropped_off_at ? 'dropped_off' : m.picked_up_at ? 'picked_up' : m.arrived_at ? 'arrived' : m.en_route_at ? 'on_my_way' : 'accepted');
   const STEP_LABEL = { accepted: 'seat confirmed', on_my_way: 'driver on the way', arrived: 'driver has arrived', picked_up: 'ride in progress', dropped_off: 'completed' };
@@ -335,7 +343,7 @@
     const spot = stageOf(m) !== 'picked_up' && m.meet_lat != null ? { lat: +m.meet_lat, lng: +m.meet_lng } : pt(req, stageOf(m) === 'picked_up' ? 'dropoff' : 'pickup'); if (!spot) return '';
     return 'https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=' + spot.lat + ',' + spot.lng;
   }
-  const statusText = (s) => ({ requested: 'requested', accepted: 'accepted', completed: 'completed', cancelled: 'cancelled', declined: 'declined', no_show: 'no-show' }[s] || s);
+  const statusText = (s) => ({ requested: 'requested', accepted: 'accepted', completed: 'completed', cancelled: 'cancelled', declined: 'declined', no_show: 'missed pickup' }[s] || s);
 
   const dowOf = (d) => { const x = d && new Date(d + 'T12:00:00'); return x && !isNaN(x) ? x.getDay() : undefined; };
   const driverObj = (t, date) => ({ dow: dowOf(date || t.trip_date), origin: pt(t, 'origin'), dest: pt(t, 'dest'), departMin: t.depart_min, maxDetour: t.max_detour, maxTotal: t.max_total_detour == null ? null : t.max_total_detour, maxKm: t.max_detour_km == null ? null : +t.max_detour_km, maxTotalKm: t.max_total_detour_km == null ? null : +t.max_total_detour_km, maxPickups: t.max_pickups == null ? null : t.max_pickups, maxWait: t.max_wait, accepts: t.accepts, cpk: Number(t.cost_per_km) || 0.2, name: names[t.user_id] || 'Driver' });
@@ -802,7 +810,7 @@
     const stg = stageOf(m), dn = nm(t.user_id), pos = positions[m.driver_id], pk = pickupMs(m);
     window.__carPos = null;
     let html = '';
-    if (stg === 'accepted' && pk != null && !m.arrived_at && Date.now() >= pk + (t.max_wait + 10) * 60000) {
+    if (stg === 'accepted' && pk != null && !m.arrived_at && Date.now() >= pk + 15 * 60000) {
       return `<p class="warn"><b>${dn} is very late.</b> You can cancel and get all your points back.</p><p><button class="btn" data-cancelgo="${m.id}">Cancel, full refund</button></p>`;
     }
     if (stg === 'on_my_way' || stg === 'arrived' || stg === 'picked_up') {
@@ -822,6 +830,7 @@
         }
       }
     }
+    if ((stg === 'accepted' || stg === 'on_my_way') && pk != null && !m.arrived_at) html = `<p><b>Be at the pickup spot by ${clk(pickMin(m, t))}.</b> <span class="mut">If you are not there, your driver may drive on.</span></p>` + html;
     return html;
   }
 
@@ -830,7 +839,7 @@
     if (pending && pending.kind === 'trip') {
       const r = pending.row;
       return card('Confirm your trip', `<p><b>${esc(disp(r, 'origin'))}</b> to <b>${esc(disp(r, 'dest'))}</b></p><p>${whenText(r.trip_date, r.depart_min, r.repeat_days)}</p>
-        <p class="mut">${r.max_pickups === 1 ? 'One pickup only' : 'Up to ' + r.max_pickups + ' pickups'} &middot; max ${r.max_detour} extra min for one pickup${r.max_pickups > 1 && r.max_total_detour != null ? ' &middot; max ' + r.max_total_detour + ' extra min for all pickups together' : ''} &middot; max wait ${r.max_wait} min &middot; accepts ${r.accepts === 'either' ? 'points or cash' : r.accepts === 'points' ? 'points only' : 'cash gas-share only'}</p>
+        <p class="mut">${r.max_pickups === 1 ? 'One pickup only' : 'Up to ' + r.max_pickups + ' pickups'} &middot; max ${r.max_detour} extra min for one pickup${r.max_pickups > 1 && r.max_total_detour != null ? ' &middot; max ' + r.max_total_detour + ' extra min for all pickups together' : ''} &middot; accepts ${r.accepts === 'either' ? 'points or cash' : r.accepts === 'points' ? 'points only' : 'cash gas-share only'}</p>
         <div style="margin-top:10px"><button class="btn" id="lt-confirm">${myTrip ? 'Confirm and update' : 'Confirm and post'}</button> <button class="btn ghost" id="lt-back">Back</button></div>`);
     }
     if (myTrip && !editing.trip) return '';
@@ -873,7 +882,7 @@
         <div style="margin-top:6px"><button class="btn" data-acc="${x.id}">Accept</button> <button class="btn ghost" data-dec="${x.id}">Decline</button></div></div>`).join('') : '<p class="mut">None yet. Riders ask you for a seat; you accept here.</p>');
     const riding = card('Confirmed riders', acc.length ? acc.map((x) => { const q = reqById[x.request_id], ns = nextStep(x, esc(names[x.rider_id] || 'rider')), open = stepsOpen(x), link = mapsLink(x, q);
       return `<div style="padding:8px 0;border-top:1px solid var(--line)">${whoCard(x.rider_id, 'rider')}<div style="margin:4px 0"><span class="tag">${esc(STEP_LABEL[stageOf(x)])}</span>${x.rider_confirmed_at ? ' <span class="tag">rider confirmed</span>' : ''}</div><div class="mut">${x.pay_with === 'points' ? x.points + ' pts held until drop-off' : 'cash gas-share'}${q ? ' &middot; ' + esc(q.pickup) + ' to ' + esc(q.dropoff) : ''}</div>${meetLine(x)}
-        <div style="margin-top:6px">${open ? `<button class="btn" data-step="${x.id}|${ns.step}">${ns.label}</button>` : '<span class="mut">Steps open 2 hours before pickup.</span>'} ${link && open ? `<a class="btn ghost" style="display:inline-block;text-decoration:none" href="${link}" target="_blank" rel="noopener">Open in Google Maps</a>` : ''} ${canNoShow(x) ? `<button class="btn ghost" data-noshow="${x.id}">Rider did not show up</button>` : noShowHint(x)} ${msgButton(x)} ${PCOK ? `<button class="btn ghost" data-report="${x.id}|${x.rider_id}">Report a problem</button>` : ''}</div></div>`; }).join('') : '<p class="mut">No riders yet.</p>');
+        <div style="margin-top:6px">${open ? `<button class="btn" data-step="${x.id}|${ns.step}">${ns.label}</button>` : '<span class="mut">Steps open 2 hours before pickup.</span>'} ${link && open ? `<a class="btn ghost" style="display:inline-block;text-decoration:none" href="${link}" target="_blank" rel="noopener">Open in Google Maps</a>` : ''} ${canNoShow(x) ? `<button class="btn ghost" data-noshow="${x.id}">Rider isn't here</button>` : ''} ${msgButton(x)} ${PCOK ? `<button class="btn ghost" data-report="${x.id}|${x.rider_id}">Report a problem</button>` : ''}</div></div>`; }).join('') : '<p class="mut">No riders yet.</p>');
     const near = !found.length ? '' : card('Matching ride requests', found.map((m) => { const q = reqById[m.rider.id]; return `<div style="padding:6px 0;border-top:1px solid var(--line)"><b>${nm(q.user_id)}</b>${badge(q.user_id, 'rider')}${tagsFor(q.user_id, 'rider')}${q.live ? ' <span class="tag">needs a ride now</span>' : ''} <span class="mut">${esc(q.pickup)} to ${esc(q.dropoff)} &middot; +${Math.round(m.addedDetour)} min detour &middot; pick up ${clk(m.pickupAt)} &middot; drop ${clk(m.dropAt)}</span></div>`; }).join(''));
     return dateCard + summary + '<div id="seat-requests">' + reqs + '</div><div id="riding-with-me">' + riding + '</div>' + near;
   }
@@ -951,7 +960,7 @@
     const mineReq = curReq ? `<div style="padding:6px 0"><b>${esc(disp(curReq, 'pickup'))} to ${esc(disp(curReq, 'dropoff'))}</b><div class="mut">${esc(RSD.label(curReq.ride_date))}, ready ${clk(curReq.ready_from)} to ${clk(curReq.ready_to)}${curReq.repeat_days.length ? ' &middot; repeats ' + RSD.repeatText(curReq.repeat_days) : ' &middot; one time'}</div><div style="margin-top:6px"><button class="btn ghost" data-go="t-rider">Edit</button> <button class="btn ghost" data-offreq="${curReq.id}">Cancel my request</button></div></div>` : '<p class="mut">No ride requested. Use <b>I need a ride</b>.</p>';
     const live = matches.filter((x) => (x.status === 'requested' || x.status === 'accepted') && x.ride_date >= t0).sort((a, b) => (a.ride_date < b.ride_date ? -1 : 1));
     const asRider = live.filter((x) => x.rider_id === user.id), asDriver = live.filter((x) => x.driver_id === user.id && (x.status !== 'requested' || fitsOk(x)));
-    const when = (x) => { const t = tripBy(x.trip_id); return esc(RSD.label(x.ride_date)) + (t ? ' at ' + clk(t.depart_min) : ''); };
+    const when = (x) => { const t = tripBy(x.trip_id); const pm = pickMin(x, t); return esc(RSD.label(x.ride_date)) + (pm != null ? ' at ' + clk(pm) : ''); };
     const row = (x, isRider) => {
       const other = isRider ? x.driver_id : x.rider_id, pay = x.pay_with === 'points' ? x.points + ' pts' : 'cash gas-share';
       let actions = '';
@@ -961,7 +970,7 @@
       } else {
         const b = [];
         if (!isRider && x.status === 'requested') b.push(`<button class="btn" data-acc="${x.id}">Accept</button> <button class="btn ghost" data-dec="${x.id}">Decline</button>`);
-        if (canNoShow(x)) b.push(`<button class="btn ghost" data-noshow="${x.id}">Rider did not show up</button>`); else if (noShowHint(x)) b.push(noShowHint(x));
+        if (canNoShow(x)) b.push(`<button class="btn ghost" data-noshow="${x.id}">Rider isn't here</button>`);
         if ((isRider || x.status === 'accepted') && !x.picked_up_at) b.push(`<button class="btn ghost" data-cancelask="${x.id}">${!isRider ? 'Cancel pickup' : x.status === 'requested' ? 'Cancel request' : 'Cancel ride'}</button>`);
         if (msgButton(x) && x.status === 'accepted') b.push(msgButton(x));
         if (isRider && meetButton(x)) b.push(meetButton(x));
@@ -977,7 +986,7 @@
     const pastRows = past.length ? past.map((x) => { const isRider = x.rider_id === user.id; return `<div style="padding:6px 0;border-top:1px solid var(--line)">${when(x)} <span class="tag">${esc(statusText(x.status))}</span><div class="mut">${isRider ? 'Driver' : 'Rider'} ${nm(isRider ? x.driver_id : x.rider_id)} &middot; ${x.pay_with === 'points' ? x.points + ' pts' : 'cash'}${x.refunded ? ' &middot; ' + x.refunded + ' pts returned' : ''}</div></div>`; }).join('') : '<p class="mut">Nothing yet.</p>';
     const policy = `<p class="mut">Points are held when a driver accepts a rider, and paid to the driver after the ride. Cash rides: no points move.</p>
       <p style="margin:10px 0 2px"><b>If you are the rider</b></p><ul class="mut" style="margin:4px 0 0 18px;padding:0"><li>Cancel more than 2 hours before pickup: you get all your points back.</li><li>Cancel within 2 hours: your first late cancel each month is free. After that, the driver keeps half of the points reserved for this ride.</li><li>You cannot cancel after the pickup time.</li></ul>
-      <p style="margin:10px 0 2px"><b>If you are the driver</b></p><ul class="mut" style="margin:4px 0 0 18px;padding:0"><li>If you cancel a pickup, the rider gets all their points back.</li><li>If the rider does not show up, you can mark a no-show after waiting, and you keep the points.</li></ul>`;
+      <p style="margin:10px 0 2px"><b>If you are the driver</b></p><ul class="mut" style="margin:4px 0 0 18px;padding:0"><li>If you cancel a pickup, the rider gets all their points back.</li><li>If the rider is not at the pickup spot when you get there, tap Rider isn't here (not before their pickup time). The ride closes as a missed pickup and you keep the points.</li></ul>`;
     // Past trips: my finished trips (route, date, who rode, distance) and the rides I took as a rider
     const kmOf = (id) => drives.filter((d) => d.trip_id === id).reduce((a, d) => a + (+d.distance_km || 0), 0);
     const tripRows = pastTrips.filter((t) => (known(t) || t.origin) && (matches.some((x) => x.trip_id === t.id && x.status === 'completed') || kmOf(t.id) > 0)).slice(0, 8).map((t) => {
@@ -1029,7 +1038,7 @@
   const saveSettings = () => {
     const g = (id) => $(id), n = (id, max) => Math.max(0, Math.min(max, Math.round(+g(id).value || 0)));
     const base = S_(), row = Object.assign({}, base, { user_id: user.id, updated_at: new Date().toISOString() });
-    if (g('ls-detour')) Object.assign(row, { d_detour: n('ls-detour', 60), d_wait: 5, d_accepts: g('ls-accepts').value, d_seats: Math.max(1, Math.min(4, +g('ls-seats').value || 1)), d_total_detour: n('ls-detour', 60), ...(DKOK ? { d_detour_km: optNum('ls-detourkm'), d_total_detour_km: optNum('ls-detourkm') } : {}), d_auto_accept: g('ls-auto').checked, d_chat: g('ls-dchat').value, d_pets: g('ls-dpets').checked });
+    if (g('ls-detour')) Object.assign(row, { d_detour: n('ls-detour', 60), d_wait: 0, d_accepts: g('ls-accepts').value, d_seats: Math.max(1, Math.min(4, +g('ls-seats').value || 1)), d_total_detour: n('ls-detour', 60), ...(DKOK ? { d_detour_km: optNum('ls-detourkm'), d_total_detour_km: optNum('ls-detourkm') } : {}), d_auto_accept: g('ls-auto').checked, d_chat: g('ls-dchat').value, d_pets: g('ls-dpets').checked });
     if (g('ls-pays')) Object.assign(row, { r_pays: g('ls-pays').value, r_chat: g('ls-rchat').value, r_pets: g('ls-rpets').checked });
     return row;
   };
@@ -1087,7 +1096,7 @@
     ['ln-date', 'ln-t', 'ln-pk', 'ln-dt', 'ln-a', 'ln-dk'].forEach((id) => { const e = $(id); if (e) e.onchange = () => { LV[id] = e.value; }; });
     document.querySelectorAll('#ln-days button').forEach((b) => (b.onclick = () => { b.classList.toggle('on'); LV.days = readDays('ln-days'); }));
     on('ln-review', () => {
-      const row = { origin: $('ln-o').value, dest: $('ln-d').value, trip_date: $('ln-date').value, depart_min: hm($('ln-t').value || '07:30'), repeat_days: readDays('ln-days'), max_detour: +$('ln-dt').value, max_total_detour: +$('ln-dt').value, max_pickups: +$('ln-pk').value, max_wait: 5, accepts: $('ln-a').value, ...(DKOK ? { max_detour_km: optNum('ln-dk'), max_total_detour_km: optNum('ln-dk') } : {}), ...plCols('ln-o', 'origin'), ...plCols('ln-d', 'dest') };
+      const row = { origin: $('ln-o').value, dest: $('ln-d').value, trip_date: $('ln-date').value, depart_min: hm($('ln-t').value || '07:30'), repeat_days: readDays('ln-days'), max_detour: +$('ln-dt').value, max_total_detour: +$('ln-dt').value, max_pickups: +$('ln-pk').value, max_wait: 0, accepts: $('ln-a').value, ...(DKOK ? { max_detour_km: optNum('ln-dk'), max_total_detour_km: optNum('ln-dk') } : {}), ...plCols('ln-o', 'origin'), ...plCols('ln-d', 'dest') };
       const need = plNeed('ln-o', 'where you start') || plNeed('ln-d', 'where you are going'); if (need) { formMsg('ln-msg', need); return; }
       if (row.max_pickups === 1) row.max_total_detour = null; else if (row.max_total_detour < row.max_detour) { formMsg('ln-msg', 'The total for all pickups cannot be less than the time for one pickup'); return; }
       formMsg('ln-msg', '');
@@ -1097,7 +1106,7 @@
       pending = { kind: 'trip', row }; formSig = ''; render();
     });
     on('lt-review', () => {
-      const row = { origin: $('lt-o').value, dest: $('lt-d').value, trip_date: $('lt-date').value, depart_min: hm($('lt-t').value || '07:30'), repeat_days: readDays('lt-days'), max_detour: +$('lt-dt').value, max_total_detour: +$('lt-dt').value, ...(DKOK ? { max_detour_km: optNum('lt-dk'), max_total_detour_km: optNum('lt-dk') } : {}), max_pickups: +$('lt-pk').value, max_wait: 5, accepts: $('lt-a').value, ...plCols('lt-o', 'origin'), ...plCols('lt-d', 'dest') };
+      const row = { origin: $('lt-o').value, dest: $('lt-d').value, trip_date: $('lt-date').value, depart_min: hm($('lt-t').value || '07:30'), repeat_days: readDays('lt-days'), max_detour: +$('lt-dt').value, max_total_detour: +$('lt-dt').value, ...(DKOK ? { max_detour_km: optNum('lt-dk'), max_total_detour_km: optNum('lt-dk') } : {}), max_pickups: +$('lt-pk').value, max_wait: 0, accepts: $('lt-a').value, ...plCols('lt-o', 'origin'), ...plCols('lt-d', 'dest') };
       const need = plNeed('lt-o', 'where you start') || plNeed('lt-d', 'where you are going'); if (need) { formMsg('lt-msg', need); return; }
       if (row.max_pickups === 1) row.max_total_detour = null; else if (row.max_total_detour < row.max_detour) { formMsg('lt-msg', 'The total for all pickups cannot be less than the time for one pickup'); return; }
       formMsg('lt-msg', '');
@@ -1270,7 +1279,7 @@
     each('[data-cancelgo]', (b) => { askCancel = null; run(sb.rpc('cancel_ride', { p_match: b.dataset.cancelgo }), 'Ride cancelled. See your points history for any refund.'); });
     each('[data-step]', (b) => { const [id, st] = b.dataset.step.split('|'); run(sb.rpc('ride_step', { p_match: id, p_step: st }), st === 'dropped_off' ? 'Dropped off. That rider\'s ride is complete and the points are paid. Keep driving to your destination.' : 'Updated'); });
     each('[data-incar]', (b) => run(sb.rpc('rider_in_car', { p_match: b.dataset.incar }), 'Thanks, confirmed'));
-    each('[data-noshow]', (b) => !window.confirm('Mark this rider as a no-show?\n\nYou keep the points. This goes on the rider\'s record.') ? null : run(sb.rpc('mark_no_show', { p_match: b.dataset.noshow }), 'Marked as a no-show. You keep the points.'));
+    each('[data-noshow]', (b) => !window.confirm('Is the rider not at the pickup spot?\n\nThe ride closes as a missed pickup and you keep the points. This goes on the rider\'s record.') ? null : run(sb.rpc('mark_no_show', { p_match: b.dataset.noshow }), 'Closed as a missed pickup. You keep the points.'));
     each('[data-acc]', (b) => run(sb.rpc('respond_match', { p_match: b.dataset.acc, p_accept: true }), 'Accepted'));
     each('[data-dec]', (b) => run(sb.rpc('respond_match', { p_match: b.dataset.dec, p_accept: false }), 'Declined'));
     each('[data-offtrip]', (b) => !window.confirm('Cancel this trip?\n\nAny rider who is booked is cancelled and gets their points back.') ? null : run(cancelTrip(b.dataset.offtrip), 'Trip cancelled'));

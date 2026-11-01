@@ -15,7 +15,7 @@ No profit for drivers — the goal is to **lower the cost of driving**, with zer
 | **Idea** | Driver enters destination → app suggests riders already near the route → one tap to accept |
 | **Payment** | Rider chooses: **cash share of gas** or **points** (earned when they drive someone else) |
 | **Fairness** | Cost is split across everyone in the car, so more riders = cheaper per person |
-| **Driver rule** | Driver sets max detour + max wait. App only shows riders inside those limits |
+| **Driver rule** | Driver sets max detour. App only shows riders inside that limit. Nobody waits for a rider |
 | **Maps** | Google Maps (or Mapbox) for routes, ETAs, pickup points |
 
 ## Verdict (short)

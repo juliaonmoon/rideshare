@@ -8,7 +8,7 @@ Priority: **P0** = MVP, **P1** = soon after, **P2** = later.
 |---|---|---|
 | 1 | Driver enters destination/time; sees route on a map | P0 |
 | 2 | App recommends qualified riders near the route; one-tap accept | P0 |
-| 3 | Driver sets max detour and max wait; app respects both | P0 |
+| 3 | Driver sets max detour; app respects it (no waiting for riders) | P0 |
 | 4 | Rider chooses payment: cash gas-share **or** points | P0 |
 | 5 | Driver chooses how to be compensated: cash or points | P0 |
 | 6 | Price per person falls as more passengers join | P0 |
@@ -25,7 +25,7 @@ Priority: **P0** = MVP, **P1** = soon after, **P2** = later.
 | Recurring commute schedule | Biggest convenience win | P0 |
 | Cost-share cap (never above real trip cost) | Keeps us legal/insurable | P0 |
 | Ride confirmation (QR/code at pickup) + GPS trace | Prevents fake rides and point fraud | P0 |
-| Cancellation / no-show rules | Reliability; drivers hate waiting | P0 |
+| Cancellation / missed-pickup rules | Reliability; riders are on time, drivers may be late | P0 |
 | Ratings and reporting | Safety | P0 |
 | Share-my-trip link, emergency button | Safety | P1 |
 | In-app chat with hidden phone numbers | Privacy | P1 |
