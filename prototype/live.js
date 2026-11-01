@@ -49,6 +49,16 @@
         await loadAll(); const dv = $('rs-driving'), hm2 = $('nb-home'); if (dv) dv.click(); if (hm2) hm2.click();
         setTimeout(() => { const p = $('plan-wrap') || $('ld-top'); if (p) p.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 500); return;
       }
+      if (ev && ev.url && ev.url.indexOf('ca.rideshare.app://cancel-offer') === 0) {   // the Cancel my offer button on a leave-by reminder
+        await loadAll(); const lt = myLiveTrip; const dv = $('rs-driving'); if (dv) dv.click();
+        if (!lt) { toast('Your offer is already off'); return; }
+        if (window.confirm('Cancel your offer?\n\nAnyone you accepted gets all their points back.')) {
+          const r = await cancelTrip(lt.id);
+          if (r && r.error) toast('Could not cancel: ' + r.error.message); else { try { if (driveSession && !shouldShare()) stopShare(true); } catch (e) { /* ignore */ } toast('Your offer is cancelled'); }
+          await loadAll();
+        }
+        return;
+      }
       if (ev && ev.url && ev.url.indexOf('ca.rideshare.app://update-route') === 0) { await loadAll(); setTimeout(() => { if (window.__startNav) window.__startNav(true); }, 600); return; }
       if (!ev || !ev.url || ev.url.indexOf(APP_AUTH) !== 0) return;
       try { if (nativePlug('Browser')) await nativePlug('Browser').close(); } catch (e) { /* tab already closed */ }
@@ -73,6 +83,7 @@
   let DKOK = null;   // migration 020 (detour limits in km, detour saved with each request) is in place
   let bubbleHidden = false;
   let pastTrips = [];   // my trips that are finished or cancelled
+  let leaveInfo = {}; // seat request id -> when the driver must leave to reach that rider (Offer a ride now only)
   let apOn = null;   // test autopilot state last sent to the Android helper
   function syncAutopilot() {
     const n = nativeLoc && nativeLoc(); if (!n || !n.setAutopilot) return;
@@ -303,6 +314,15 @@
   const who = (id, role) => nm(id) + badge(id, role);
   const LATE_MIN = 120;
   const tripBy = (id) => [...otherTrips, ...extraTrips, ...(myTrip ? [myTrip] : []), ...(myLiveTrip ? [myLiveTrip] : [])].find((t) => t.id === id);
+  // "Leave by 7:48" for a driver who has not set off, "About 9 min" for one who is already driving
+  const leaveLine = (id) => {
+    const i = leaveInfo[id]; if (!i) return '';
+    if (i.moving) return '<div style="margin-top:4px"><b>About ' + Math.max(1, Math.round(i.offset_min)) + ' min to reach them.</b></div>';
+    if (i.leave_by_min == null) return '';
+    const late = i.leave_by_at && Date.parse(i.leave_by_at) < Date.now();
+    return late ? '<div class="warn" style="margin-top:4px">It is too late to reach them in their ready time.</div>'
+      : '<div style="margin-top:4px"><b>Leave by ' + clk(i.leave_by_min % 1440) + '</b> to reach them. <span class="mut">They are ready until ' + clk(i.ready_until_min % 1440) + '.</span></div>';
+  };
   const pickupMs = (m) => { if (m.pickup_time) return Date.parse(m.pickup_time); const t = tripBy(m.trip_id); return t ? RSD.vanEpoch(m.ride_date, t.depart_min) : null; };
   const pickMin = (m, t) => {
     if (m.pickup_time) {
@@ -410,6 +430,11 @@
       if (isTest && MSOK) { try { const ar = await sb.rpc('admin_reports', { p_open: true }); adminReports = ar.error ? [] : (ar.data || []); } catch (e) { adminReports = []; } }
       try { const pt = await sb.from('trips').select('*').eq('user_id', uid).eq('active', false).order('created_at', { ascending: false }).limit(12); pastTrips = pt.data || []; } catch (e) { pastTrips = []; }
       try { let left = 3; for (const t of pastTrips.slice(0, 8)) { if (left <= 0) break; if (t.route_km || t.active || !(matches.some((x) => x.trip_id === t.id && x.status === 'completed') || t.live)) continue; left--; const r = await fetchRouteSummary(t.id); if (r && r.km) { t.route_km = r.km; t.route_min = r.minutes; t.route_source = r.source; } } } catch (e) { /* older database */ }
+      try {
+        const asks = matches.filter((x) => x.driver_id === uid && x.status === 'requested').slice(0, 5); const li = {};
+        await Promise.all(asks.map(async (x) => { const r = await sb.rpc('leave_info', { p_match: x.id }); if (!r.error && r.data && r.data.ok) li[x.id] = r.data; }));
+        leaveInfo = li;
+      } catch (e) { leaveInfo = {}; /* older database: no leave-by */ }
       try { const ds = await sb.from('drive_sessions').select('*').order('started_at', { ascending: false }).limit(60); drives = ds.data || []; } catch (e) { drives = []; }
       try { const st = await sb.from('user_settings').select('*').eq('user_id', uid).maybeSingle(); mySet = st.data || null; const sr = await sb.rpc('ride_styles', { p_ids: [...ids] }); styles = {}; (sr.data || []).forEach((x) => { styles[x.user_id] = x; }); } catch (e) { /* older database without settings: ignore */ }
       const rl = await sb.from('reliability').select('*'); rel = {}; (rl.data || []).forEach((x) => { rel[x.user_id] = x; });
@@ -565,7 +590,7 @@
     wrap.classList.remove('hide');
     $('req-title').textContent = asks.length > 1 ? asks.length + ' riders are asking for a seat' : 'A rider is asking for a seat';
     $('req-body').innerHTML = asks.map((x) => { const q = reqById[x.request_id];
-      return '<div style="padding:8px 0;border-top:1px solid var(--line)"><b style="font-size:17px">' + nm(x.rider_id) + '</b>' + badge(x.rider_id, 'rider') + tagsFor(x.rider_id, 'rider') + '<div class="mut">' + esc(disp(q, 'pickup')) + ' to ' + esc(disp(q, 'dropoff')) + ' &middot; ' + (x.pay_with === 'points' ? x.points + ' pts' : 'cash gas-share') + '</div>' + detourLine(reqFit(x)) + '<div style="margin-top:8px"><button class="btn" data-acc="' + x.id + '" style="padding:12px 22px;font-size:16px">Accept</button> <button class="btn ghost" data-dec="' + x.id + '">Decline</button></div></div>'; }).join('');
+      return '<div style="padding:8px 0;border-top:1px solid var(--line)"><b style="font-size:17px">' + nm(x.rider_id) + '</b>' + badge(x.rider_id, 'rider') + tagsFor(x.rider_id, 'rider') + '<div class="mut">' + esc(disp(q, 'pickup')) + ' to ' + esc(disp(q, 'dropoff')) + ' &middot; ' + (x.pay_with === 'points' ? x.points + ' pts' : 'cash gas-share') + '</div>' + detourLine(reqFit(x)) + leaveLine(x.id) + '<div style="margin-top:8px"><button class="btn" data-acc="' + x.id + '" style="padding:12px 22px;font-size:16px">Accept</button> <button class="btn ghost" data-dec="' + x.id + '">Decline</button></div></div>'; }).join('');
   }
   // The plan card has its own map (map-plan) that is never rebuilt, so it does not flicker when the page refreshes.
   function renderPlan() {
@@ -830,7 +855,9 @@
         }
       }
     }
-    if ((stg === 'accepted' || stg === 'on_my_way') && pk != null && !m.arrived_at) html = `<p><b>Be at the pickup spot by ${clk(pickMin(m, t))}.</b> <span class="mut">If you are not there, your driver may drive on.</span></p>` + html;
+    if ((stg === 'accepted' || stg === 'on_my_way') && pk != null && !m.arrived_at) html = (Date.now() >= pk + 60000
+      ? `<p class="warn"><b>${dn} is running late.</b> You can cancel for free if they have not arrived 15 minutes after ${clk(pickMin(m, t))}.</p>`
+      : `<p><b>Be at the pickup spot by ${clk(pickMin(m, t))}.</b> <span class="mut">If you are not there, your driver may drive on.</span></p>`) + html;
     return html;
   }
 
@@ -878,7 +905,7 @@
       <p class="mut">${RS.km(stops).toFixed(1)} km total &middot; riders pay only their share, never more.</p>
       <button class="btn ghost" id="ld-start">Preview route (watch the car)</button> <button class="btn ghost" id="ld-stop">Stop preview</button>
       <p class="mut" style="margin-top:8px">${viewD === todayStr() ? 'When you set off, tap Start trip at the top. It opens Google Maps with your destination and your riders as stops, and tells your riders you are on the way.' : 'Start trip is available on the day of the trip.'}</p>`);
-    const reqs = card('Seat requests', inc.length ? inc.map((x) => `<div style="padding:8px 0;border-top:1px solid var(--line)"><b>${nm(x.rider_id)}</b>${badge(x.rider_id, 'rider')} <span class="mut">pays ${x.pay_with === 'points' ? x.points + ' pts' : 'cash gas-share'}</span>${detourLine(reqFit(x))}
+    const reqs = card('Seat requests', inc.length ? inc.map((x) => `<div style="padding:8px 0;border-top:1px solid var(--line)"><b>${nm(x.rider_id)}</b>${badge(x.rider_id, 'rider')} <span class="mut">pays ${x.pay_with === 'points' ? x.points + ' pts' : 'cash gas-share'}</span>${detourLine(reqFit(x))}${leaveLine(x.id)}
         <div style="margin-top:6px"><button class="btn" data-acc="${x.id}">Accept</button> <button class="btn ghost" data-dec="${x.id}">Decline</button></div></div>`).join('') : '<p class="mut">None yet. Riders ask you for a seat; you accept here.</p>');
     const riding = card('Confirmed riders', acc.length ? acc.map((x) => { const q = reqById[x.request_id], ns = nextStep(x, esc(names[x.rider_id] || 'rider')), open = stepsOpen(x), link = mapsLink(x, q);
       return `<div style="padding:8px 0;border-top:1px solid var(--line)">${whoCard(x.rider_id, 'rider')}<div style="margin:4px 0"><span class="tag">${esc(STEP_LABEL[stageOf(x)])}</span>${x.rider_confirmed_at ? ' <span class="tag">rider confirmed</span>' : ''}</div><div class="mut">${x.pay_with === 'points' ? x.points + ' pts held until drop-off' : 'cash gas-share'}${q ? ' &middot; ' + esc(q.pickup) + ' to ' + esc(q.dropoff) : ''}</div>${meetLine(x)}
