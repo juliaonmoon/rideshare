@@ -98,7 +98,8 @@ public class LocationService extends Service {
     }
     private String url = "", key = "", token = "";
     private volatile boolean ride = false;        // a ride is in progress, so positions are sent
-    private boolean firstPoll = true;             // requests already waiting when we start are not announced
+    private final Set<String> announced = new HashSet<>();   // seat requests whose phone alert is on screen
+    private boolean firstPoll = true;            // requests already waiting when we start are not announced
     private int inactive = 0;
     private final Set<String> notified = new HashSet<>();
     private volatile boolean riderOnly = false;     // started for a rider: watch rides and alert, but do not use or send the location
@@ -287,12 +288,20 @@ public class LocationService extends Service {
             else if (++inactive >= 4) { main.post(this::stopSelf); return; }   // nothing on today: about a minute of quiet, then off
             JSONArray pend = o.optJSONArray("pending");
             if (pend != null) {
+                Set<String> nowPend = new HashSet<>();
                 for (int i = 0; i < pend.length(); i++) {
                     JSONObject p = pend.getJSONObject(i);
                     String id = p.optString("id");
+                    if (!id.isEmpty()) nowPend.add(id);
                     if (id.isEmpty() || !notified.add(id)) continue;
                     String dt = detourText(p), lt = leaveText(p);
-                    if (!firstPoll) announce(id, p.optString("name", "A rider"), p.optString("pickup"), p.optString("dropoff"), dt.isEmpty() ? lt : lt.isEmpty() ? dt : dt + ". " + lt);
+                    if (!firstPoll) { announce(id, p.optString("name", "A rider"), p.optString("pickup"), p.optString("dropoff"), dt.isEmpty() ? lt : lt.isEmpty() ? dt : dt + ". " + lt); announced.add(id); }
+                }
+                // a request that is no longer waiting (answered, ended, or now outside the detour limits) must not stay on the phone
+                for (String old : new HashSet<>(announced)) {
+                    if (nowPend.contains(old)) continue;
+                    try { getSystemService(NotificationManager.class).cancel(idOf(ID_REQ, old)); } catch (Exception ignore) { }
+                    announced.remove(old);
                 }
             }
             firstPoll = false;
