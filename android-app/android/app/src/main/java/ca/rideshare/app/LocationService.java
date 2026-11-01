@@ -62,6 +62,7 @@ public class LocationService extends Service {
     static final String ACTION_DECLINE = "ca.rideshare.app.DECLINE";
     static final String ACTION_STEP = "ca.rideshare.app.STEP";
     static final String ACTION_QUIET = "ca.rideshare.app.QUIET";
+    static final String ACTION_LEAVE_GO = "ca.rideshare.app.LEAVE_GO";   // "I'm leaving" on a leave-by reminder
     static final String STEPS_CHANNEL = "rideshare_steps";
     private static final double ARRIVE_M = 250;   // close enough to a pickup to say "your driver is here" (stop points are only known to about 100 m)
     private static final double DROP_M = 300;     // close enough to a drop-off to offer the Dropped off button
@@ -290,10 +291,12 @@ public class LocationService extends Service {
                     JSONObject p = pend.getJSONObject(i);
                     String id = p.optString("id");
                     if (id.isEmpty() || !notified.add(id)) continue;
-                    if (!firstPoll) announce(id, p.optString("name", "A rider"), p.optString("pickup"), p.optString("dropoff"), detourText(p));
+                    String dt = detourText(p), lt = leaveText(p);
+                    if (!firstPoll) announce(id, p.optString("name", "A rider"), p.optString("pickup"), p.optString("dropoff"), dt.isEmpty() ? lt : lt.isEmpty() ? dt : dt + ". " + lt);
                 }
             }
             firstPoll = false;
+            handleLeave(o.optJSONArray("leave"));
             JSONArray rs = o.optJSONArray("rides");
             rides = rs == null ? new JSONArray() : rs;
             updateStepNotes();
@@ -463,7 +466,7 @@ public class LocationService extends Service {
     }
 
     // ID ranges (never overlapping): seat requests 100000.., step notes 200000.., stop pop-ups 300000.., error notes 400000.., each + 0..4095
-    static final int ID_REQ = 100000, ID_STEP = 200000, ID_POP = 300000, ID_ERR = 400000;
+    static final int ID_REQ = 100000, ID_STEP = 200000, ID_POP = 300000, ID_ERR = 400000, ID_LEAVE = 700000;
     private static int idOf(int base, String matchId) { return base + (matchId.hashCode() & 0xfff); }
 
     private PendingIntent stepIntent(String step, String matchId, String name, int nid) {
@@ -763,6 +766,83 @@ public class LocationService extends Service {
         return b.toString();
     }
 
+    /** "Leave by 7:48" for a driver who has not set off, "About 9 min to reach them" for one who is driving (empty when the database sent nothing). */
+    private static String leaveText(JSONObject p) {
+        JSONObject l = p.optJSONObject("leave");
+        if (l == null || !l.optBoolean("ok", false)) return "";
+        if (l.optBoolean("moving", false)) return "About " + Math.max(1, Math.round(l.optDouble("offset_min", 1))) + " min to reach them";
+        if (l.isNull("leave_by_ms")) return "";
+        long ms = l.optLong("leave_by_ms");
+        return ms < System.currentTimeMillis() ? "Too late to reach them in time" : "Leave by " + clock(ms);
+    }
+
+    private static String clock(long ms) {
+        java.text.SimpleDateFormat f = new java.text.SimpleDateFormat("h:mm a", java.util.Locale.US);
+        f.setTimeZone(java.util.TimeZone.getTimeZone("America/Vancouver"));
+        return f.format(new java.util.Date(ms));
+    }
+
+    /** Reminders for riders the driver accepted but has not set off for: 5 minutes before the leave-by time, at it, and a minute past it. Each shows once. */
+    private final java.util.Map<String, Integer> leaveStage = new java.util.HashMap<>();   // the riders' ids -> the last reminder shown (1, 2 or 3)
+    private void handleLeave(JSONArray lv) {
+        if (lv == null || lv.length() == 0) {   // nobody waiting for the driver to set off, or the driver is already moving
+            if (!leaveStage.isEmpty()) { leaveStage.clear(); try { getSystemService(NotificationManager.class).cancel(ID_LEAVE); } catch (Exception ignore) { } }
+            return;
+        }
+        long soonest = Long.MAX_VALUE; String who = "your rider"; StringBuilder ids = new StringBuilder();
+        for (int i = 0; i < lv.length(); i++) {
+            JSONObject z = lv.optJSONObject(i);
+            if (z == null || z.optLong("leave_by_ms", 0) == 0) continue;
+            if (ids.length() > 0) ids.append(',');
+            ids.append(z.optString("id"));
+            if (z.optLong("leave_by_ms") < soonest) { soonest = z.optLong("leave_by_ms"); who = z.optString("name", "your rider"); }
+        }
+        if (soonest == Long.MAX_VALUE) return;
+        long rem = soonest - System.currentTimeMillis();
+        int stage = rem <= -60000 ? 3 : rem <= 0 ? 2 : rem <= 300000 ? 1 : 0;
+        if (stage == 0) return;
+        String key = ids.toString();
+        Integer shown = leaveStage.get(key);
+        if (shown != null && shown >= stage) return;
+        leaveStage.put(key, stage);
+        String title, text;
+        if (stage == 1) { title = "Leave in " + Math.max(1, Math.round(rem / 60000.0)) + " minutes"; text = "To reach " + who + " in time, leave by " + clock(soonest) + "."; }
+        else if (stage == 2) { title = "Time to leave now"; text = "Leave now to reach " + who + " in their ready time."; }
+        else { title = "You are past your leave-by time"; text = who + " may not be reached in time. Leave now, or cancel your offer."; }
+        Intent go = new Intent(this, LocationService.class).setAction(ACTION_LEAVE_GO).putExtra("matches", key);
+        PendingIntent goPi = PendingIntent.getService(this, 70, go, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+        Intent cancel = new Intent(Intent.ACTION_VIEW, Uri.parse("ca.rideshare.app://cancel-offer"))
+                .setClass(this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        PendingIntent cancelPi = PendingIntent.getActivity(this, 71, cancel, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+        Notification n = new NotificationCompat.Builder(this, ALERT_CHANNEL)
+                .setContentTitle(title).setContentText(text)
+                .setStyle(new NotificationCompat.BigTextStyle().bigText(text))
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setDefaults(Notification.DEFAULT_ALL)
+                .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+                .setContentIntent(openIntent())
+                .addAction(0, "I'm leaving", goPi)
+                .addAction(0, "Cancel my offer", cancelPi)
+                .build();
+        try { getSystemService(NotificationManager.class).notify(ID_LEAVE, n); } catch (Exception ignore) { }
+    }
+
+    /** "I'm leaving" on a reminder: tells every waiting rider that the driver is on the way (the same step as Start trip). */
+    private void doLeaveGo(String ids) {
+        String bad = "";
+        for (String id : ids.split(",")) {
+            if (id.isEmpty()) continue;
+            String err = stepCall(id, "on_my_way");
+            if (NO_NET.equals(err)) queueStep(id, "on_my_way", "your rider");
+            else if (!err.isEmpty()) bad = err;
+        }
+        try { getSystemService(NotificationManager.class).cancel(ID_LEAVE); } catch (Exception ignore) { }
+        leaveStage.clear();
+        if (!bad.isEmpty()) post2("Could not tell your riders", bad, ID_ERR + 7);
+        pollAlerts();
+    }
+
     private void announce(String id, String name, String pickup, String dropoff, String detour) {
         final int nid = idOf(ID_REQ, id);
         Intent open = new Intent(this, MainActivity.class).setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_NEW_TASK);
@@ -793,6 +873,11 @@ public class LocationService extends Service {
             if (key != null) alertTimes.put(key, new long[]{System.currentTimeMillis(), 99});
             int qn = intent.getIntExtra("nid", 0);
             if (qn != 0) { try { getSystemService(NotificationManager.class).cancel(qn); } catch (Exception ignore) { } }   // the Not yet button closes the pop-up
+            return;
+        }
+        if (ACTION_LEAVE_GO.equals(intent.getAction())) {
+            final String ids = intent.getStringExtra("matches");
+            if (ids != null && !io.isShutdown()) io.execute(() -> doLeaveGo(ids));
             return;
         }
         if (ACTION_STEP.equals(intent.getAction())) {
