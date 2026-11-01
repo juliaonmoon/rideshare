@@ -18,6 +18,7 @@ Open https://supabase.com/dashboard/project/iivhfapvkseeomxtsrxf/sql/new, paste 
 | `supabase/migrations/027_server_quotes.sql` | The server works out each rider's extra minutes and price (live traffic when switched on, saved drive times otherwise); riders together never pay more than the trip costs | Done (ran 2026-10-31) |
 | `supabase/migrations/028_fix_live_route.sql` | Fixes two mistakes in the live-traffic lookup | Done (ran 2026-10-31; live traffic tested and working) |
 | `supabase/migrations/029_blocking_and_profile_rules.sql` | Blocking an account cancels its future bookings and hides its offers; "never match me with this person"; the database requires a photo and car plate | **To run** |
+| `supabase/migrations/030_track_whole_trip.sql` | The distance of a drive is tracked for the whole trip (not only with a rider in the car); needs the new phone app too | **To run** |
 
 How to copy a file to the clipboard: ask Claude, or open the file on GitHub, click "Copy raw file", then paste it into the SQL editor.
 

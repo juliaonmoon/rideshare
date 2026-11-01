@@ -177,6 +177,45 @@
   const noFn = (r) => !!(r && r.error && /could not find the function|PGRST202|schema cache/i.test((r.error.message || '') + ' ' + (r.error.code || '')));
   const cancelTrip = async (id) => { const r = await sb.rpc('cancel_trip', { p_trip: id }); return noFn(r) ? sb.from('trips').update({ active: false }).eq('id', id) : r; };
   const cancelRequest = async (id) => { const r = await sb.rpc('cancel_request', { p_request: id }); return noFn(r) ? sb.from('ride_requests').update({ active: false }).eq('id', id) : r; };
+  // the planned road distance of a trip (an estimate from the map points); shown when the phone tracked clearly less than the trip
+  const plannedKm = (t) => { const a = pt(t, 'origin'), b = pt(t, 'dest'); return a && b ? RS.roadKm(a, b) : null; };
+  const kmLabel = (t, km) => { const p = plannedKm(t); if (km && (!p || km >= 0.7 * p)) return ' &middot; ' + km.toFixed(1) + ' km'; if (p) return ' &middot; about ' + Math.round(p) + ' km'; return km ? ' &middot; ' + km.toFixed(1) + ' km' : ''; };
+  const reqOf = (m) => [...otherReqs, ...extraReqs, ...(myReq ? [myReq] : [])].find((r) => r.id === m.request_id);
+  const payText = (x) => x.pay_with === 'points' ? x.points + ' pts' : 'cash' + (x.cash_cents ? ', about $' + (x.cash_cents / 100).toFixed(2) : ' gas-share');
+  function detailDialog(title, html, reports) {
+    const old = document.getElementById('dt-ov'); if (old) old.remove();
+    const ov = document.createElement('div'); ov.id = 'dt-ov'; ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:12px;overflow:auto';
+    ov.innerHTML = '<div style="background:var(--card);color:var(--ink);border-radius:14px;padding:16px;max-width:480px;width:100%;max-height:92vh;overflow:auto"><h2 style="margin:0 0 8px">' + title + '</h2>' + html + '<div style="margin-top:12px"><button class="btn" id="dt-close">Close</button></div></div>';
+    document.body.appendChild(ov);
+    document.getElementById('dt-close').onclick = () => ov.remove();
+    ov.querySelectorAll('[data-dtreport]').forEach((b) => { b.onclick = () => { const p = b.dataset.dtreport.split('|'); ov.remove(); reportDialog(p[0], p[1]); }; });
+  }
+  function tripDetail(id) {
+    const t = pastTrips.find((x) => x.id === id); if (!t) return;
+    const all = matches.filter((x) => x.trip_id === id), done = all.filter((x) => x.status === 'completed'), other = all.filter((x) => x.status !== 'completed' && x.status !== 'requested');
+    const ds = drives.filter((d) => d.trip_id === id), tracked = ds.reduce((a, d) => a + (+d.distance_km || 0), 0), planned = plannedKm(t);
+    const mins = ds.reduce((a, d) => a + Math.max(0, (Date.parse(d.ended_at || d.last_at) - Date.parse(d.started_at)) / 60000), 0);
+    const line = (a, b) => '<div style="display:flex;justify-content:space-between;gap:12px;padding:4px 0"><span class="mut">' + a + '</span><span style="text-align:right">' + b + '</span></div>';
+    let dist = '';
+    if (tracked && (!planned || tracked >= 0.7 * planned)) dist = line('Distance driven', tracked.toFixed(1) + ' km');
+    else { if (planned) dist += line('Route distance', 'about ' + Math.round(planned) + ' km (estimate)'); if (tracked) dist += '<p class="mut" style="margin:2px 0 6px">Your phone recorded only ' + tracked.toFixed(1) + ' km, because location sharing was on for only part of the trip.</p>'; }
+    const riders = done.length ? done.map((x) => { const q = reqOf(x); return '<div style="padding:8px 0;border-top:1px solid var(--line)">' + whoCard(x.rider_id, 'rider') + '<div class="mut" style="margin-top:4px">' + (q ? esc(disp(q, 'pickup')) + ' to ' + esc(disp(q, 'dropoff')) + ' &middot; ' : '') + payText(x) + (+x.ride_km ? ' &middot; ' + (+x.ride_km).toFixed(1) + ' km together' : '') + '</div>' + (myRatings && x.id in myRatings ? '<div class="mut">You rated them: ' + (myRatings[x.id] ? 'good' : 'not good') + '</div>' : '') + (PCOK ? '<div style="margin-top:6px"><button class="btn ghost" data-dtreport="' + x.id + '|' + x.rider_id + '">Report a problem</button></div>' : '') + '</div>'; }).join('') : '<p class="mut">No riders on this trip.</p>';
+    const earned = done.filter((x) => x.pay_with === 'points').reduce((a, x) => a + (+x.points || 0), 0);
+    detailDialog(esc(disp(t, 'origin')) + ' to ' + esc(disp(t, 'dest')),
+      line('When', esc(RSD.label(t.trip_date)) + ' at ' + clk(t.depart_min)) + line('Status', done.length ? 'completed' : 'no riders') + dist + (mins >= 1 ? line('Time recorded', Math.round(mins) + ' min') : '')
+      + (earned ? line('Points earned', earned + ' pts') : '') + '<h3 style="margin:12px 0 0">Riders</h3>' + riders
+      + (other.length ? '<p class="mut" style="margin-top:10px">Also: ' + other.map((x) => nm(x.rider_id) + ' (' + esc(statusText(x.status)) + ')').join(', ') + '</p>' : ''));
+  }
+  function rideDetail(matchId) {
+    const x = matches.find((m) => m.id === matchId); if (!x) return;
+    const q = reqOf(x), t = tripBy(x.trip_id);
+    const line = (a, b) => '<div style="display:flex;justify-content:space-between;gap:12px;padding:4px 0"><span class="mut">' + a + '</span><span style="text-align:right">' + b + '</span></div>';
+    detailDialog('Ride with ' + nm(x.driver_id),
+      '<div style="margin-bottom:8px">' + whoCard(x.driver_id, 'driver') + '</div>' + (q ? line('From', esc(disp(q, 'pickup'))) + line('To', esc(disp(q, 'dropoff'))) : '')
+      + line('When', when(x)) + line('Status', esc(statusText(x.status))) + line('Paid', payText(x) + (x.price_dollars ? ' (about $' + (+x.price_dollars).toFixed(2) + ')' : ''))
+      + (+x.ride_km ? line('Distance in the car', (+x.ride_km).toFixed(1) + ' km') : '') + (x.id in myRatings ? line('Your rating', myRatings[x.id] ? 'good' : 'not good') : '')
+      + (PCOK ? '<div style="margin-top:8px"><button class="btn ghost" data-dtreport="' + x.id + '|' + x.driver_id + '">Report a problem</button></div>' : ''));
+  }
   const reportLine = (m, otherId) => (PCOK && m && ['completed', 'cancelled', 'no_show'].includes(m.status) ? '<div style="margin-top:6px"><button class="btn ghost" data-report="' + m.id + '|' + otherId + '">Report a problem</button></div>' : '');
   let msgTimer = null;
   function msgDialog(matchId) {
@@ -350,7 +389,7 @@
       try { const ta = await sb.from('test_accounts').select('user_id,test_mode').eq('user_id', uid).maybeSingle(); isTest = !!ta.data; testMode = !!(ta.data && ta.data.test_mode); } catch (e) { isTest = false; testMode = false; }
       if (isTest && MSOK) { try { const ar = await sb.rpc('admin_reports', { p_open: true }); adminReports = ar.error ? [] : (ar.data || []); } catch (e) { adminReports = []; } }
       try { const pt = await sb.from('trips').select('*').eq('user_id', uid).eq('active', false).order('created_at', { ascending: false }).limit(12); pastTrips = pt.data || []; } catch (e) { pastTrips = []; }
-      try { const ds = await sb.from('drive_sessions').select('*').order('started_at', { ascending: false }).limit(5); drives = ds.data || []; } catch (e) { drives = []; }
+      try { const ds = await sb.from('drive_sessions').select('*').order('started_at', { ascending: false }).limit(60); drives = ds.data || []; } catch (e) { drives = []; }
       try { const st = await sb.from('user_settings').select('*').eq('user_id', uid).maybeSingle(); mySet = st.data || null; const sr = await sb.rpc('ride_styles', { p_ids: [...ids] }); styles = {}; (sr.data || []).forEach((x) => { styles[x.user_id] = x; }); } catch (e) { /* older database without settings: ignore */ }
       const rl = await sb.from('reliability').select('*'); rel = {}; (rl.data || []).forEach((x) => { rel[x.user_id] = x; });
       const pp = await sb.from('driver_positions').select('*'); positions = {}; (pp.data || []).forEach((x) => { positions[x.driver_id] = x; });
@@ -921,9 +960,9 @@
     const tripRows = pastTrips.filter((t) => (known(t) || t.origin) && (matches.some((x) => x.trip_id === t.id && x.status === 'completed') || kmOf(t.id) > 0)).slice(0, 8).map((t) => {
       const ms = matches.filter((x) => x.trip_id === t.id), done = ms.filter((x) => x.status === 'completed'), km = kmOf(t.id);
       const who = done.length ? done.map((x) => nm(x.rider_id)).join(', ') : '';
-      return '<div style="padding:8px 0;border-top:1px solid var(--line)"><b>' + esc(disp(t, 'origin')) + ' to ' + esc(disp(t, 'dest')) + '</b> <span class="tag">' + (done.length ? 'completed' : 'no riders') + '</span><div class="mut">' + esc(RSD.label(t.trip_date)) + ' at ' + clk(t.depart_min) + (who ? ' &middot; ' + who : '') + ' &middot; ' + done.length + ' rider' + (done.length === 1 ? '' : 's') + (km ? ' &middot; ' + km.toFixed(1) + ' km' : '') + '</div>' + done.map((x) => rateLine(x, x.rider_id) + reportLine(x, x.rider_id)).join('') + '</div>';
+      return '<div style="padding:8px 0;border-top:1px solid var(--line)"><b>' + esc(disp(t, 'origin')) + ' to ' + esc(disp(t, 'dest')) + '</b> <span class="tag">' + (done.length ? 'completed' : 'no riders') + '</span> <button class="btn ghost" style="padding:4px 10px;min-height:0" data-ptrip="' + t.id + '">Details</button><div class="mut">' + esc(RSD.label(t.trip_date)) + ' at ' + clk(t.depart_min) + (who ? ' &middot; ' + who : '') + ' &middot; ' + done.length + ' rider' + (done.length === 1 ? '' : 's') + kmLabel(t, km) + '</div>' + done.map((x) => rateLine(x, x.rider_id) + reportLine(x, x.rider_id)).join('') + '</div>';
     }).join('');
-    const rideRows = past.filter((x) => x.rider_id === user.id).map((x) => '<div style="padding:8px 0;border-top:1px solid var(--line)"><b>Ride with ' + nm(x.driver_id) + '</b> <span class="tag">' + esc(statusText(x.status)) + '</span><div class="mut">' + when(x) + ' &middot; ' + (x.pay_with === 'points' ? x.points + ' pts' : 'cash') + '</div>' + rateLine(x, x.driver_id) + reportLine(x, x.driver_id) + '</div>').join('');
+    const rideRows = past.filter((x) => x.rider_id === user.id).map((x) => '<div style="padding:8px 0;border-top:1px solid var(--line)"><b>Ride with ' + nm(x.driver_id) + '</b> <span class="tag">' + esc(statusText(x.status)) + '</span> <button class="btn ghost" style="padding:4px 10px;min-height:0" data-pride="' + x.id + '">Details</button><div class="mut">' + when(x) + ' &middot; ' + (x.pay_with === 'points' ? x.points + ' pts' : 'cash') + '</div>' + rateLine(x, x.driver_id) + reportLine(x, x.driver_id) + '</div>').join('');
     const segT = (v, label) => '<button type="button" class="btn' + (tripsView === v ? '' : ' ghost') + '" data-tview="' + v + '" style="flex:1;min-width:0">' + label + '</button>';
     const toggle = '<div style="display:flex;gap:8px;margin:0 0 12px">' + segT('driver', 'As a driver') + segT('rider', 'As a rider') + '</div>';
     window.__rules = card('Cancellation rules', policy);
@@ -1130,6 +1169,8 @@
     each('[data-report]', (b) => { const p = b.dataset.report.split('|'); reportDialog(p[0], p[1]); });
     each('[data-share]', (b) => shareTrip(b.dataset.share));
     each('[data-meet]', (b) => meetDialog(b.dataset.meet));
+    each('[data-ptrip]', (b) => tripDetail(b.dataset.ptrip));
+    each('[data-pride]', (b) => rideDetail(b.dataset.pride));
     each('[data-msg]', (b) => msgDialog(b.dataset.msg));
     each('[data-rate]', async (b) => { const p = b.dataset.rate.split('|'); const e = (await sb.rpc('rate_ride', { p_match: p[0], p_up: p[1] === '1', p_comment: null })).error; if (e) { toast(e.message); return; } myRatings[p[0]] = p[1] === '1'; toast('Thanks for rating'); formSig = ''; render(); loadAll(); });
     each('[data-rmode]', (b) => { rideMode = b.dataset.rmode; try { localStorage.setItem('rs_ride_mode', rideMode); } catch (e) { /* storage blocked */ } formSig = ''; render(); });
