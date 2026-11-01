@@ -59,6 +59,7 @@
         }
         return;
       }
+      if (ev && ev.url && ev.url.indexOf('ca.rideshare.app://start-trip') === 0) { await loadAll(); setTimeout(() => { if (window.__startNav) window.__startNav(); }, 600); return; }   // "I'm leaving" on a leave-by reminder
       if (ev && ev.url && ev.url.indexOf('ca.rideshare.app://update-route') === 0) { await loadAll(); setTimeout(() => { if (window.__startNav) window.__startNav(true); }, 600); return; }
       if (!ev || !ev.url || ev.url.indexOf(APP_AUTH) !== 0) return;
       try { if (nativePlug('Browser')) await nativePlug('Browser').close(); } catch (e) { /* tab already closed */ }
@@ -629,6 +630,7 @@
     const r = planData();
     if (!r) { wrap.classList.add('hide'); return; }
     wrap.classList.remove('hide'); $('plan-body').innerHTML = r.html;
+    window.__ldStops = r.stops;
     const sig = routeSig(r.stops);
     if (mapSig.p !== sig) { mapSig.p = sig; window.RS_UI.drawMap('map-plan', r.stops, []); }
   }
@@ -1226,11 +1228,14 @@
     // routeOnly: just show the new route in Google Maps (from the Update route alert); it does not start the trip or tell the riders you are on your way.
     const startNav = async (routeOnly) => {
       if (!routeOnly && curTrip) { try { localStorage.setItem('rs_trip_on', curTrip.id); } catch (e) { /* storage blocked */ } }
-      const stops = window.__ldStops || [];
+      // The stops come from the Riders tab or the Home plan card; if neither has drawn yet, go straight from the start to the destination.
+      let stops = window.__ldStops || [];
+      if (stops.length < 2 && curTrip && known(curTrip)) stops = [{ loc: pt(curTrip, 'origin'), type: 'origin' }, { loc: pt(curTrip, 'dest'), type: 'dest' }];
       if (stops.length < 2) { toast('Nothing to navigate yet'); return; }
       const pt = (x) => x.loc.lat + ',' + x.loc.lng, mid = stops.slice(1, -1).map(pt);
       const url = 'https://www.google.com/maps/dir/?api=1&travelmode=driving' + (routeOnly ? '' : '&dir_action=navigate') + '&destination=' + pt(stops[stops.length - 1]) + (mid.length ? '&waypoints=' + encodeURIComponent(mid.join('|')) : '');
-      const todo = routeOnly ? [] : (window.__ldAcc || []).filter((x) => stageOf(x) === 'accepted' && stepsOpen(x));
+      const accNow = window.__ldAcc || matches.filter((x) => x.driver_id === user.id && x.ride_date === todayStr() && x.status === 'accepted');
+      const todo = routeOnly ? [] : accNow.filter((x) => stageOf(x) === 'accepted' && stepsOpen(x));
       const nat = nativeLoc();
       if (!nat) {
         window.open(url, '_blank', 'noopener');
