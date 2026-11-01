@@ -26,6 +26,7 @@ Open https://supabase.com/dashboard/project/iivhfapvkseeomxtsrxf/sql/new, paste 
 | `supabase/migrations/035_rider_late_alert.sql` | The rider's phone gets a "driver is running late" alert one minute after the pickup time (needs 033) | **To run** |
 | `supabase/migrations/036_request_fits.sql` | The app asks the database whether a seat request is inside the driver's detour limits, so requests outside the limits are not shown (same check as the phone alert) | **To run** |
 | `supabase/migrations/037_hide_unreachable.sql` | A request that can no longer be reached in the rider's ready time ("too late to reach them") is not shown and not announced (needs 034 and 036) | **To run** |
+| `supabase/migrations/038_hide_expired_requests.sql` | A request whose rider has stopped looking (it ran out or was switched off) is not announced on the driver's phone (needs 037) | **To run** |
 
 How to copy a file to the clipboard: ask Claude, or open the file on GitHub, click "Copy raw file", then paste it into the SQL editor.
 
