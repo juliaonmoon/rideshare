@@ -199,7 +199,7 @@
     const ds = drives.filter((d) => d.trip_id === id), tracked = ds.reduce((a, d) => a + (+d.distance_km || 0), 0), planned = plannedKm(t);
     const mins = ds.reduce((a, d) => a + Math.max(0, (Date.parse(d.ended_at || d.last_at) - Date.parse(d.started_at)) / 60000), 0);
     const line = (a, b) => '<div style="display:flex;justify-content:space-between;gap:12px;padding:4px 0"><span class="mut">' + a + '</span><span style="text-align:right">' + b + '</span></div>';
-    const kmText = (km, src) => Number(km).toFixed(1) + ' km' + (src === 'google' ? ' (Google Maps route)' : ' (map estimate)');
+    const kmText = (km, src) => Number(km).toFixed(1) + ' km' + (src === 'google' ? ' (Google Maps route)' : src === 'gps' ? ' (tracked by your phone)' : ' (map estimate)');
     const dist = '<div id="dt-km">' + (t.route_km ? line('Distance', kmText(t.route_km, t.route_source)) : line('Distance', 'working it out...')) + '</div>';
     const riders = done.length ? done.map((x) => { const q = reqOf(x); return '<div style="padding:8px 0;border-top:1px solid var(--line)">' + whoCard(x.rider_id, 'rider') + '<div class="mut" style="margin-top:4px">' + (q ? esc(disp(q, 'pickup')) + ' to ' + esc(disp(q, 'dropoff')) + ' &middot; ' : '') + payText(x) + (+(x.route_km || x.ride_km) ? ' &middot; ' + (+(x.route_km || x.ride_km)).toFixed(1) + ' km together' : '') + '</div>' + (myRatings && x.id in myRatings ? '<div class="mut">You rated them: ' + (myRatings[x.id] ? 'good' : 'not good') + '</div>' : '') + (PCOK ? '<div style="margin-top:6px"><button class="btn ghost" data-dtreport="' + x.id + '|' + x.rider_id + '">Report a problem</button></div>' : '') + '</div>'; }).join('') : '<p class="mut">No riders on this trip.</p>';
     const earned = done.filter((x) => x.pay_with === 'points').reduce((a, x) => a + (+x.points || 0), 0);
@@ -220,12 +220,12 @@
     const ovR = detailDialog('Ride with ' + nm(x.driver_id),
       '<div style="margin-bottom:8px">' + whoCard(x.driver_id, 'driver') + '</div>' + (q ? line('From', esc(disp(q, 'pickup'))) + line('To', esc(disp(q, 'dropoff'))) : '')
       + line('When', when(x)) + line('Status', esc(statusText(x.status))) + line('Paid', payText(x) + (x.price_dollars ? ' (about $' + (+x.price_dollars).toFixed(2) + ')' : ''))
-      + '<div id="dt-km">' + (+(x.route_km || 0) ? line('Distance in the car', (+x.route_km).toFixed(1) + ' km (Google Maps route)') : (x.status === 'completed' ? line('Distance in the car', 'working it out...') : '')) + '</div>' + (x.id in myRatings ? line('Your rating', myRatings[x.id] ? 'good' : 'not good') : '')
+      + '<div id="dt-km">' + (+(x.route_km || 0) ? line('Distance in the car', (+x.route_km).toFixed(1) + ' km') : (x.status === 'completed' ? line('Distance in the car', 'working it out...') : '')) + '</div>' + (x.id in myRatings ? line('Your rating', myRatings[x.id] ? 'good' : 'not good') : '')
       + (PCOK ? '<div style="margin-top:8px"><button class="btn ghost" data-dtreport="' + x.id + '|' + x.driver_id + '">Report a problem</button></div>' : ''));
     if (x.status === 'completed' && !+(x.route_km || 0)) fetchRouteSummary(x.trip_id).then(async (r) => {
       const el = ovR.querySelector('#dt-km'); if (!el) return;
       let km = null; try { const mm = await sb.from('matches').select('route_km').eq('id', x.id).maybeSingle(); km = mm.data && mm.data.route_km; } catch (e) { /* keep waiting text */ }
-      if (km) { x.route_km = km; el.innerHTML = line('Distance in the car', (+km).toFixed(1) + ' km (Google Maps route)'); } else el.innerHTML = '';
+      if (km) { x.route_km = km; el.innerHTML = line('Distance in the car', (+km).toFixed(1) + ' km'); } else el.innerHTML = '';
     });
   }
   const reportLine = (m, otherId) => (PCOK && m && ['completed', 'cancelled', 'no_show'].includes(m.status) ? '<div style="margin-top:6px"><button class="btn ghost" data-report="' + m.id + '|' + otherId + '">Report a problem</button></div>' : '');
