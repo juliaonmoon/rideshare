@@ -1,7 +1,8 @@
--- Migration 031: the distance of a finished trip is the road distance Google Maps gives for the route that was actually driven
--- (origin, then each pickup and drop-off in the order they happened, then the destination), not a sum of GPS readings.
+-- Migration 031: the distance of a finished trip. When the phone tracked (nearly) the whole drive, that tracked distance is used (free and
+-- what was really driven). When the phone tracked clearly less, the road distance Google Maps gives for the route that was driven is used
+-- (origin, then each pickup and drop-off in the order they happened, then the destination), and without Google, the saved map estimate.
 -- It is worked out once when someone opens the trip, saved, and shared by the driver and the riders of that trip.
--- Uses the same live-traffic lookup and usage cap as migration 027 (one lookup per trip); without live traffic it uses the saved map estimate.
+-- A Google lookup (same live-traffic lookup and usage cap as migration 027) is made only when the phone's own tracking is not enough.
 -- Run once in the Supabase SQL editor (safe to run again). Needs migrations 027 and 028.
 
 alter table public.trips add column if not exists route_km numeric(8,2), add column if not exists route_min numeric(7,1), add column if not exists route_source text;
@@ -13,7 +14,7 @@ declare
   t public.trips; today date := (now() at time zone 'America/Vancouver')::date;
   olat double precision; olng double precision; dlat double precision; dlng double precision;
   stops public.route_stop[]; ev_row record; live jsonb; legs double precision[] := '{}';
-  km double precision := 0; mins double precision := 0; src text := 'estimate';
+  km double precision := 0; mins double precision := 0; src text := 'estimate'; tracked double precision; est double precision; scale double precision;
   i integer; j integer; n integer; prev public.route_stop; cur public.route_stop; di integer; sum_km double precision; dow integer;
 begin
   select * into t from public.trips where id = p_trip;
@@ -48,8 +49,18 @@ begin
   stops := stops || (dlat, dlng, 'dest', null, 0, 0)::public.route_stop;
   n := array_length(stops, 1);
   dow := extract(dow from t.trip_date)::int;
-  live := public._live_route(stops, now());
-  if live is not null then
+  tracked := coalesce((select sum(distance_km) from public.drive_sessions where trip_id = p_trip), 0);
+  est := public._route_km(stops);
+  if est > 0 and tracked >= 0.85 * est and tracked <= 1.6 * est then
+    -- the phone tracked (nearly) the whole drive: use it (free), and share it between the legs in proportion
+    src := 'gps'; km := tracked; scale := tracked / est;
+    mins := coalesce((select sum(extract(epoch from (coalesce(ended_at, last_at) - started_at)) / 60.0) from public.drive_sessions where trip_id = p_trip), 0);
+    for i in 2 .. n loop prev := stops[i - 1]; cur := stops[i]; legs := legs || (public._road_km(prev.lat, prev.lng, cur.lat, cur.lng) * scale); end loop;
+  else
+    live := public._live_route(stops, now());
+  end if;
+  if src = 'gps' then null;
+  elsif live is not null then
     src := 'google';
     km := (live->>'km')::double precision; mins := (live->>'minutes')::double precision;
     select array_agg(x::text::double precision order by ord) into legs from jsonb_array_elements(live->'legs') with ordinality as e(x, ord);
