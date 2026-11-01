@@ -78,3 +78,5 @@ Picking this up in Claude Code on the owner's own computer? Read this first.
 - **Google Maps from Start trip and from "I'm leaving":** `startNav` no longer depends on the Riders tab having been drawn (it falls back to the trip's start and destination, and the Home plan card sets the stops). The phone reminder's "I'm leaving" now opens RideShare through `ca.rideshare.app://start-trip` (an explicit activity intent, since Android 12 blocks starting Maps from a notification-launched service), which runs Start trip: tells the riders, starts sharing, opens Google Maps.
 
 - **Home card is for what needs action only:** the top card shows live seat requests and the leave-by banner. Ended, declined and cancelled requests moved to a small collapsed 'Earlier requests' list at the bottom of the Riders list (24 hours).
+
+- **Leave now starts navigation:** the Leave now form on Home has a Start navigation in Google Maps button (`ln-nav`) that opens turn-by-turn directions to the chosen destination without offering seats.

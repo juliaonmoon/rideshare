@@ -766,7 +766,7 @@
         + (DKOK ? '<label>Extra km I accept for my whole trip (optional)</label><input type="number" id="ln-dk" min="0" max="200" step="0.5" placeholder="no limit" value="' + val('ln-dk', sx.d_detour_km == null ? '' : sx.d_detour_km) + '">' : '')
         + '<label>Payment I accept</label><select id="ln-a">' + [['either', 'Points or cash'], ['points', 'Points only'], ['cash', 'Cash gas-share only']].map(([v, l]) => '<option value="' + v + '"' + (v === (LV['ln-a'] || sx.d_accepts) ? ' selected' : '') + '>' + l + '</option>').join('') + '</select></details>'
         + '<div style="margin-top:12px"><button class="btn" id="ln-review" style="width:100%;padding:12px;font-size:16px">Review trip</button></div>';
-      const now = '<div class="swrow" style="margin-top:12px"><div><b>Offer seats to riders</b><div class="mut">Riders along your route can ask for a seat, and you get a phone alert for each one. It stays on until you switch it off (or after 12 hours).</div></div><label class="sw"><input type="checkbox" id="ln-sw"><span></span></label></div>';
+      const now = '<div class="swrow" style="margin-top:12px"><div><b>Offer seats to riders</b><div class="mut">Riders along your route can ask for a seat, and you get a phone alert for each one. It stays on until you switch it off (or after 12 hours).</div></div><label class="sw"><input type="checkbox" id="ln-sw"><span></span></label></div><div style="margin-top:12px"><button class="btn" id="ln-nav" style="width:100%;padding:14px;font-size:17px">Start navigation in Google Maps</button></div>';
       return share + card('Where are you driving?', placeField('ln-o', 'From', null, 'origin', o) + placeField('ln-d', 'To', null, 'dest', d)
         + '<label>When?</label><div style="display:flex;gap:8px">' + seg('now', 'Leave now') + seg('later', 'Pick a day and time') + '</div>'
         + (tripMode === 'later' ? later : now) + '<p class="warn" id="ln-msg" role="alert"></p>');
@@ -1320,6 +1320,15 @@
     document.querySelectorAll('#ln-o, #ln-d, #rn-p, #rn-d, #rn-pay').forEach((e) => { e.onchange = () => { nowSel[e.id] = e.value; }; });
     wirePlaces();
     on('ln-loc', () => useMyLocation('ln-o', 'ln-msg'));
+    // Leave now without offering seats: straight to turn-by-turn directions from where you are.
+    on('ln-nav', async () => {
+      const d = PL['ln-d'] || LOC[$('ln-d').value];
+      if (!d || d.lat == null) { formMsg('ln-msg', 'Choose where you are going from the suggestions first'); return; }
+      formMsg('ln-msg', '');
+      const url = 'https://www.google.com/maps/dir/?api=1&travelmode=driving&dir_action=navigate&destination=' + d.lat + ',' + d.lng, nat = nativeLoc();
+      if (nat) { try { await nat.openUrl({ url }); return; } catch (e) { /* fall through */ } }
+      window.open(url, '_blank', 'noopener');
+    });
     on('rn-loc', () => useMyLocation('rn-p', 'rn-msg'));
     const goLive = async () => {
       if (needProfile('drive')) return false;
