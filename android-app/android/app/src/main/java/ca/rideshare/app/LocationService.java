@@ -646,7 +646,7 @@ public class LocationService extends Service {
         String title, text;
         if ("arrived".equals(stage)) {
             title = who + " has arrived";
-            text = (car.isEmpty() ? "Look for your driver." : "Look for " + car + ".") + " " + who + " will wait about " + r.optInt("wait_min", 5) + " minutes.";
+            text = (car.isEmpty() ? "Look for your driver." : "Look for " + car + ".") + " Please come to the pickup spot now.";
         } else if ("on_my_way".equals(stage)) {
             title = who + " is on the way";
             text = car.isEmpty() ? "Get ready at the meeting spot." : "Look for " + car + ".";

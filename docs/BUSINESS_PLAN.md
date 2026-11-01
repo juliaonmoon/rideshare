@@ -39,7 +39,7 @@ Open problem: a driver who never rides has points they can't spend. Options: spo
 
 ## Matching (the core idea)
 
-- Driver enters destination and departure time, sets **max detour (min)** and **max wait (min)**.
+- Driver enters destination and departure time, sets **max detour (min)**. Drivers never wait for a rider.
 - App finds riders where: extra drive time ≤ detour limit **and** pickup time fits the driver's schedule **and** drop-off is near the destination.
 - Driver sees a short list: "Alex — +4 min, pickup 8:12, 2 km, you'd get $5 or 5 points" → **Accept / Skip**.
 - Recurring commutes: set once, runs every weekday.

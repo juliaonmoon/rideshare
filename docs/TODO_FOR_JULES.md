@@ -10,10 +10,10 @@ Open https://supabase.com/dashboard/project/iivhfapvkseeomxtsrxf/sql/new, paste 
 |---|---|---|
 | `supabase/migrations/020_detour_limits.sql` | Detour limits in minutes and km | Done |
 | `supabase/migrations/021_profile_cards_reports.sql` | Photos, car details, Report a problem | Done |
-| `supabase/migrations/022_no_show_needs_arrival.sql` | No-show only after arrival and waiting | Done |
+| `supabase/migrations/022_no_show_needs_arrival.sql` | Marking a missed pickup only after arrival (replaced by 033) | Done |
 | `supabase/migrations/023_meet_spot_auto_end_rider_alerts.sql` | Meeting spot, trip ends on arrival, rider phone alerts | Please confirm you ran it. Claude cannot see the database from here. If the Set meeting spot button is missing on an accepted ride, it was not run. |
 | `supabase/migrations/024_messages_ratings_admin.sql` | Messages, ratings, admin reports screen, blocking | Done (Jules ran it on 2026-10-30) |
-| `supabase/migrations/025_booking_integrity.sql` | Safer payouts, safe accepting, whole-trip cancel with refunds, locked bookings, fixed 5-minute wait, report function | **To run** |
+| `supabase/migrations/025_booking_integrity.sql` | Safer payouts, safe accepting, whole-trip cancel with refunds, locked bookings, report function (the fixed 5-minute wait was removed in 033) | **To run** |
 | `supabase/migrations/026_driver_route_token.sql` | Lets the phone rebuild the Google Maps route after you accept a rider while driving | **To run** |
 | `supabase/migrations/027_server_quotes.sql` | The server works out each rider's extra minutes and price (live traffic when switched on, saved drive times otherwise); riders together never pay more than the trip costs | Done (ran 2026-10-31) |
 | `supabase/migrations/028_fix_live_route.sql` | Fixes two mistakes in the live-traffic lookup | Done (ran 2026-10-31; live traffic tested and working) |
@@ -21,6 +21,7 @@ Open https://supabase.com/dashboard/project/iivhfapvkseeomxtsrxf/sql/new, paste 
 | `supabase/migrations/030_track_whole_trip.sql` | The drive is tracked for the whole trip (not only with a rider); needs the new phone app too | Done (ran 2026-10-31) |
 | `supabase/migrations/031_route_distance_like_google.sql` | The distance of a finished trip is the Google Maps road distance for the route that was driven | **To run** |
 | `supabase/migrations/032_saved_route_distance.sql` | The trip distance uses, in order: the phone's tracking, the route Google gave when the seat was accepted, a new Google lookup, the map estimate | **To run** |
+| `supabase/migrations/033_pickup_time_no_waiting.sql` | No waiting for riders; saves each rider's pickup time when a seat is accepted; "Rider isn't here" works on arrival but never before that time; free cancel if the driver is 15+ minutes past it | **To run** |
 
 How to copy a file to the clipboard: ask Claude, or open the file on GitHub, click "Copy raw file", then paste it into the SQL editor.
 
@@ -95,7 +96,7 @@ The full review is in `design-review/CHATGPT_REVIEW_2.md` (kept on your computer
 - Two drivers, or two accepts, could take the same seat. Fixed. A request that was withdrawn or switched off can no longer be accepted.
 - Cancel my trip now cancels every booked rider and refunds them in one step.
 - A trip or request that has a confirmed rider can no longer be deleted, or have its time or route changed.
-- The 5-minute wait is enforced by the database.
+- Nobody waits for a rider: every trip has max_wait 0 in the database (033). The driver can close a ride as a missed pickup once at the pickup, never before the rider's saved pickup time.
 - Reports work for past and cancelled rides too, with a daily limit.
 - The meeting spot has to stay within 2 km of the pickup and cannot move once the driver is on the way.
 - Signing out switches off the phone helper's access.
