@@ -23,6 +23,7 @@ Open https://supabase.com/dashboard/project/iivhfapvkseeomxtsrxf/sql/new, paste 
 | `supabase/migrations/032_saved_route_distance.sql` | The trip distance uses, in order: the phone's tracking, the route Google gave when the seat was accepted, a new Google lookup, the map estimate | **To run** |
 | `supabase/migrations/033_pickup_time_no_waiting.sql` | No waiting for riders; saves each rider's pickup time when a seat is accepted; "Rider isn't here" works on arrival but never before that time; free cancel if the driver is 15+ minutes past it | **To run** |
 | `supabase/migrations/034_leave_by.sql` | "Leave by" time on every seat request of an Offer-a-ride-now trip (from the driver's phone position), moving check, pickup time of live trips, phone data for the leave-by reminders (needs 033) | **To run** |
+| `supabase/migrations/035_rider_late_alert.sql` | The rider's phone gets a "driver is running late" alert one minute after the pickup time (needs 033) | **To run** |
 
 How to copy a file to the clipboard: ask Claude, or open the file on GitHub, click "Copy raw file", then paste it into the SQL editor.
 

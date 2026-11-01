@@ -608,6 +608,7 @@ public class LocationService extends Service {
                     seen.add(id);
                     String prev = riderStage.put(id, stage);
                     if (!stage.equals(prev) && !"picked_up".equals(stage)) notifyRider(r, stage);
+                    if (r.optBoolean("late", false) && lateShown.add(id)) notifyLate(r);
                 }
             }
             riderStage.keySet().retainAll(seen);
@@ -642,6 +643,26 @@ public class LocationService extends Service {
                 try { getSystemService(NotificationManager.class).notify(idOf(ID_MSG, id), n); } catch (Exception ignore) { }
             }
         } catch (Exception ignore) { /* try again next time */ }
+    }
+
+    private final Set<String> lateShown = new HashSet<>();   // seats whose "running late" alert has been shown
+
+    /** The driver is more than a minute past the rider's pickup time and has not arrived. */
+    private void notifyLate(JSONObject r) {
+        String id = r.optString("id"), who = r.optString("driver_name", "Your driver");
+        long pickup = r.optLong("pickup_ms", 0);
+        String text = pickup == 0 ? who + " has not arrived yet." : "Your pickup time was " + clock(pickup) + ". You can cancel for free if " + who + " has not arrived by " + clock(pickup + 15 * 60000L) + ".";
+        Notification n = new NotificationCompat.Builder(this, ALERT_CHANNEL)
+                .setContentTitle(who + " is running late").setContentText(text)
+                .setStyle(new NotificationCompat.BigTextStyle().bigText(text))
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setDefaults(Notification.DEFAULT_ALL)
+                .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+                .setAutoCancel(true)
+                .setContentIntent(openIntent())
+                .build();
+        try { getSystemService(NotificationManager.class).notify(idOf(ID_RIDER + 0x1000, id), n); } catch (Exception ignore) { }
     }
 
     private void notifyRider(JSONObject r, String stage) {
