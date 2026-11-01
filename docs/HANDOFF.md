@@ -80,3 +80,5 @@ Picking this up in Claude Code on the owner's own computer? Read this first.
 - **Home card is for what needs action only:** the top card shows live seat requests and the leave-by banner. Ended, declined and cancelled requests moved to a small collapsed 'Earlier requests' list at the bottom of the Riders list (24 hours).
 
 - **Leave now starts navigation:** the Leave now form on Home has a Start navigation in Google Maps button (`ln-nav`) that opens turn-by-turn directions to the chosen destination without offering seats.
+
+- **One Leave now button:** the Home form has a single primary button, Leave now, which opens Google Maps navigation (no separate navigation button). Scheduling is a small 'Plan a trip for later instead' link, and 'Leave now instead' goes back.
