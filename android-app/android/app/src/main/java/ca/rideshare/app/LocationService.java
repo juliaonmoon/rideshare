@@ -296,7 +296,10 @@ public class LocationService extends Service {
                 }
             }
             firstPoll = false;
-            handleLeave(o.optJSONArray("leave"));
+            try {
+                android.util.Log.d("RideShareLeave", "poll: leave=" + (o.optJSONArray("leave") == null ? "missing" : o.optJSONArray("leave").toString()) + " pending=" + (pend == null ? 0 : pend.length()) + " tripOn=" + tripOn + " ride=" + ride);
+                handleLeave(o.optJSONArray("leave"));
+            } catch (Exception e) { android.util.Log.e("RideShareLeave", "reminder failed", e); }
             JSONArray rs = o.optJSONArray("rides");
             rides = rs == null ? new JSONArray() : rs;
             updateStepNotes();
@@ -805,7 +808,11 @@ public class LocationService extends Service {
 
     /** Reminders for riders the driver accepted but has not set off for: 5 minutes before the leave-by time, at it, and a minute past it. Each shows once. */
     private final java.util.Map<String, Integer> leaveStage = new java.util.HashMap<>();   // the riders' ids -> the last reminder shown (1, 2 or 3)
+    static volatile long leaveTestAt = 0;   // admin test: pretend a rider must be left for at this time (set from the test tools)
     private void handleLeave(JSONArray lv) {
+        if (leaveTestAt > 0 && System.currentTimeMillis() < leaveTestAt + 600000) {
+            try { lv = new JSONArray().put(new JSONObject().put("id", "test").put("name", "Test rider").put("leave_by_ms", leaveTestAt)); } catch (Exception ignore) { }
+        } else if (leaveTestAt > 0) leaveTestAt = 0;
         if (lv == null || lv.length() == 0) {   // nobody waiting for the driver to set off, or the driver is already moving
             if (!leaveStage.isEmpty()) { leaveStage.clear(); try { getSystemService(NotificationManager.class).cancel(ID_LEAVE); } catch (Exception ignore) { } }
             return;
@@ -821,6 +828,7 @@ public class LocationService extends Service {
         if (soonest == Long.MAX_VALUE) return;
         long rem = soonest - System.currentTimeMillis();
         int stage = rem <= -60000 ? 3 : rem <= 0 ? 2 : rem <= 300000 ? 1 : 0;
+        android.util.Log.d("RideShareLeave", "leave-by in " + (rem / 1000) + " s, stage " + stage + ", shown " + leaveStage.get(ids.toString()));
         if (stage == 0) return;
         String key = ids.toString();
         Integer shown = leaveStage.get(key);
@@ -854,6 +862,7 @@ public class LocationService extends Service {
         String bad = "";
         for (String id : ids.split(",")) {
             if (id.isEmpty()) continue;
+            if ("test".equals(id)) { leaveTestAt = 0; continue; }   // the admin test rider is not a real ride
             String err = stepCall(id, "on_my_way");
             if (NO_NET.equals(err)) queueStep(id, "on_my_way", "your rider");
             else if (!err.isEmpty()) bad = err;
