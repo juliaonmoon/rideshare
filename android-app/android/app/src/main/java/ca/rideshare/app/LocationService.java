@@ -847,8 +847,10 @@ public class LocationService extends Service {
         if (stage == 1) { title = "Leave in " + Math.max(1, Math.round(rem / 60000.0)) + " minutes"; text = "To reach " + who + " in time, leave by " + clock(soonest) + "."; }
         else if (stage == 2) { title = "Time to leave now"; text = "Leave now to reach " + who + " in their ready time."; }
         else { title = "You are past your leave-by time"; text = who + " may not be reached in time. Leave now, or cancel your offer."; }
-        Intent go = new Intent(this, LocationService.class).setAction(ACTION_LEAVE_GO).putExtra("matches", key);
-        PendingIntent goPi = PendingIntent.getService(this, 70, go, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+        // "I'm leaving" opens RideShare, which runs Start trip: tells the riders and hands over to Google Maps (Android only lets an opened screen start Maps).
+        Intent go = new Intent(Intent.ACTION_VIEW, Uri.parse("ca.rideshare.app://start-trip"))
+                .setClass(this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        PendingIntent goPi = PendingIntent.getActivity(this, 70, go, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
         Intent cancel = new Intent(Intent.ACTION_VIEW, Uri.parse("ca.rideshare.app://cancel-offer"))
                 .setClass(this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         PendingIntent cancelPi = PendingIntent.getActivity(this, 71, cancel, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
