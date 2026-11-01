@@ -603,20 +603,31 @@
     const p = PL[id], has = p && !p.isArea;
     return { [key + '_label']: has ? p.label : null, [key + '_lat']: has ? p.lat : null, [key + '_lng']: has ? p.lng : null };
   };
-  const plNeed = (id, what) => (PLOK && !PL[id] ? 'Choose ' + what + ' from the suggestions (or tap Use my location)' : '');
+  const plNeed = (id, what) => (!PLOK ? 'Address search is not ready yet. Tap Try again.' : (!PL[id] ? 'Choose ' + what + ' from the suggestions (or tap Use my location)' : ''));
   const samePlace = (a, b, ia, ib) => a === b && !(PL[ia] && PL[ib] && !PL[ia].isArea && !PL[ib].isArea && RS.haversineKm(PL[ia], PL[ib]) > 0.3);
   async function setCols(table, id, ...cols) { if (PLOK && id) { const patchRow = Object.assign({}, ...cols); const r = await sb.from(table).update(patchRow).eq('id', id); if (r.error) throw r.error; } }
   const LOCBTN = { 'ln-o': 'ln-loc', 'rn-p': 'rn-loc' };
   function placeField(id, label, row, k, area) {
-    if (!PLOK) return `<label>${label}</label><select id="${id}">${opts(area)}</select>` + (LOCBTN[id] ? ` <button type="button" class="btn ghost" id="${LOCBTN[id]}" style="margin-top:6px">Use my location</button>` : '');
+    if (!PLOK) return `<label>${label}</label><div><input type="text" id="${id}-q" disabled placeholder="Address search is starting..." style="${INPUT}"><select id="${id}" style="display:none">${opts(area)}</select><div class="pfrow">${LOCBTN[id] ? `<button type="button" class="btn ghost" id="${LOCBTN[id]}" disabled>Use my location</button>` : ''}<button type="button" class="btn ghost" data-plretry="1">Try again</button></div></div>`;
     if (PL[id] === undefined) PL[id] = row && row[k] ? (row[k + '_lat'] != null ? { label: row[k + '_label'] || row[k], lat: +row[k + '_lat'], lng: +row[k + '_lng'], area: row[k] } : { label: row[k], area: row[k], isArea: true }) : null;
     const p = PL[id], a = p ? p.area : area;
     return `<label>${label}</label><div data-pf="${id}"><input type="text" id="${id}-q" autocomplete="off" placeholder="Type an address or place" value="${esc(p ? p.label : '')}" style="${INPUT}"><div class="pfsug" id="${id}-sug"></div>
-      <div class="pfrow"><button type="button" class="btn ghost" data-ploc="${id}">Use my location</button><a href="#" data-pnb="${id}">Choose a neighbourhood instead</a></div>
+      <div class="pfrow"><button type="button" class="btn ghost" data-ploc="${id}">Use my location</button></div>
       <div class="mut" id="${id}-note" style="font-size:12px;margin-top:4px">${p && !p.isArea ? 'Neighbourhood: ' + esc(a) + (p.acc ? ' &middot; GPS accurate to about ' + p.acc + ' m' + (p.acc > 50 ? ' (weak signal: step outside or by a window and try again)' : '') : '') : ''}</div>
       <select id="${id}" style="display:none;margin-top:6px">${opts(a)}</select></div>`;
   }
+  const PL_PAIRS = [['ln-o', 'ln-d'], ['lt-o', 'lt-d'], ['rn-p', 'rn-d'], ['lr-p', 'lr-d']];
   function wirePlaces() {
+    PL_PAIRS.forEach(([a, b]) => {
+      const A = document.querySelector('[data-pf="' + a + '"]'), B = document.querySelector('[data-pf="' + b + '"]');
+      if (!A || !B || document.querySelector('[data-pswap="' + a + '|' + b + '"]')) return;
+      const lab = B.previousElementSibling; if (!lab) return;
+      const row = document.createElement('div'); row.style.cssText = 'text-align:center;margin:2px 0 4px';
+      row.innerHTML = '<button type="button" class="btn ghost" data-pswap="' + a + '|' + b + '" style="padding:6px 14px;min-height:0">\u21c5 Swap the two places</button>';
+      lab.parentNode.insertBefore(row, lab);
+      row.firstChild.onclick = () => { const pa = PL[a], pb = PL[b]; PL[a] = pb === undefined ? null : pb; PL[b] = pa === undefined ? null : pa; formSig = ''; render(); };
+    });
+    document.querySelectorAll('[data-plretry]').forEach((b) => { b.onclick = () => { PLOK = null; formSig = ''; loadAll(); }; });
     document.querySelectorAll('[data-pf]').forEach((box) => {
       const id = box.dataset.pf, q = $(id + '-q'), sug = $(id + '-sug'), sel = $(id), note = $(id + '-note');
       let seq = 0, tm = null, list = [];
@@ -627,7 +638,7 @@
         const v = q.value.trim(); if (v.length < 3) { sug.innerHTML = ''; return; }
         tm = setTimeout(async () => {
           const my = ++seq, r = await window.RS_PLACES.suggest(v); if (my !== seq) return;
-          if (!window.RS_PLACES.available()) { note.textContent = 'Address search is not switched on yet. Choose a neighbourhood instead.'; sel.style.display = ''; return; }
+          if (!window.RS_PLACES.available()) { note.textContent = 'Address search is not working right now. Check your connection and try again.'; return; }
           list = r;
           sug.innerHTML = r.length ? r.map((s, i) => '<button type="button" data-i="' + i + '">' + esc(s.main) + '<span>' + esc(s.sub) + '</span></button>').join('') : '';
           sug.querySelectorAll('button').forEach((b) => (b.onclick = async () => {
@@ -658,7 +669,6 @@
         { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
         timer = setTimeout(finish, 12000);
       };
-      box.querySelector('[data-pnb]').onclick = (e) => { e.preventDefault(); sel.style.display = sel.style.display === 'none' ? '' : 'none'; };
       sel.onchange = () => setP({ label: sel.value, area: sel.value, isArea: true });
     });
   }
