@@ -93,13 +93,16 @@ public class LocationService extends Service {
     private static volatile LocationService live;
     // RideShare just handed over to Google Maps: show the floating button for the drive even before the server confirms the trip.
     private static volatile long navUntil = 0;
+    private static volatile boolean exited = false;   // the driver swiped RideShare away: no floating button until they open the app again
     static void navStarted() {
+        exited = false;
         navUntil = System.currentTimeMillis() + 45 * 60 * 1000L;
         LocationService s = live;
         if (s != null) s.main.post(s::syncBubble);
     }
     static void appVisible(boolean visible) {
         appVisible = visible;
+        if (visible) exited = false;
         LocationService s = live;
         if (s != null) s.main.post(s::syncBubble);
     }
@@ -339,9 +342,16 @@ public class LocationService extends Service {
 
     static boolean canOverlay(android.content.Context c) { return Build.VERSION.SDK_INT < 23 || Settings.canDrawOverlays(c); }
 
+    @Override
+    public void onTaskRemoved(Intent rootIntent) {
+        exited = true; navUntil = 0;
+        main.post(this::hideBubble);
+        super.onTaskRemoved(rootIntent);
+    }
+
     private void syncBubble() {
         boolean navOn = navUntil > System.currentTimeMillis();
-        boolean need = (tripOn || rides.length() > 0 || navOn) && !appVisible && !getSharedPreferences("rideshare_bubble", MODE_PRIVATE).getBoolean("hidden", false);
+        boolean need = (tripOn || rides.length() > 0 || navOn) && !exited && !appVisible && !getSharedPreferences("rideshare_bubble", MODE_PRIVATE).getBoolean("hidden", false);
         if (!tripOn && rides.length() == 0 && !navOn) bubbleDismissed = false;   // a new ride brings it back
         if (need && !bubbleDismissed && bubble == null && canOverlay(this)) showBubble(); else if ((!need || bubbleDismissed) && bubble != null) hideBubble();
     }
