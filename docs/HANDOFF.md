@@ -84,3 +84,5 @@ Picking this up in Claude Code on the owner's own computer? Read this first.
 - **One Leave now button:** the Home form has a single primary button, Leave now, which opens Google Maps navigation (no separate navigation button). Scheduling is a small 'Plan a trip for later instead' link, and 'Leave now instead' goes back.
 
 - **Leave now starts the trip:** the Leave now button runs go_live (offer seats, phone helper, floating button) and then opens Google Maps. There is no separate Offer seats switch on that form; the Offering seats switch on the live card stops it.
+
+- **Floating button on every Maps hand-over:** `openUrl` in the Android plugin calls `LocationService.navStarted()`, which keeps the floating button on for 45 minutes (or until the trip ends) even before the server confirms a trip.
