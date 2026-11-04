@@ -1123,7 +1123,7 @@ public class LocationService extends Service {
         PendingIntent pi = null;
         String text = "Tap to preview your trip and stops, then start when you are ready.";
         if (nav != null) {
-            Intent maps = new Intent(Intent.ACTION_VIEW, nav).setPackage("com.google.android.apps.maps").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            Intent maps = new Intent(this, RouteGoActivity.class).setData(nav).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);   // records the tap, then opens Google Maps
             pi = PendingIntent.getActivity(this, 8, maps, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
             text = "Tap to update your route in Google Maps. Navigation restarts with the new stop.";
         }
@@ -1152,15 +1152,22 @@ public class LocationService extends Service {
     /** The driver swiped the alert away without tapping it: show it again after a minute, until they tap Update route (or the trip ends). */
     private void repostRouteIfDismissed() {
         SharedPreferences rp = getSharedPreferences("rideshare_tracking", MODE_PRIVATE);
-        if (!"dismissed".equals(rp.getString("route_state", ""))) return;
-        if (System.currentTimeMillis() - rp.getLong("route_dismissed_at", 0) < 60000) return;
+        String st = rp.getString("route_state", "");
+        if (!"shown".equals(st) && !"dismissed".equals(st)) return;   // nothing waiting, or the driver tapped it / pressed Dismiss
+        boolean present = false;
+        try { for (android.service.notification.StatusBarNotification sn : getSystemService(NotificationManager.class).getActiveNotifications()) if (sn.getId() == 3000) present = true; } catch (Exception ignore) { present = "shown".equals(st); }
+        long now = System.currentTimeMillis();
+        if (present) { if (rp.getLong("route_gone_at", 0) != 0) rp.edit().remove("route_gone_at").apply(); return; }
+        long gone = rp.getLong("route_gone_at", 0);
+        if (gone == 0) { rp.edit().putLong("route_gone_at", now).apply(); return; }   // just disappeared: wait a minute before showing it again
+        if (now - gone < 60000) return;
         String u = rp.getString("route_uri", "");
-        rp.edit().putString("route_state", "shown").apply();
+        rp.edit().putString("route_state", "shown").remove("route_gone_at").apply();
         postRoute(rp.getString("route_name", "Your rider"), u.isEmpty() ? null : Uri.parse(u));
     }
 
     private void clearRoute() {
-        getSharedPreferences("rideshare_tracking", MODE_PRIVATE).edit().remove("route_sig").remove("route_uri").remove("route_name").remove("route_state").remove("route_dismissed_at").apply();
+        getSharedPreferences("rideshare_tracking", MODE_PRIVATE).edit().remove("route_sig").remove("route_uri").remove("route_name").remove("route_state").remove("route_dismissed_at").remove("route_gone_at").apply();
         try { getSystemService(NotificationManager.class).cancel(3000); } catch (Exception ignore) { }
     }
 

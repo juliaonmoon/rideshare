@@ -39,6 +39,13 @@
             android:exported="false"
             android:foregroundServiceType="location|dataSync" />
 
+        <activity
+            android:name=".RouteGoActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
         <receiver
             android:name=".RouteDismissReceiver"
             android:exported="false" />
