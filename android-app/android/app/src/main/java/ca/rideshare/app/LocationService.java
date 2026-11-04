@@ -583,7 +583,7 @@ public class LocationService extends Service {
         try {
             String b = rpc("end_trip_token", new JSONObject().put("p_token", token));
             if (b != null && b.trim().equals("true")) {
-                tripOn = false; wasFar = false; nearEnd = 0; navUntil = 0;
+                tripOn = false; wasFar = false; nearEnd = 0; navUntil = 0; getSharedPreferences("rideshare_tracking", MODE_PRIVATE).edit().remove("route_sig").apply();
                 Notification n = new NotificationCompat.Builder(this, STEPS_CHANNEL)
                         .setContentTitle("Trip ended").setContentText("You have arrived. Thank you for driving!")
                         .setSmallIcon(android.R.drawable.ic_menu_directions).setPriority(NotificationCompat.PRIORITY_LOW)
@@ -1103,6 +1103,13 @@ public class LocationService extends Service {
             String b = rpc("driver_route_token", new JSONObject().put("p_token", token));
             Uri nav = b == null ? null : buildNavUri(new JSONObject(b));
             if (nav != null) {
+                // Only alert when the set of stops really changed since the last "Update route"; the same stops again is not news.
+                java.util.List<String> wps = new java.util.ArrayList<>(java.util.Arrays.asList(String.valueOf(nav.getQueryParameter("waypoints")).split("\\|")));
+                java.util.Collections.sort(wps);
+                String sig = nav.getQueryParameter("destination") + "#" + wps;
+                SharedPreferences rp = getSharedPreferences("rideshare_tracking", MODE_PRIVATE);
+                if (sig.equals(rp.getString("route_sig", ""))) return;
+                rp.edit().putString("route_sig", sig).apply();
                 Intent maps = new Intent(Intent.ACTION_VIEW, nav).setPackage("com.google.android.apps.maps").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                 pi = PendingIntent.getActivity(this, 8, maps, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
                 text = "Tap to update your route in Google Maps. Navigation restarts with the new stop.";
@@ -1120,6 +1127,7 @@ public class LocationService extends Service {
                 .setSmallIcon(android.R.drawable.ic_dialog_info)
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setDefaults(Notification.DEFAULT_ALL)
+                .setOnlyAlertOnce(true)
                 .setAutoCancel(true)
                 .setContentIntent(pi)
                 .addAction(0, "Update route", pi)
@@ -1200,6 +1208,7 @@ public class LocationService extends Service {
 
     @Override
     public void onDestroy() {
+        getSharedPreferences("rideshare_tracking", MODE_PRIVATE).edit().remove("route_sig").apply();
         if (live == this) live = null;
         main.post(this::hideBubble);
         running = false;

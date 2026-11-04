@@ -96,3 +96,5 @@ Picking this up in Claude Code on the owner's own computer? Read this first.
 - **Reset trip is a full reset:** it also cancels a one-time posted trip (a repeating trip stays), clears the remembered From/To and times in the driver forms, and puts the form back on Leave now.
 
 - **No leftover map after a reset:** with no trip, the driver map, the test preview card and the empty Riders card are hidden (driverLists clears them), so an old route is never left on screen.
+
+- **Update route alerts only when the stops change:** the phone helper remembers the last stop set it announced (`route_sig`) and skips an Update route alert for the same stops; the alert alerts only once while shown. The memory is cleared when the trip ends or the helper stops.
