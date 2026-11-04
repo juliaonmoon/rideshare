@@ -90,3 +90,5 @@ Picking this up in Claude Code on the owner's own computer? Read this first.
 - **Exit removes the floating button:** `LocationService.onTaskRemoved` (RideShare swiped away from recent apps) hides the floating button and keeps it off until the app is opened again.
 
 - **Floating button position reset:** the saved drag position key is now `pos_v4`, so everyone's button starts again in the top-right corner (top-right is the default; dragging still remembers a new spot).
+
+- **Floating button default spot:** now the left edge, 60% down the screen (clear of Google Maps' top bar, right-side buttons and ETA bar). Saved position key is `pos_v5`; dragging still remembers a new spot.
