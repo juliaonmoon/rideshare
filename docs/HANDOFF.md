@@ -88,3 +88,5 @@ Picking this up in Claude Code on the owner's own computer? Read this first.
 - **Floating button on every Maps hand-over:** `openUrl` in the Android plugin calls `LocationService.navStarted()`, which keeps the floating button on for 45 minutes (or until the trip ends) even before the server confirms a trip.
 
 - **Exit removes the floating button:** `LocationService.onTaskRemoved` (RideShare swiped away from recent apps) hides the floating button and keeps it off until the app is opened again.
+
+- **Floating button position reset:** the saved drag position key is now `pos_v4`, so everyone's button starts again in the top-right corner (top-right is the default; dragging still remembers a new spot).

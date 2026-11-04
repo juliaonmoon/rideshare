@@ -374,7 +374,7 @@ public class LocationService extends Service {
             lp.gravity = Gravity.TOP | Gravity.START;
             // the top-right corner to start with; after that, wherever the driver last dragged it
             SharedPreferences bp = getSharedPreferences("rideshare_bubble", MODE_PRIVATE);
-            if (!bp.getBoolean("pos_v3", false)) bp.edit().remove("x").remove("y").putBoolean("pos_v3", true).apply();
+            if (!bp.getBoolean("pos_v4", false)) bp.edit().remove("x").remove("y").putBoolean("pos_v4", true).apply();
             int screenW = getResources().getDisplayMetrics().widthPixels;
             lp.x = bp.getInt("x", screenW - size - (int) (10 * d)); lp.y = bp.getInt("y", topLimit());
             if (lp.x < 0 || lp.x > screenW - size) lp.x = screenW - size - (int) (10 * d);
