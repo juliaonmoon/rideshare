@@ -28,6 +28,7 @@ Open https://supabase.com/dashboard/project/iivhfapvkseeomxtsrxf/sql/new, paste 
 | `supabase/migrations/037_hide_unreachable.sql` | A request that can no longer be reached in the rider's ready time ("too late to reach them") is not shown and not announced (needs 034 and 036) | **To run** |
 | `supabase/migrations/038_hide_expired_requests.sql` | A request whose rider has stopped looking (it ran out or was switched off) is not announced on the driver's phone (needs 037) | **To run** |
 | `supabase/migrations/039_test_rider_near_driver.sql` | Test mode riders wait just ahead of where the driver really is, so test requests show once the driver has left (needs 016) | **To run** |
+| `supabase/migrations/040_leave_now_is_start.sql` | Leave now is the start: once a live offer is moving, accepted riders are marked on the way automatically, so arrival and Picked up alerts work without a Start trip tap (needs 038) | **To run** |
 
 How to copy a file to the clipboard: ask Claude, or open the file on GitHub, click "Copy raw file", then paste it into the SQL editor.
 
