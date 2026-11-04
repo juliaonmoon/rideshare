@@ -102,3 +102,5 @@ Picking this up in Claude Code on the owner's own computer? Read this first.
 - **Update route alert nags until tapped:** tapping it opens Google Maps and clears it (the same stops never alert again). Swiping it away without a tap fires `RouteDismissReceiver`, and the helper shows it again after 60 seconds, repeating until the driver taps it or the trip ends. State is kept in the `route_*` prefs and cleared by `clearRoute()`.
 
 - **Update route has a Dismiss button:** it sets `route_state` to done and cancels the alert, so it is not shown again for those stops (a swipe-away without a tap still brings it back after a minute).
+
+- **Update route alert tracks the tap itself:** the tap opens `RouteGoActivity` (no screen), which records the tap (`route_state=done`), clears the alert and opens Google Maps. The Dismiss button also sets done. If the alert disappears any other way (swiped, Clear all), the poller notices it is gone and shows it again after a minute. This replaces relying on the delete intent, which was not firing.
