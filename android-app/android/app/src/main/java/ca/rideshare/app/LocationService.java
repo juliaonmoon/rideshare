@@ -260,6 +260,7 @@ public class LocationService extends Service {
     /** Asks the server about this driver: ride in progress? still on duty? any new seat requests? */
     private void pollAlerts() {
         flushPending();
+        repostRouteIfDismissed();
         pollRider();
         pollMessages();
         HttpURLConnection c = null;
@@ -583,7 +584,7 @@ public class LocationService extends Service {
         try {
             String b = rpc("end_trip_token", new JSONObject().put("p_token", token));
             if (b != null && b.trim().equals("true")) {
-                tripOn = false; wasFar = false; nearEnd = 0; navUntil = 0; getSharedPreferences("rideshare_tracking", MODE_PRIVATE).edit().remove("route_sig").apply();
+                tripOn = false; wasFar = false; nearEnd = 0; navUntil = 0; clearRoute();
                 Notification n = new NotificationCompat.Builder(this, STEPS_CHANNEL)
                         .setContentTitle("Trip ended").setContentText("You have arrived. Thank you for driving!")
                         .setSmallIcon(android.R.drawable.ic_menu_directions).setPriority(NotificationCompat.PRIORITY_LOW)
@@ -1109,12 +1110,23 @@ public class LocationService extends Service {
                 String sig = nav.getQueryParameter("destination") + "#" + wps;
                 SharedPreferences rp = getSharedPreferences("rideshare_tracking", MODE_PRIVATE);
                 if (sig.equals(rp.getString("route_sig", ""))) return;
-                rp.edit().putString("route_sig", sig).apply();
-                Intent maps = new Intent(Intent.ACTION_VIEW, nav).setPackage("com.google.android.apps.maps").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                pi = PendingIntent.getActivity(this, 8, maps, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
-                text = "Tap to update your route in Google Maps. Navigation restarts with the new stop.";
+                rp.edit().putString("route_sig", sig).putString("route_uri", nav.toString()).putString("route_name", name).putString("route_state", "shown").apply();
             }
+            postRoute(name, nav);
+            return;
         } catch (Exception ignore) { /* fall back to the trip plan */ }
+        postRoute(name, null);
+    }
+
+    /** The "Update route" alert. Tapping it opens Google Maps and clears it for good. Swiping it away without a tap brings it back (see repostRouteIfDismissed). */
+    private void postRoute(String name, Uri nav) {
+        PendingIntent pi = null;
+        String text = "Tap to preview your trip and stops, then start when you are ready.";
+        if (nav != null) {
+            Intent maps = new Intent(Intent.ACTION_VIEW, nav).setPackage("com.google.android.apps.maps").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            pi = PendingIntent.getActivity(this, 8, maps, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+            text = "Tap to update your route in Google Maps. Navigation restarts with the new stop.";
+        }
         if (pi == null) {
             Intent link = new Intent(Intent.ACTION_VIEW, Uri.parse("ca.rideshare.app://plan"))
                     .setClass(this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
@@ -1130,9 +1142,25 @@ public class LocationService extends Service {
                 .setOnlyAlertOnce(true)
                 .setAutoCancel(true)
                 .setContentIntent(pi)
+                .setDeleteIntent(PendingIntent.getBroadcast(this, 9, new Intent(this, RouteDismissReceiver.class), PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT))
                 .addAction(0, "Update route", pi)
                 .build();
         try { getSystemService(NotificationManager.class).notify(3000, n); } catch (Exception ignore) { }
+    }
+
+    /** The driver swiped the alert away without tapping it: show it again after a minute, until they tap Update route (or the trip ends). */
+    private void repostRouteIfDismissed() {
+        SharedPreferences rp = getSharedPreferences("rideshare_tracking", MODE_PRIVATE);
+        if (!"dismissed".equals(rp.getString("route_state", ""))) return;
+        if (System.currentTimeMillis() - rp.getLong("route_dismissed_at", 0) < 60000) return;
+        String u = rp.getString("route_uri", "");
+        rp.edit().putString("route_state", "shown").apply();
+        postRoute(rp.getString("route_name", "Your rider"), u.isEmpty() ? null : Uri.parse(u));
+    }
+
+    private void clearRoute() {
+        getSharedPreferences("rideshare_tracking", MODE_PRIVATE).edit().remove("route_sig").remove("route_uri").remove("route_name").remove("route_state").remove("route_dismissed_at").apply();
+        try { getSystemService(NotificationManager.class).cancel(3000); } catch (Exception ignore) { }
     }
 
     /** A Google Maps link that starts navigation through every remaining stop (nearest next, a pickup before its drop-off), ending at the destination. */
@@ -1208,7 +1236,7 @@ public class LocationService extends Service {
 
     @Override
     public void onDestroy() {
-        getSharedPreferences("rideshare_tracking", MODE_PRIVATE).edit().remove("route_sig").apply();
+        clearRoute();
         if (live == this) live = null;
         main.post(this::hideBubble);
         running = false;
