@@ -1299,12 +1299,16 @@
     each('[data-stopdrive]', () => { stopShare(true); toast('Driving mode is off'); render(); });
     // Reset trip: start over at any time (after a trip, or when something went wrong).
     const resetTrip = async (end) => {
-      const live = !!myLiveTrip;
-      if (!end && !window.confirm('Reset this trip?\n\nRiders who are not picked up yet are cancelled (their points go back to them). ' + (live ? 'Your Offer a ride now trip is cancelled. ' : 'Your posted trip stays. ') + 'Driving mode turns off. You can start a new trip right after.')) return;
+      const live = !!myLiveTrip, oneTime = !!myTrip && !(myTrip.repeat_days && myTrip.repeat_days.length);   // a repeating trip stays; a one-time trip is cancelled
+      if (!end && !window.confirm('Reset this trip?\n\nRiders who are not picked up yet are cancelled (their points go back to them). ' + (live ? 'Your Offer a ride now trip is cancelled. ' : '') + (oneTime ? 'Your posted trip is cancelled. ' : myTrip ? 'Your repeating trip stays. ' : '') + 'Driving mode turns off and the form starts fresh.')) return;
       const todo = matches.filter((x) => x.driver_id === user.id && (x.status === 'accepted' || x.status === 'requested') && !x.picked_up_at);
       for (const x of todo) { try { await (x.status === 'requested' ? sb.rpc('respond_match', { p_match: x.id, p_accept: false }) : sb.rpc('cancel_ride', { p_match: x.id })); } catch (e) { /* already finished */ } }
       if (myLiveTrip) { try { const ce = (await cancelTrip(myLiveTrip.id)).error; if (ce) toast(ce.message); } catch (e) { /* ignore */ } }
+      if (oneTime) { try { const ce = (await cancelTrip(myTrip.id)).error; if (ce) toast(ce.message); } catch (e) { /* ignore */ } }
       stopShare(true); editing.trip = false; pending = null; viewD = null; mapSig = {}; formSig = '';
+      // back to how the app starts: forget the places and times typed into the driver forms
+      [nowSel, LV].forEach((o) => Object.keys(o).forEach((k) => { delete o[k]; })); plReset('ln-o', 'ln-d', 'lt-o', 'lt-d'); tripMode = 'now';
+      try { localStorage.setItem('rs_trip_mode', 'now'); } catch (e) { /* storage blocked */ }
       try { localStorage.removeItem('rs_trip_on'); } catch (e) { /* storage blocked */ }
       toast(end ? 'Trip ended. Thank you for driving!' : 'Trip reset. You can start a new one.'); await loadAll();
     };
