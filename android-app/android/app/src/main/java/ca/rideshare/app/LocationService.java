@@ -1144,6 +1144,7 @@ public class LocationService extends Service {
                 .setContentIntent(pi)
                 .setDeleteIntent(PendingIntent.getBroadcast(this, 9, new Intent(this, RouteDismissReceiver.class), PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT))
                 .addAction(0, "Update route", pi)
+                .addAction(0, "Dismiss", PendingIntent.getBroadcast(this, 10, new Intent(this, RouteDismissReceiver.class).putExtra("stop", true), PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT))
                 .build();
         try { getSystemService(NotificationManager.class).notify(3000, n); } catch (Exception ignore) { }
     }

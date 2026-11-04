@@ -100,3 +100,5 @@ Picking this up in Claude Code on the owner's own computer? Read this first.
 - **Update route alerts only when the stops change:** the phone helper remembers the last stop set it announced (`route_sig`) and skips an Update route alert for the same stops; the alert alerts only once while shown. The memory is cleared when the trip ends or the helper stops.
 
 - **Update route alert nags until tapped:** tapping it opens Google Maps and clears it (the same stops never alert again). Swiping it away without a tap fires `RouteDismissReceiver`, and the helper shows it again after 60 seconds, repeating until the driver taps it or the trip ends. State is kept in the `route_*` prefs and cleared by `clearRoute()`.
+
+- **Update route has a Dismiss button:** it sets `route_state` to done and cancels the alert, so it is not shown again for those stops (a swipe-away without a tap still brings it back after a minute).
