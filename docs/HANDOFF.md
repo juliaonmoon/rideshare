@@ -106,3 +106,5 @@ Picking this up in Claude Code on the owner's own computer? Read this first.
 - **Update route alert tracks the tap itself:** the tap opens `RouteGoActivity` (no screen), which records the tap (`route_state=done`), clears the alert and opens Google Maps. The Dismiss button also sets done. If the alert disappears any other way (swiped, Clear all), the poller notices it is gone and shows it again after a minute. This replaces relying on the delete intent, which was not firing.
 
 - **Leave now is the start (migration 040):** `driver_alerts_token` marks accepted riders on a moving live offer as on the way (`en_route_at`), so the phone's arrival and Picked up alerts work without a separate Start trip tap. Scheduled trips still use Start trip.
+
+- **Maps follows the stops:** while a ride is under way the phone helper (`routeWatch`) re-reads the stops that are left every poll. When they change (Picked up, Dropped off, a rider added or cancelled, in the app or in a notification) it shows the Update route alert (title 'Your stops changed'). The first look only records the route Maps already has.

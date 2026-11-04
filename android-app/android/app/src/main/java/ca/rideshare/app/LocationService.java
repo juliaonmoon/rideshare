@@ -323,6 +323,7 @@ public class LocationService extends Service {
             JSONArray rs = o.optJSONArray("rides");
             rides = rs == null ? new JSONArray() : rs;
             updateStepNotes();
+            routeWatch();
             runAutopilot();
             main.post(this::syncBubble);
             Location here = fakeActive() ? fakeLocation() : lastLoc;
@@ -1118,6 +1119,25 @@ public class LocationService extends Service {
         postRoute(name, null);
     }
 
+    /** The stops left to visit changed (Picked up, Dropped off, a rider added or cancelled): tell the driver to update Google Maps. */
+    private void routeWatch() {
+        SharedPreferences rp = getSharedPreferences("rideshare_tracking", MODE_PRIVATE);
+        String last = rp.getString("route_sig", "");
+        if (rides.length() == 0 && last.isEmpty()) return;   // no ride under way and no route handed to Maps
+        try {
+            String b = rpc("driver_route_token", new JSONObject().put("p_token", token));
+            Uri nav = b == null ? null : buildNavUri(new JSONObject(b));
+            if (nav == null) return;
+            java.util.List<String> wps = new java.util.ArrayList<>(java.util.Arrays.asList(String.valueOf(nav.getQueryParameter("waypoints")).split("\\|")));
+            java.util.Collections.sort(wps);
+            String sig = nav.getQueryParameter("destination") + "#" + wps;
+            if (sig.equals(last)) return;
+            if (last.isEmpty()) { rp.edit().putString("route_sig", sig).putString("route_uri", nav.toString()).putString("route_state", "done").apply(); return; }   // first look: Maps already has this route
+            rp.edit().putString("route_sig", sig).putString("route_uri", nav.toString()).putString("route_name", "Your stops").putString("route_state", "shown").apply();
+            postRoute("Your stops", nav);
+        } catch (Exception ignore) { /* try again next poll */ }
+    }
+
     /** The "Update route" alert. Tapping it opens Google Maps and clears it for good. Swiping it away without a tap brings it back (see repostRouteIfDismissed). */
     private void postRoute(String name, Uri nav) {
         PendingIntent pi = null;
@@ -1125,7 +1145,7 @@ public class LocationService extends Service {
         if (nav != null) {
             Intent maps = new Intent(this, RouteGoActivity.class).setData(nav).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);   // records the tap, then opens Google Maps
             pi = PendingIntent.getActivity(this, 8, maps, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
-            text = "Tap to update your route in Google Maps. Navigation restarts with the new stop.";
+            text = "Your stops".equals(name) ? "Tap to update Google Maps with the stops that are left." : "Tap to update your route in Google Maps. Navigation restarts with the new stop.";
         }
         if (pi == null) {
             Intent link = new Intent(Intent.ACTION_VIEW, Uri.parse("ca.rideshare.app://plan"))
@@ -1133,7 +1153,7 @@ public class LocationService extends Service {
             pi = PendingIntent.getActivity(this, 7, link, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
         }
         Notification n = new NotificationCompat.Builder(this, ALERT_CHANNEL)
-                .setContentTitle(name + " is added to your trip")
+                .setContentTitle("Your stops".equals(name) ? "Your stops changed" : name + " is added to your trip")
                 .setContentText(text)
                 .setStyle(new NotificationCompat.BigTextStyle().bigText(text))
                 .setSmallIcon(android.R.drawable.ic_dialog_info)
