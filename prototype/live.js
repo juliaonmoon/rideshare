@@ -925,7 +925,11 @@
   }
 
   function driverLists() {
-    if (!curTrip || !known(curTrip)) return card('Riders', '<p class="mut">Offer seats or post a trip on Home to see riders along your route.</p>');
+    // No trip: nothing to show. Hide the driver map (and the test preview card) so no old route is left behind.
+    const showMap = !!curTrip && known(curTrip), mapEl = $('map-ld'), simEl = $('sim-ld');
+    if (mapEl) mapEl.style.display = showMap ? '' : 'none';
+    if (simEl && !showMap) simEl.style.display = 'none';
+    if (!showMap) { mapSig.d = ''; window.__ldStops = []; window.__ldAcc = []; return ''; }
     const dates = RSD.nextOccurrences(curTrip.live ? todayStr() : curTrip.trip_date, curTrip.repeat_days, new Date(), 7);
     viewD = pickView(viewD, dates);
     const dr = driverObj(curTrip, viewD), reqById = {}; [...otherReqs, ...extraReqs].forEach((q) => { reqById[q.id] = q; });
