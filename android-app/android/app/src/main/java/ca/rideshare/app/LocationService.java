@@ -132,7 +132,7 @@ public class LocationService extends Service {
     private final Runnable poller = new Runnable() {
         @Override public void run() {
             if (!io.isShutdown()) io.execute(LocationService.this::pollAlerts);
-            main.postDelayed(this, POLL_MS);
+            main.postDelayed(this, rides.length() > 0 ? 6000 : POLL_MS);   // a ride is under way: check every 6 seconds so the next step shows up fast
         }
     };
 
