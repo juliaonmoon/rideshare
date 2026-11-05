@@ -118,3 +118,5 @@ Picking this up in Claude Code on the owner's own computer? Read this first.
 - **Leave now marks the trip as started in the app:** it stores `rs_trip_on` for the new live trip, so the Start trip button and card never show for it, and the trip card says 'You are on your way' until a rider is dropped off.
 
 - **A Leave now trip is always started in the app:** the trip plan never shows Start trip for a live trip; the next button is Picked up / Dropped off.
+
+- **Seat request alert shows more when small:** the alert uses a custom layout (`notif_request` / `notif_request_big`): title, route and a one-line 'detour . leave by' even collapsed (heads-up), and the full detour numbers when expanded. Android cannot force a notification to open expanded, so the small version now carries the key facts.

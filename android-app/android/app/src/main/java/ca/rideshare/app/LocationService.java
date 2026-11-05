@@ -307,7 +307,7 @@ public class LocationService extends Service {
                     if (!id.isEmpty()) nowPend.add(id);
                     if (id.isEmpty() || !notified.add(id)) continue;
                     String dt = detourText(p), lt = leaveText(p);
-                    if (!firstPoll) { announce(id, p.optString("name", "A rider"), p.optString("pickup"), p.optString("dropoff"), dt.isEmpty() ? lt : lt.isEmpty() ? dt : dt + ". " + lt); announced.add(id); }
+                    if (!firstPoll) { announce(id, p.optString("name", "A rider"), p.optString("pickup"), p.optString("dropoff"), dt.isEmpty() ? lt : lt.isEmpty() ? dt : dt + ". " + lt, shortDetail(dt, lt)); announced.add(id); }
                 }
                 // a request that is no longer waiting (answered, ended, or now outside the detour limits) must not stay on the phone
                 for (String old : new HashSet<>(announced)) {
@@ -956,14 +956,34 @@ public class LocationService extends Service {
         pollAlerts();
     }
 
-    private void announce(String id, String name, String pickup, String dropoff, String detour) {
+    /** The one-line version for the small notification: "+2 min detour. Leave by 11:56 PM". */
+    private static String shortDetail(String dt, String lt) {
+        String first = dt.contains(". ") ? dt.substring(0, dt.indexOf(". ")) : dt;
+        if (first.endsWith(".")) first = first.substring(0, first.length() - 1);
+        String l = lt.endsWith(".") ? lt.substring(0, lt.length() - 1) : lt;
+        return first.isEmpty() ? l : l.isEmpty() ? first : first + " \u00B7 " + l;
+    }
+
+    private void announce(String id, String name, String pickup, String dropoff, String detour, String shortDetail) {
         final int nid = idOf(ID_REQ, id);
         Intent open = new Intent(this, MainActivity.class).setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_NEW_TASK);
         PendingIntent pi = PendingIntent.getActivity(this, 1, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+        // three short lines even when small (name, route, detour and leave-by), more lines when expanded
+        android.widget.RemoteViews small = new android.widget.RemoteViews(getPackageName(), R.layout.notif_request);
+        android.widget.RemoteViews big = new android.widget.RemoteViews(getPackageName(), R.layout.notif_request_big);
+        for (android.widget.RemoteViews rv : new android.widget.RemoteViews[]{small, big}) {
+            rv.setTextViewText(R.id.req_title, name + " asked for a seat");
+            rv.setTextViewText(R.id.req_route, pickup + " to " + dropoff);
+        }
+        small.setTextViewText(R.id.req_detail, shortDetail.isEmpty() ? "Accept or decline below" : shortDetail);
+        big.setTextViewText(R.id.req_detail, detour.isEmpty() ? "Accept or decline below" : detour.replace(". ", "\n"));
         Notification n = new NotificationCompat.Builder(this, ALERT_CHANNEL)
                 .setContentTitle(name + " asked for a seat")
-                .setContentText(pickup + " to " + dropoff + (detour.isEmpty() ? "" : ". " + detour) + ". Accept or decline below.")
-                .setStyle(new NotificationCompat.BigTextStyle().bigText(pickup + " to " + dropoff + (detour.isEmpty() ? "" : "\n" + detour)))
+                .setContentText(pickup + " to " + dropoff)
+                .setStyle(new NotificationCompat.DecoratedCustomViewStyle())
+                .setCustomContentView(small)
+                .setCustomBigContentView(big)
+                .setCustomHeadsUpContentView(small)
                 .setSmallIcon(android.R.drawable.ic_dialog_info)
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setDefaults(Notification.DEFAULT_ALL)
