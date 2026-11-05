@@ -520,7 +520,7 @@
             + '<div style="margin-top:12px"><button class="btn" data-startnav="1" style="width:100%;padding:14px;font-size:17px">Start trip</button></div><div style="margin-top:12px"><button class="btn ghost" data-reset="trip">Reset trip</button></div>' };
       }
       return { stops: [{ loc: pt(curTrip, 'origin'), type: 'origin' }, { loc: pt(curTrip, 'dest'), type: 'dest' }],
-        html: '<p style="margin-top:0"><b>All riders are dropped off.</b> Keep driving to <b>' + esc(disp(curTrip, 'dest')) + '</b>.</p><div style="margin-top:12px"><button class="btn" data-reset="end" style="width:100%;padding:14px;font-size:17px">I have arrived: end trip</button></div><p class="mut" style="margin:8px 0 0">Tap this when you reach your destination. It turns off driving mode and takes the trip down.</p>' };
+        html: '<p style="margin-top:0">' + (matches.some((x) => x.driver_id === user.id && x.ride_date === d && x.status === 'completed') ? '<b>All riders are dropped off.</b> Keep driving to <b>' : '<b>You are on your way.</b> Riders along your route can still ask for a seat. Keep driving to <b>') + esc(disp(curTrip, 'dest')) + '</b>.</p><div style="margin-top:12px"><button class="btn" data-reset="end" style="width:100%;padding:14px;font-size:17px">I have arrived: end trip</button></div><p class="mut" style="margin:8px 0 0">Tap this when you reach your destination. It turns off driving mode and takes the trip down.</p>' };
     }
     let dr = driverObj(curTrip, d);
     if (curTrip.live) { const n = new Date(); dr = Object.assign({}, dr, { departMin: n.getHours() * 60 + n.getMinutes() + 2 }); }   // an Offer a ride now trip leaves about now
@@ -541,7 +541,8 @@
     const rows = ev.timeline.map((t, i) => '<div style="display:flex;gap:10px;padding:8px 0;border-top:1px solid var(--line)"><span style="flex:none;width:24px;height:24px;border-radius:50%;background:var(--acc);color:#fff;font-weight:700;font-size:13px;display:inline-flex;align-items:center;justify-content:center">' + (i + 1) + '</span><b style="min-width:76px;white-space:nowrap">' + (i === 0 ? clk(dr.departMin) : clk(t.arrive)) + '</b><span>' + label(t.stop) + '</span></div>').join('');
     const extra = Math.max(0, Math.round(ev.totalMin - direct));
     // One big button at a time, in order: Start trip, then Picked up (per rider, in route order), then Dropped off. Same actions as the phone notification.
-    const started = acc.some((x) => x.en_route_at);
+    let tripOnId = ''; try { tripOnId = localStorage.getItem('rs_trip_on') || ''; } catch (e) { /* storage blocked */ }
+    const started = acc.some((x) => x.en_route_at) || (curTrip.live && tripOnId === curTrip.id);   // Leave now counts as starting the trip
     const bigBtn = (attr, label) => '<button class="btn" ' + attr + ' style="width:100%;padding:14px;font-size:17px">' + label + '</button>';
     let next = '';
     if (!started) next = bigBtn('data-startnav="1"', 'Start trip');
@@ -1334,6 +1335,7 @@
       formMsg('ln-msg', '');
       const url = 'https://www.google.com/maps/dir/?api=1&travelmode=driving&dir_action=navigate&destination=' + d.lat + ',' + d.lng, nat = nativeLoc();
       if (!(await goLive())) return;   // starts the offer, the phone helper and the floating button
+      if (myLiveTrip) { try { localStorage.setItem('rs_trip_on', myLiveTrip.id); } catch (e) { /* storage blocked */ } formSig = ''; render(); }   // Leave now is the start: no separate Start trip
       if (nat) { try { await nat.openUrl({ url }); return; } catch (e) { /* fall through */ } }
       window.open(url, '_blank', 'noopener');
     });
