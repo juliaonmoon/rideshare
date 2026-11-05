@@ -24,7 +24,7 @@ begin
       pickup_lng  = case when t.origin_lat is not null then t.origin_lng + 0.003 * n end,
       dropoff_lat = case when t.dest_lat is not null then t.dest_lat - 0.003 end,
       dropoff_lng = case when t.dest_lat is not null then t.dest_lng + 0.002 end,
-      pickup_label = null, dropoff_label = null,
+      pickup_label = 'Test pickup spot ' || n || ' near ' || t.origin, dropoff_label = 'Test drop-off spot near ' || t.dest,
       ready_from = f, ready_to = f + 60,
       ride_date = t.trip_date, repeat_days = '{}'
     where id = r.request_id;

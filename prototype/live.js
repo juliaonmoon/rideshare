@@ -561,12 +561,16 @@
     if (curTrip.live) {   // leaving about now: plain driving times, no waiting for a rider's window
       let t = dr.departMin; ev = { timeline: stops.map((st, i) => { if (i > 0) t += RS.minutes(stops[i - 1].loc, st.loc, t, dr.dow); return { stop: st, arrive: t }; }) }; ev.totalMin = t - dr.departMin;
     }
+    // the place as the app knows it: the street or spot the person chose, then the neighbourhood; plus a link that opens that point on the map
+    const placeTxt = (row, k) => { const lab = row && row[k + '_label'], area = row && row[k]; return esc(lab || area || '') + (lab && area && lab !== area && !String(lab).includes(area) ? ' <span class="mut">(' + esc(area) + ')</span>' : ''); };
+    const mapLink = (loc) => (loc && loc.lat != null && loc.lng != null ? ' <a href="https://www.google.com/maps/search/?api=1&query=' + loc.lat + ',' + loc.lng + '" target="_blank" rel="noopener">Open on map</a>' : '');
     const label = (s) => {
-      const q = s.rider && reqById[s.rider.id];
-      if (s.type === 'origin') return 'Start: <b>' + esc(disp(curTrip, 'origin')) + '</b>';
-      if (s.type === 'dest') return 'Arrive: <b>' + esc(disp(curTrip, 'dest')) + '</b>';
-      if (s.type === 'pickup') return 'Pick up <b>' + esc(s.rider.name) + '</b>' + (q ? ' <span class="mut">&middot; ' + esc(disp(q, 'pickup')) + '</span>' : '');
-      return 'Drop off <b>' + esc(s.rider.name) + '</b>' + (q ? ' <span class="mut">&middot; ' + esc(disp(q, 'dropoff')) + '</span>' : '');
+      const q = s.rider && reqById[s.rider.id], x = s.rider && acc.find((m) => m.request_id === s.rider.id);
+      const meet = s.type === 'pickup' && x ? meetLine(x) : '';
+      if (s.type === 'origin') return 'Start: <b>' + placeTxt(curTrip, 'origin') + '</b>' + mapLink(s.loc);
+      if (s.type === 'dest') return 'Arrive: <b>' + placeTxt(curTrip, 'dest') + '</b>' + mapLink(s.loc);
+      if (s.type === 'pickup') return 'Pick up <b>' + esc(s.rider.name) + '</b>' + (q ? '<div>' + placeTxt(q, 'pickup') + mapLink(s.loc) + '</div>' : '') + meet;
+      return 'Drop off <b>' + esc(s.rider.name) + '</b>' + (q ? '<div>' + placeTxt(q, 'dropoff') + mapLink(s.loc) + '</div>' : '');
     };
     const rows = ev.timeline.map((t, i) => '<div style="display:flex;gap:10px;padding:8px 0;border-top:1px solid var(--line)"><span style="flex:none;width:24px;height:24px;border-radius:50%;background:var(--acc);color:#fff;font-weight:700;font-size:13px;display:inline-flex;align-items:center;justify-content:center">' + (i + 1) + '</span><b style="min-width:76px;white-space:nowrap">' + (i === 0 ? clk(dr.departMin) : clk(t.arrive)) + '</b><span>' + label(t.stop) + '</span></div>').join('');
     const extra = Math.max(0, Math.round(ev.totalMin - direct));
@@ -587,8 +591,8 @@
     }
     // Who is riding with me: name, tags, how they pay, where they get in and out.
     const pax = acc.map((x) => { const q = reqById[x.request_id];
-      return '<div style="padding:8px 0;border-top:1px solid var(--line)"><b>' + nm(x.rider_id) + '</b>' + badge(x.rider_id, 'rider') + tagsFor(x.rider_id, 'rider') + '<div class="mut">' + (x.pay_with === 'points' ? x.points + ' pts' : 'cash gas-share') + (q ? ' &middot; ' + esc(disp(q, 'pickup')) + ' to ' + esc(disp(q, 'dropoff')) : '') + '</div></div>'; }).join('');
-    const paxBlock = '<div style="margin-top:12px"><b>' + (acc.length > 1 ? 'Passengers' : 'Passenger') + '</b>' + pax + '</div>';
+      return '<div style="padding:8px 0;border-top:1px solid var(--line)"><b>' + nm(x.rider_id) + '</b>' + badge(x.rider_id, 'rider') + tagsFor(x.rider_id, 'rider') + '<div class="mut">' + (x.pay_with === 'points' ? x.points + ' pts' : 'cash gas-share') + (q ? ' &middot; ' + esc(disp(q, 'pickup')) + ' to ' + esc(disp(q, 'dropoff')) : '') + '</div>' + meetLine(x) + (msgButton(x) || meetButton(x) ? '<div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap">' + msgButton(x) + meetButton(x) + '</div>' : '') + '</div>'; }).join('');
+    const paxBlock = '<div style="margin-top:12px"><b>' + (acc.length > 1 ? 'Passengers' : 'Passenger') + '</b>' + pax + '<p class="mut" style="margin:8px 0 0">For privacy the app only keeps the street or place name (within about 100 m), never a house number. Use <b>Meeting spot</b> to agree the exact place with each rider.</p></div>';
     // Detour: how much extra time and distance the riders add, against the driver's limits
     const baseStops = [{ loc: dr.origin, type: 'origin' }, { loc: dr.dest, type: 'dest' }], limMin = Math.max(dr.maxTotal == null ? dr.maxDetour : dr.maxTotal, dr.maxDetour);
     const limKm = dr.maxKm == null && dr.maxTotalKm == null ? null : Math.max(dr.maxTotalKm == null ? dr.maxKm : dr.maxTotalKm, dr.maxKm || 0);
