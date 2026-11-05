@@ -34,6 +34,27 @@
   const dayChips = (id, sel) => `<div class="days" id="${id}">${RSD.DAY_NAMES.map((n, i) => `<button type="button" data-day="${i + 1}" class="${(sel || []).includes(i + 1) ? 'on' : ''}">${n}</button>`).join('')}</div>`;
   const readDays = (id) => [...document.querySelectorAll('#' + id + ' button.on')].map((b) => +b.dataset.day);
   const whenText = (date, mins, days) => RSD.label(date) + ' at ' + clk(mins) + (days && days.length ? ' &middot; repeats ' + RSD.repeatText(days) : ' &middot; one time');
+  // a trip with a time window has no fixed leave time until the first rider is accepted
+  const isFlexFree = (t) => !!t && t.flex_to != null && !t.live && !t.flex_locked;
+  const tripWhen = (t) => isFlexFree(t) ? RSD.label(t.trip_date) + ' any time between ' + clk(t.flex_from) + ' and ' + clk(t.flex_to) + ' &middot; flexible, one time'
+    : whenText(t.trip_date, t.depart_min, t.repeat_days) + (t.flex_to != null && !t.live ? ' &middot; set by your first rider' : '');
+  // when a flexible driver would have to leave to reach this rider on time (null: the window does not fit)
+  const flexDepart = (t, dr, me, date) => {
+    const n = new Date(), lo = Math.max(t.flex_from, date === todayStr() ? n.getHours() * 60 + n.getMinutes() + 2 : 0);
+    const off = RS.minutes(dr.origin, me.pickup, lo, dr.dow), dep = Math.max(lo, Math.ceil(me.readyFrom - off));
+    return dep > t.flex_to || dep + off > me.readyTo ? null : dep;
+  };
+  // the "I can leave any time between ..." option on the trip forms
+  const flexBox = (p, on, from, to) => '<label style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="' + p + '-flex"' + (on ? ' checked' : '') + ' style="width:auto"> <span>I am flexible: I can leave any time between two times</span></label>'
+    + '<div id="' + p + '-flexbox" style="' + (on ? '' : 'display:none') + '"><label>Latest I can leave</label><input type="time" id="' + p + '-t2" value="' + hmIn(to != null ? to : Math.min(1439, (from || 450) + 360)) + '"><p class="mut" style="margin:4px 0 0">Riders say when they are ready. The first rider you accept sets your leave time. After that the trip is fixed.</p></div>';
+  const flexRead = (p, row) => {
+    const box = $(p + '-flex'); if (!box || !box.checked) return '';
+    const to = hm($(p + '-t2').value || '13:30');
+    if (row.repeat_days.length) return 'A time range works for one-time trips only. Turn off repeat, or turn off the time range.';
+    if (to <= row.depart_min) return 'The latest time must be after the earliest time';
+    row.flex_from = row.depart_min; row.flex_to = to; row.flex_locked = false;
+    return '';
+  };
 
   if (!CFG.supabaseUrl || !CFG.supabaseKey || !window.supabase) {
     $('auth-bar').innerHTML = '<div class="card"><p class="mut">The app could not connect. Please reload the page.</p></div>';
@@ -319,6 +340,7 @@
   // "Leave by 7:48" for a driver who has not set off, "About 9 min" for one who is already driving
   const leaveLine = (id) => {
     const i = leaveInfo[id]; if (!i) return '';
+    if (i.flex) return '<div style="margin-top:4px">' + (i.locked ? '<b>Your trip already leaves at ' + clk(i.leave_by_min % 1440) + '.</b> You reach them on time.' : '<b>Accepting sets your leave time to ' + clk(i.leave_by_min % 1440) + '.</b>') + ' <span class="mut">They are ready until ' + clk(i.ready_until_min % 1440) + '.</span></div>';
     if (i.moving) return '<div style="margin-top:4px"><b>About ' + Math.max(1, Math.round(i.offset_min)) + ' min to reach them.</b></div>';
     if (i.leave_by_min == null) return '';
     const late = i.leave_by_at && Date.parse(i.leave_by_at) < Date.now();
@@ -651,7 +673,7 @@
     const asks = mine.filter((x) => x.status === 'requested' && fitServer[x.id] !== false).length, acc = mine.filter((x) => x.status === 'accepted').length;
     const isToday = d === todayStr();
     const line = asks ? `<b>${asks} rider${asks > 1 ? 's' : ''} asked for a seat.</b> Tap <b>See riders</b> to accept.` : acc ? `<b>${acc} rider${acc > 1 ? 's' : ''} accepted.</b> ${isToday ? 'Tap <b>Start trip</b> when you set off.' : 'You can start on the day of the trip.'}` : 'No riders yet. They will show up here when they ask for a seat.';
-    return card('Your trip', `<p><b>${esc(disp(curTrip, 'origin'))}</b> to <b>${esc(disp(curTrip, 'dest'))}</b></p><p class="mut">${whenText(curTrip.trip_date, curTrip.depart_min, curTrip.repeat_days)}</p><p>${line}</p>
+    return card('Your trip', `<p><b>${esc(disp(curTrip, 'origin'))}</b> to <b>${esc(disp(curTrip, 'dest'))}</b></p><p class="mut">${tripWhen(curTrip)}</p><p>${line}</p>
       <div class="row2">${isToday ? '<button class="btn" data-startnav="1">Start trip</button> ' : ''}${goTo(asks ? 'seat-requests' : acc ? (isToday ? 'plan-wrap' : 'riding-with-me') : 'ld-lists')}See riders</button> <button class="btn ghost" data-edit="trip">Edit trip</button> <button class="btn ghost" data-reset="trip">Reset trip</button></div>`);
   }
   function riderTop() {
@@ -759,7 +781,8 @@
       if (editing.trip || (pending && pending.kind === 'trip')) return share;   // the full form or the confirm card is showing
       const sx = S_(), seg = (m, label) => '<button type="button" class="btn' + (tripMode === m ? '' : ' ghost') + '" data-tmode="' + m + '" style="flex:1;min-width:0">' + label + '</button>';
       const val = (id, dflt) => esc(LV[id] != null ? LV[id] : dflt);
-      const later = '<div class="row"><div><label>Date</label><input type="date" id="ln-date" min="' + todayStr() + '" max="' + maxDate() + '" value="' + val('ln-date', defaultDate('', 450)) + '"></div><div><label>Leave at</label><input type="time" id="ln-t" value="' + val('ln-t', '07:30') + '"></div></div>'
+      const later = '<div class="row"><div><label>Date</label><input type="date" id="ln-date" min="' + todayStr() + '" max="' + maxDate() + '" value="' + val('ln-date', defaultDate('', 450)) + '"></div><div><label id="ln-t-lbl">' + (LV['ln-flex'] ? 'Earliest I can leave' : 'Leave at') + '</label><input type="time" id="ln-t" value="' + val('ln-t', '07:30') + '"></div></div>'
+        + flexBox('ln', !!LV['ln-flex'], null, LV['ln-t2'] == null ? null : hm(LV['ln-t2']))
         + '<label>Repeat every week on <span class="mut">(optional)</span></label>' + dayChips('ln-days', LV.days || [])
         + '<details style="margin-top:12px"><summary class="mut" style="cursor:pointer">More options (rider limits, payment)</summary>'
         + '<label>Most riders I will take</label><select id="ln-pk">' + [1, 2, 3, 4].map((n) => '<option value="' + n + '"' + (n === +(LV['ln-pk'] != null ? LV['ln-pk'] : Math.min(4, sx.d_seats)) ? ' selected' : '') + '>' + (n === 1 ? 'Just 1 rider' : 'Up to ' + n) + '</option>').join('') + '</select>'
@@ -906,7 +929,7 @@
   function driverForm() {
     if (pending && pending.kind === 'trip') {
       const r = pending.row;
-      return card('Confirm your trip', `<p><b>${esc(disp(r, 'origin'))}</b> to <b>${esc(disp(r, 'dest'))}</b></p><p>${whenText(r.trip_date, r.depart_min, r.repeat_days)}</p>
+      return card('Confirm your trip', `<p><b>${esc(disp(r, 'origin'))}</b> to <b>${esc(disp(r, 'dest'))}</b></p><p>${tripWhen(r)}</p>
         <p class="mut">${r.max_pickups === 1 ? 'One pickup only' : 'Up to ' + r.max_pickups + ' pickups'} &middot; max ${r.max_detour} extra min for one pickup${r.max_pickups > 1 && r.max_total_detour != null ? ' &middot; max ' + r.max_total_detour + ' extra min for all pickups together' : ''} &middot; accepts ${r.accepts === 'either' ? 'points or cash' : r.accepts === 'points' ? 'points only' : 'cash gas-share only'}</p>
         <div style="margin-top:10px"><button class="btn" id="lt-confirm">${myTrip ? 'Confirm and update' : 'Confirm and post'}</button> <button class="btn ghost" id="lt-back">Back</button></div>`);
     }
@@ -916,7 +939,8 @@
     const t = myTrip || { origin: 'Surrey Central', dest: 'BCIT / Willingdon (Burnaby)', depart_min: 450, max_detour: S_().d_detour, max_total_detour: S_().d_total_detour, max_pickups: Math.min(4, S_().d_seats), max_wait: S_().d_wait, accepts: S_().d_accepts, trip_date: todayStr(), repeat_days: [] };
     const date = defaultDate(t.trip_date, t.depart_min);
     return card(myTrip ? 'My trip' : 'Post a trip', `${placeField('lt-o', 'From', myTrip, 'origin', t.origin)}${placeField('lt-d', 'To', myTrip, 'dest', t.dest)}
-      <div class="row"><div><label>Date</label><input type="date" id="lt-date" min="${todayStr()}" max="${maxDate()}" value="${date}"></div><div><label>Leave at</label><input type="time" id="lt-t" value="${hmIn(t.depart_min)}"></div></div>
+      <div class="row"><div><label>Date</label><input type="date" id="lt-date" min="${todayStr()}" max="${maxDate()}" value="${date}"></div><div><label id="lt-t-lbl">${t.flex_to != null ? 'Earliest I can leave' : 'Leave at'}</label><input type="time" id="lt-t" value="${hmIn(t.flex_to != null ? t.flex_from : t.depart_min)}"></div></div>
+      ${t.flex_locked ? '' : flexBox('lt', t.flex_to != null, t.flex_from, t.flex_to)}
       <label>Repeat every week on <span class="mut">(optional)</span></label>${dayChips('lt-days', t.repeat_days)}
       <label>Most riders I will take</label><select id="lt-pk">${[1, 2, 3, 4].map((n) => '<option value="' + n + '"' + (n === (t.max_pickups || 1) ? ' selected' : '') + '>' + (n === 1 ? 'Just 1 rider' : 'Up to ' + n) + '</option>').join('')}</select>
       <label>Extra minutes I accept for my whole trip</label><input type="number" id="lt-dt" min="0" max="60" value="${t.max_detour}">
@@ -934,7 +958,7 @@
     const dates = RSD.nextOccurrences(curTrip.live ? todayStr() : curTrip.trip_date, curTrip.repeat_days, new Date(), 7);
     viewD = pickView(viewD, dates);
     const dr = driverObj(curTrip, viewD), reqById = {}; [...otherReqs, ...extraReqs].forEach((q) => { reqById[q.id] = q; });
-    const dateCard = card('Date', dateChips('ld-dates', dates, viewD) + `<p class="mut" style="margin-top:8px">${whenText(curTrip.trip_date, curTrip.depart_min, curTrip.repeat_days)}</p>`);
+    const dateCard = card('Date', dateChips('ld-dates', dates, viewD) + `<p class="mut" style="margin-top:8px">${tripWhen(curTrip)}</p>`);
     if (!viewD) return dateCard;
     const mine = matches.filter((x) => x.driver_id === user.id && x.ride_date === viewD);
     const inc = mine.filter((x) => x.status === 'requested' && fitServer[x.id] !== false);
@@ -1007,14 +1031,16 @@
     }
     let list = '';
     otherTrips.filter((t) => known(t) && tripOn(t, viewR)).forEach((t) => {
-      const dr = driverObj(t, viewR), found = RS.findMatches(dr, [meO], []); if (!found.length) return;
+      const dr = driverObj(t, viewR);
+      if (isFlexFree(t)) { const dep = flexDepart(t, dr, meO, viewR); if (dep == null) return; dr.departMin = dep; }
+      const found = RS.findMatches(dr, [meO], []); if (!found.length) return;
       const m = found[0], dollars = RS.priceRoute(m.stops, dr.cpk).riderPay.get(meO) || 0, pts = RS.toPoints(dollars);
       const payWith = curReq.pays === 'either' ? (t.accepts === 'cash' ? 'cash' : 'points') : curReq.pays;
       if (!(t.accepts === 'either' || t.accepts === payWith)) return;
       const st = mine.find((x) => x.trip_id === t.id);
       const price = 'about ' + (payWith === 'points' ? pts + ' pts (' + RS.money(pts * RS.POINT_VALUE) + ')' : RS.money(dollars));
       const btn = st ? `<span class="tag">${esc(st.status === 'requested' ? 'seat requested' : statusText(st.status))}</span>${st.status === 'requested' ? ` <button class="btn ghost" data-can="${st.id}">Cancel</button>` : ''}` : `<button class="btn" data-req="${t.id}" data-rq="${curReq.id}" data-pay="${payWith}" data-pts="${pts}" data-date="${viewR}" data-dmin="${Math.max(0, m.addedDetour).toFixed(1)}" data-dkm="${Math.max(0, m.addedKm || 0).toFixed(1)}">Request &middot; ${price}</button>`;
-      list += `<div style="padding:8px 0;border-top:1px solid var(--line)"><b>${nm(t.user_id)}</b>${badge(t.user_id, 'driver')}${scoreTag(t.user_id)}${tagsFor(t.user_id, 'driver')}${t.live ? ' <span class="tag">leaving now</span>' : ''} <span class="mut">leaves ${clk(t.depart_min)} &middot; picks you up ${clk(m.pickupAt)} &middot; drops ${clk(m.dropAt)} &middot; adds ${Math.round(m.addedDetour)} min for them</span><div style="margin-top:6px">${btn}</div></div>`;
+      list += `<div style="padding:8px 0;border-top:1px solid var(--line)"><b>${nm(t.user_id)}</b>${badge(t.user_id, 'driver')}${scoreTag(t.user_id)}${tagsFor(t.user_id, 'driver')}${t.live ? ' <span class="tag">leaving now</span>' : ''} <span class="mut">leaves ${clk(dr.departMin)}${isFlexFree(t) ? ' (the driver is flexible: ' + clk(t.flex_from) + ' to ' + clk(t.flex_to) + ')' : ''} &middot; picks you up ${clk(m.pickupAt)} &middot; drops ${clk(m.dropAt)} &middot; adds ${Math.round(m.addedDetour)} min for them</span><div style="margin-top:6px">${btn}</div></div>`;
     });
     html += card('Drivers going your way on ' + esc(RSD.label(viewR)), (list ? '<p class="mut" style="margin:0 0 6px">These prices are estimates. When you ask for a seat, RideShare works out the final extra time and price itself, using live traffic. Your price goes down as more riders join.</p>' : '') + (list || '<p class="mut">No drivers match on this date. Check back soon.</p>'));
     const sig = routeSig(mapStops) + viewR; if (mapSig.r !== sig) { mapSig.r = sig; window.RS_UI.drawMap('map-lr', mapStops); }
@@ -1027,7 +1053,7 @@
     [...otherTrips, ...extraTrips].concat(curTrip ? [curTrip] : []).forEach((t) => { tripById[t.id] = t; });
     [...otherReqs, ...extraReqs].concat(curReq ? [curReq] : []).forEach((q) => { reqById[q.id] = q; });
     const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
-    const tripPassed = !!(curTrip && !curTrip.live && !(curTrip.repeat_days && curTrip.repeat_days.length) && (curTrip.trip_date < t0 || (curTrip.trip_date === t0 && curTrip.depart_min + 60 < nowMin)));
+    const tripPassed = !!(curTrip && !curTrip.live && !(curTrip.repeat_days && curTrip.repeat_days.length) && (curTrip.trip_date < t0 || (curTrip.trip_date === t0 && (isFlexFree(curTrip) ? curTrip.flex_to : curTrip.depart_min) + 60 < nowMin)));
     const mineTrip = curTrip ? `<div style="padding:6px 0"><b>${esc(disp(curTrip, 'origin'))} to ${esc(disp(curTrip, 'dest'))}</b><div class="mut">${curTrip.live ? 'Offering seats now &middot; started at ' + clk(curTrip.depart_min) : whenText(curTrip.trip_date, curTrip.depart_min, curTrip.repeat_days)}</div><div style="margin-top:6px"><button class="btn ghost" data-go="t-driver">Edit</button> <button class="btn ghost" data-offtrip="${curTrip.id}">Cancel my trip</button></div></div>` : '<p class="mut">No trip posted. Use <b>I\'m driving</b>.</p>';
     const mineReq = curReq ? `<div style="padding:6px 0"><b>${esc(disp(curReq, 'pickup'))} to ${esc(disp(curReq, 'dropoff'))}</b><div class="mut">${esc(RSD.label(curReq.ride_date))}, ready ${clk(curReq.ready_from)} to ${clk(curReq.ready_to)}${curReq.repeat_days.length ? ' &middot; repeats ' + RSD.repeatText(curReq.repeat_days) : ' &middot; one time'}</div><div style="margin-top:6px"><button class="btn ghost" data-go="t-rider">Edit</button> <button class="btn ghost" data-offreq="${curReq.id}">Cancel my request</button></div></div>` : '<p class="mut">No ride requested. Use <b>I need a ride</b>.</p>';
     const live = matches.filter((x) => (x.status === 'requested' || x.status === 'accepted') && x.ride_date >= t0).sort((a, b) => (a.ride_date < b.ride_date ? -1 : 1));
@@ -1166,6 +1192,15 @@
     const on = (id, fn) => { const e = $(id); if (e) e.onclick = fn; };
     document.querySelectorAll('#lt-days button, #lr-days button').forEach((b) => (b.onclick = () => b.classList.toggle('on')));
     ['ln-date', 'ln-t', 'ln-pk', 'ln-dt', 'ln-a', 'ln-dk'].forEach((id) => { const e = $(id); if (e) e.onchange = () => { LV[id] = e.value; }; });
+    ['ln', 'lt'].forEach((p) => {
+      const box = $(p + '-flex'); if (!box) return;
+      box.onchange = () => {
+        $(p + '-flexbox').style.display = box.checked ? '' : 'none';
+        const lb = $(p + '-t-lbl'); if (lb) lb.textContent = box.checked ? 'Earliest I can leave' : 'Leave at';
+        if (p === 'ln') LV['ln-flex'] = box.checked ? '1' : '';
+      };
+      const t2 = $(p + '-t2'); if (t2 && p === 'ln') t2.onchange = () => { LV['ln-t2'] = t2.value; };
+    });
     document.querySelectorAll('#ln-days button').forEach((b) => (b.onclick = () => { b.classList.toggle('on'); LV.days = readDays('ln-days'); }));
     on('ln-review', () => {
       const row = { origin: $('ln-o').value, dest: $('ln-d').value, trip_date: $('ln-date').value, depart_min: hm($('ln-t').value || '07:30'), repeat_days: readDays('ln-days'), max_detour: +$('ln-dt').value, max_total_detour: +$('ln-dt').value, max_pickups: +$('ln-pk').value, max_wait: 0, accepts: $('ln-a').value, ...(DKOK ? { max_detour_km: optNum('ln-dk'), max_total_detour_km: optNum('ln-dk') } : {}), ...plCols('ln-o', 'origin'), ...plCols('ln-d', 'dest') };
@@ -1174,7 +1209,8 @@
       formMsg('ln-msg', '');
       if (samePlace(row.origin, row.dest, 'ln-o', 'ln-d')) { formMsg('ln-msg', 'Pick two different places'); return; }
       if (!row.trip_date) { formMsg('ln-msg', 'Pick a date'); return; }
-      const bad = RSD.check(row.trip_date, row.depart_min); if (bad) { formMsg('ln-msg', bad); return; }
+      const fxn = flexRead('ln', row); if (fxn) { formMsg('ln-msg', fxn); return; }
+      const bad = RSD.check(row.trip_date, row.flex_to != null ? row.flex_to : row.depart_min); if (bad) { formMsg('ln-msg', bad); return; }
       pending = { kind: 'trip', row }; formSig = ''; render();
     });
     on('lt-review', () => {
@@ -1184,7 +1220,9 @@
       formMsg('lt-msg', '');
       if (samePlace(row.origin, row.dest, 'lt-o', 'lt-d')) { formMsg('lt-msg', 'Pick two different places'); return; }
       if (!row.trip_date) { formMsg('lt-msg', 'Pick a date'); return; }
-      const bad = RSD.check(row.trip_date, row.depart_min); if (bad) { formMsg('lt-msg', bad); return; }
+      const fxt = flexRead('lt', row); if (fxt) { formMsg('lt-msg', fxt); return; }
+      if (row.flex_to == null && myTrip && myTrip.flex_to != null && !myTrip.flex_locked) { row.flex_from = null; row.flex_to = null; }   // the window was switched off
+      const bad = RSD.check(row.trip_date, row.flex_to != null ? row.flex_to : row.depart_min); if (bad) { formMsg('lt-msg', bad); return; }
       pending = { kind: 'trip', row }; formSig = ''; render();
     });
     on('lt-back', () => { pending = null; formSig = ''; render(); });
