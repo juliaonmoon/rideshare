@@ -34,6 +34,10 @@
   const dayChips = (id, sel) => `<div class="days" id="${id}">${RSD.DAY_NAMES.map((n, i) => `<button type="button" data-day="${i + 1}" class="${(sel || []).includes(i + 1) ? 'on' : ''}">${n}</button>`).join('')}</div>`;
   const readDays = (id) => [...document.querySelectorAll('#' + id + ' button.on')].map((b) => +b.dataset.day);
   const whenText = (date, mins, days) => RSD.label(date) + ' at ' + clk(mins) + (days && days.length ? ' &middot; repeats ' + RSD.repeatText(days) : ' &middot; one time');
+  // "2 days 6 h", "1 h 20 min", "35 min" instead of "3275 min"
+  const fmtLeft = (m) => { m = Math.max(0, Math.round(m)); const d = Math.floor(m / 1440), h = Math.floor((m % 1440) / 60), mi = m % 60; if (d) return d + (d > 1 ? ' days' : ' day') + (h ? ' ' + h + ' h' : ''); return h ? h + ' h' + (mi ? ' ' + mi + ' min' : '') : mi + ' min'; };
+  // a clock time with its day when it is not today: "8:41 am" or "Tomorrow 8:41 am"
+  const leaveWhen = (ms) => { const iso = new Date(ms).toISOString(), day = new Date(ms).toLocaleDateString('en-CA', { timeZone: 'America/Vancouver' }); return (day === todayStr() ? '' : RSD.label(day) + ' ') + clk(vanMin(iso)); };
   // a trip with a time window has no fixed leave time until the first rider is accepted
   const isFlexFree = (t) => !!t && t.flex_to != null && !t.live && !t.flex_locked;
   const tripWhen = (t) => isFlexFree(t) ? RSD.label(t.trip_date) + ' any time between ' + clk(t.flex_from) + ' and ' + clk(t.flex_to) + ' &middot; flexible, one time'
@@ -340,12 +344,12 @@
   // "Leave by 7:48" for a driver who has not set off, "About 9 min" for one who is already driving
   const leaveLine = (id) => {
     const i = leaveInfo[id]; if (!i) return '';
-    if (i.flex) return '<div style="margin-top:4px">' + (i.locked ? '<b>Your trip already leaves at ' + clk(i.leave_by_min % 1440) + '.</b> You reach them on time.' : '<b>Accepting sets your leave time to ' + clk(i.leave_by_min % 1440) + '.</b>') + ' <span class="mut">They are ready until ' + clk(i.ready_until_min % 1440) + '.</span></div>';
+    if (i.flex) return '<div style="margin-top:4px">' + (i.locked ? '<b>Your trip already leaves at ' + (i.leave_by_at ? leaveWhen(Date.parse(i.leave_by_at)) : clk(i.leave_by_min % 1440)) + '.</b> You reach them on time.' : '<b>Accepting sets your leave time to ' + (i.leave_by_at ? leaveWhen(Date.parse(i.leave_by_at)) : clk(i.leave_by_min % 1440)) + '.</b>') + ' <span class="mut">They are ready until ' + clk(i.ready_until_min % 1440) + '.</span></div>';
     if (i.moving) return '<div style="margin-top:4px"><b>About ' + Math.max(1, Math.round(i.offset_min)) + ' min to reach them.</b></div>';
     if (i.leave_by_min == null) return '';
     const late = i.leave_by_at && Date.parse(i.leave_by_at) < Date.now();
     return late ? '<div class="warn" style="margin-top:4px">It is too late to reach them in their ready time.</div>'
-      : '<div style="margin-top:4px"><b>Leave by ' + clk(i.leave_by_min % 1440) + '</b> to reach them. <span class="mut">They are ready until ' + clk(i.ready_until_min % 1440) + '.</span></div>';
+      : '<div style="margin-top:4px"><b>Leave by ' + (i.leave_by_at ? leaveWhen(Date.parse(i.leave_by_at)) : clk(i.leave_by_min % 1440)) + '</b> to reach them. <span class="mut">They are ready until ' + clk(i.ready_until_min % 1440) + '.</span></div>';
   };
   const pickupMs = (m) => { if (m.pickup_time) return Date.parse(m.pickup_time); const t = tripBy(m.trip_id); return t ? RSD.vanEpoch(m.ride_date, t.depart_min) : null; };
   const pickMin = (m, t) => {
@@ -526,7 +530,11 @@
   // The trip plan: shown on Home once a rider is accepted for today. This is the review before driving; Start trip is the only way into Google Maps.
   function planData() {
     if (!user || !curTrip || !known(curTrip)) return null;
-    const d = todayStr(), reqById = {}; [...otherReqs, ...extraReqs].forEach((q) => { reqById[q.id] = q; });
+    const today = todayStr(), reqById = {}; [...otherReqs, ...extraReqs].forEach((q) => { reqById[q.id] = q; });
+    // a scheduled trip: plan the next day that has an accepted rider (today if there is one)
+    let d = today;
+    if (!curTrip.live) { const days = matches.filter((x) => x.driver_id === user.id && x.trip_id === curTrip.id && x.ride_date >= today && x.status === 'accepted').map((x) => x.ride_date).sort(); if (days.length && !days.includes(today)) d = days[0]; }
+    const isToday = d === today;
     const acc = matches.filter((x) => x.driver_id === user.id && x.ride_date === d && x.status === 'accepted' && reqById[x.request_id] && known(reqById[x.request_id]));
     if (!acc.length) {
       // every rider is dropped off, but the driver is not at the destination yet: keep a final step until they end the trip
@@ -564,10 +572,10 @@
     const extra = Math.max(0, Math.round(ev.totalMin - direct));
     // One big button at a time, in order: Start trip, then Picked up (per rider, in route order), then Dropped off. Same actions as the phone notification.
     let tripOnId = ''; try { tripOnId = localStorage.getItem('rs_trip_on') || ''; } catch (e) { /* storage blocked */ }
-    const started = acc.some((x) => x.en_route_at) || !!curTrip.live;   // a Leave now trip has already set off: no Start trip, straight to Picked up / Dropped off
+    const started = isToday && (acc.some((x) => x.en_route_at) || !!curTrip.live);   // a Leave now trip has already set off: no Start trip, straight to Picked up / Dropped off
     const bigBtn = (attr, label) => '<button class="btn" ' + attr + ' style="width:100%;padding:14px;font-size:17px">' + label + '</button>';
     let next = '';
-    if (!started) next = bigBtn('data-startnav="1"', 'Start trip');
+    if (!started) next = isToday ? bigBtn('data-startnav="1"', 'Start trip') : '';
     else {
       for (const st of stops) {
         if (!st.rider || (st.type !== 'pickup' && st.type !== 'dropoff')) continue;
@@ -590,8 +598,9 @@
     const detourBlock = '<div style="margin-top:12px;padding:10px 12px;border-radius:10px;background:' + (over ? '#fdecea' : 'var(--acc2)') + '"><b>Detour: +' + Math.round(totMin) + ' min</b> of ' + limMin + ' allowed' + (limKm != null ? ' &middot; <b>+' + totKm.toFixed(1) + ' km</b> of ' + limKm + ' allowed' : (totKm > 0.05 ? ' &middot; +' + totKm.toFixed(1) + ' km' : '')) + (parts ? '<div class="mut" style="margin-top:2px">' + parts + '</div>' : '') + (over ? '<div class="warn" style="margin-top:2px">Over your limit. Accepted riders stay on the trip.</div>' : '') + '</div>';
     const note = started
       ? '<p class="mut" style="margin:8px 0 0">This is the next step. The same button also appears in your phone notification, so you can stay in Google Maps. </p><button class="btn ghost" data-startnav="1" style="margin-top:6px">Open Google Maps again</button>'
+      : !isToday ? '<p class="mut" style="margin:8px 0 0">On the day, open the app and tap <b>Start trip</b> (or <b>Leave now</b>). This plan updates by itself when you accept or cancel a rider.</p>'
       : '<p class="mut" style="margin:8px 0 0">Start trip tells your riders you are on your way and opens Google Maps with all of these stops. If Maps is already navigating, tap X in Maps first.</p>';
-    return { stops, html: '<p class="mut" style="margin-top:0">' + (started ? 'Your trip is under way. About ' : 'Review this, then tap Start trip. About ') + fmtMin(ev.totalMin) + ' in all' + (extra ? ', ' + extra + ' min more than driving alone' : '') + '.</p>' + rows
+    return { stops, html: '<p class="mut" style="margin-top:0">' + (started ? 'Your trip is under way. About ' : isToday ? 'Review this, then tap Start trip. About ' : 'Your plan for <b>' + esc(RSD.label(d)) + '</b>: leave at <b>' + clk(dr.departMin) + '</b>. About ') + fmtMin(ev.totalMin) + ' in all' + (extra ? ', ' + extra + ' min more than driving alone' : '') + '.</p>' + rows
       + detourBlock
       + paxBlock
       + '<div style="margin-top:12px">' + next + '</div>' + note
@@ -636,8 +645,8 @@
     let banner = '';
     if (waiting.length) {
       const w = waiting[0], ms = leaveInfo[w.id].leave_by_ms, left = Math.round((ms - nowMs) / 60000);
-      const when = left > 1 ? 'in ' + left + ' min' : left === 1 ? 'in 1 min' : left === 0 ? 'now' : Math.abs(left) + ' min ago';
-      banner = '<div class="' + (left <= 5 ? 'warn' : '') + '" style="padding:8px 0"><b>' + (left <= 0 ? 'Leave now to reach ' : 'Leave by ' + clk(vanMin(new Date(ms).toISOString())) + ' (' + when + ') to reach ') + nm(w.rider_id) + '.</b>' + (left <= 0 ? ' <span class="mut">Your leave-by time was ' + clk(vanMin(new Date(ms).toISOString())) + ' (' + when + ').</span>' : '') + '</div>';
+      const when = left > 0 ? 'in ' + fmtLeft(left) : left === 0 ? 'now' : fmtLeft(Math.abs(left)) + ' ago';
+      banner = '<div class="' + (left <= 5 ? 'warn' : '') + '" style="padding:8px 0"><b>' + (left <= 0 ? 'Leave now to reach ' : 'Leave by ' + leaveWhen(ms) + ' (' + when + ') to reach ') + nm(w.rider_id) + '.</b>' + (left <= 0 ? ' <span class="mut">Your leave-by time was ' + leaveWhen(ms) + ' (' + when + ').</span>' : '') + '</div>';
     }
     const cards = asks.map((x) => { const q = reqById[x.request_id];
       return '<div style="padding:8px 0;border-top:1px solid var(--line)"><b style="font-size:17px">' + nm(x.rider_id) + '</b>' + badge(x.rider_id, 'rider') + tagsFor(x.rider_id, 'rider') + '<div class="mut">' + esc(disp(q, 'pickup')) + ' to ' + esc(disp(q, 'dropoff')) + ' &middot; ' + (x.pay_with === 'points' ? x.points + ' pts' : 'cash gas-share') + '</div>' + detourLine(reqFit(x)) + leaveLine(x.id) + '<div style="margin-top:8px"><button class="btn" data-acc="' + x.id + '" style="padding:12px 22px;font-size:16px">Accept</button> <button class="btn ghost" data-dec="' + x.id + '">Decline</button></div></div>'; }).join('');
