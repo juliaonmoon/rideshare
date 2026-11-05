@@ -31,6 +31,7 @@ Open https://supabase.com/dashboard/project/iivhfapvkseeomxtsrxf/sql/new, paste 
 | `supabase/migrations/040_leave_now_is_start.sql` | Leave now is the start: once a live offer is moving, accepted riders are marked on the way automatically, so arrival and Picked up alerts work without a Start trip tap (needs 038) | **To run** |
 | `supabase/migrations/041_fast_test_mode.sql` | Test mode asks for a seat about every 45 seconds, appearing 5 seconds later (was 2 minutes and 20 seconds); test accounts only (needs 040) | **To run** |
 | `supabase/migrations/042_flexible_trip_window.sql` | Trips can have a time window ("leave any time between 8 AM and 2 PM"); the first accepted rider sets the leave time (needs 034, 037, 041) | **To run** |
+| `supabase/migrations/043_test_requests_for_flexible_trip.sql` | Test data: up to 4 made-up riders ask for a seat on your open trip with a time window (needs 042) | **To run** |
 
 How to copy a file to the clipboard: ask Claude, or open the file on GitHub, click "Copy raw file", then paste it into the SQL editor.
 
