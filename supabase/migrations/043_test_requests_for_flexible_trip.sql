@@ -3,7 +3,7 @@
 -- so you can see "Accepting sets your leave time to ..." and watch the other requests fit or disappear after you accept one.
 -- Only changes made-up riders. Safe to run again (it resets the same riders and requests). Needs migration 042.
 do $$
-declare t record; r record; n integer := 0; span integer; f integer;
+declare t record; r record; n integer := 0; span integer; f integer; q jsonb;
 begin
   select * into t from public.trips
     where active and flex_to is not null and not live and not flex_locked and (expires_at is null or expires_at > now())
@@ -31,6 +31,13 @@ begin
     insert into public.matches (trip_id, request_id, driver_id, rider_id, pay_with, points, ride_date, created_at)
       values (t.id, r.request_id, t.user_id, r.rider_id, 'cash', 0, t.trip_date, now())
     on conflict (trip_id, request_id, ride_date) do update set status = 'requested', created_at = excluded.created_at;
+    -- the extra time and distance for this rider, as a real request would carry (shown on the driver's card and phone alert)
+    q := public._quote_trip(t.id, t.trip_date, r.request_id, false);
+    if coalesce((q->>'ok')::boolean, false) then
+      update public.matches set detour_min = (q->>'added_min')::numeric, detour_km = (q->>'added_km')::numeric,
+        price_dollars = round(coalesce((q->>'new_dollars')::numeric, 0), 2), cash_cents = floor(coalesce((q->>'new_dollars')::numeric, 0) * 100)::int, quote_source = q->>'source'
+       where trip_id = t.id and request_id = r.request_id and ride_date = t.trip_date;
+    end if;
   end loop;
   if n = 0 then raise exception 'No made-up riders found. Run the sample data first.'; end if;
   raise notice 'Added % test requests to the trip on % (window % to % minutes after midnight)', n, t.trip_date, t.flex_from, t.flex_to;

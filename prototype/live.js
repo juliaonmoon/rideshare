@@ -609,6 +609,7 @@
       const q = reqById[x.request_id]; if (!q || !known(q)) return null;
       const dr = driverObj(curTrip, x.ride_date);
       if (curTrip.live) dr.departMin = new Date().getHours() * 60 + new Date().getMinutes() + 2;
+      if (isFlexFree(curTrip)) { const dep = flexDepart(curTrip, dr, riderObj(q), x.ride_date); if (dep == null) return { fits: false }; dr.departMin = dep; }   // a flexible trip: the leave time that suits this rider
       const accObjs = matches.filter((a) => a.driver_id === user.id && a.ride_date === x.ride_date && a.status === 'accepted' && reqById[a.request_id] && known(reqById[a.request_id])).map((a) => riderObj(reqById[a.request_id]));
       const res = RS.findMatches(dr, [riderObj(q)], accObjs);
       if (!res.length) return { fits: false };
