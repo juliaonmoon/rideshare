@@ -114,3 +114,5 @@ Picking this up in Claude Code on the owner's own computer? Read this first.
 - **Faster checks during a ride:** the phone helper checks the server every 6 seconds while a ride is under way (`rides` not empty), instead of every 15 seconds, so the next step card and alerts show up sooner.
 
 - **Fast test mode:** with the admin autopilot on, the helper checks every 3 s, the pretend car sets off as soon as a rider is accepted, reaches the pickup and the drop-off 6 s after each step, then drives to the destination so the trip ends by itself. The leave-by test is due in 2 minutes. Migration 041 makes test requests come about every 45 s, appearing after 5 s.
+
+- **Leave now marks the trip as started in the app:** it stores `rs_trip_on` for the new live trip, so the Start trip button and card never show for it, and the trip card says 'You are on your way' until a rider is dropped off.
