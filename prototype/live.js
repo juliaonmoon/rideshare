@@ -34,6 +34,7 @@
   const dayChips = (id, sel) => `<div class="days" id="${id}">${RSD.DAY_NAMES.map((n, i) => `<button type="button" data-day="${i + 1}" class="${(sel || []).includes(i + 1) ? 'on' : ''}">${n}</button>`).join('')}</div>`;
   const readDays = (id) => [...document.querySelectorAll('#' + id + ' button.on')].map((b) => +b.dataset.day);
   const whenText = (date, mins, days) => RSD.label(date) + ' at ' + clk(mins) + (days && days.length ? ' &middot; repeats ' + RSD.repeatText(days) : ' &middot; one time');
+  const mapAttrs = (lat, lng) => (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform() ? 'href="geo:' + lat + ',' + lng + '?q=' + lat + ',' + lng + '"' : 'href="https://www.google.com/maps/search/?api=1&query=' + lat + ',' + lng + '" target="_blank" rel="noopener"');
   // "2 days 6 h", "1 h 20 min", "35 min" instead of "3275 min"
   const fmtLeft = (m) => { m = Math.max(0, Math.round(m)); const d = Math.floor(m / 1440), h = Math.floor((m % 1440) / 60), mi = m % 60; if (d) return d + (d > 1 ? ' days' : ' day') + (h ? ' ' + h + ' h' : ''); return h ? h + ' h' + (mi ? ' ' + mi + ' min' : '') : mi + ' min'; };
   // a clock time with its day when it is not today: "8:41 am" or "Tomorrow 8:41 am"
@@ -162,7 +163,7 @@
   const carLine = (id) => { const c = cards[id]; if (!c) return ''; const bits = [[c.car_color, c.car_make].filter(Boolean).join(' '), c.car_plate].filter(Boolean); return bits.length ? esc(bits.join(' \u00b7 ')) : ''; };
   const whoCard = (id, role) => '<div style="display:flex;gap:10px;align-items:center">' + avatar(id) + '<div><b>' + nm(id) + '</b>' + badge(id, role) + scoreTag(id) + (carLine(id) ? '<div class="mut">' + carLine(id) + '</div>' : '') + '</div></div>';
   const withMeet = (m, q) => (m && q && m.meet_lat != null ? Object.assign({}, q, { pickup_lat: m.meet_lat, pickup_lng: m.meet_lng }) : q);
-  const meetLine = (m) => (m && (m.meet_note || m.meet_lat != null) ? '<div class="mut" style="margin-top:4px">Meeting spot' + (m.meet_note ? ': ' + esc(m.meet_note) : ' set') + (m.meet_lat != null ? ' &middot; <a href="https://www.google.com/maps/search/?api=1&query=' + m.meet_lat + ',' + m.meet_lng + '" target="_blank" rel="noopener">see it on the map</a>' : '') + '</div>' : '');
+  const meetLine = (m) => (m && (m.meet_note || m.meet_lat != null) ? '<div class="mut" style="margin-top:4px">Meeting spot' + (m.meet_note ? ': ' + esc(m.meet_note) : ' set') + (m.meet_lat != null ? ' &middot; <a ' + mapAttrs(m.meet_lat, m.meet_lng) + '>see it on the map</a>' : '') + '</div>' : '');
   const meetButton = (m) => (m && 'meet_lat' in m && m.status === 'accepted' && !m.picked_up_at ? '<button class="btn ghost" data-meet="' + m.id + '">' + (m.meet_lat != null || m.meet_note ? 'Change meeting spot' : 'Set meeting spot') + '</button>' : '');
   function meetDialog(matchId) {
     const x = matches.find((m) => m.id === matchId); if (!x) return;
@@ -576,7 +577,7 @@
     }
     // the place as the app knows it: the street or spot the person chose, then the neighbourhood; plus a link that opens that point on the map
     const placeTxt = (row, k) => { const lab = row && row[k + '_label'], area = row && row[k]; return esc(lab || area || '') + (lab && area && lab !== area && !String(lab).includes(area) ? ' <span class="mut">(' + esc(area) + ')</span>' : ''); };
-    const mapLink = (loc) => (loc && loc.lat != null && loc.lng != null ? ' <a href="https://www.google.com/maps/search/?api=1&query=' + loc.lat + ',' + loc.lng + '" target="_blank" rel="noopener">Open on map</a>' : '');
+    const mapLink = (loc) => (loc && loc.lat != null && loc.lng != null ? ' <a ' + mapAttrs(loc.lat, loc.lng) + '>Open on map</a>' : '');
     const label = (s) => {
       const q = s.rider && reqById[s.rider.id], x = s.rider && acc.find((m) => m.request_id === s.rider.id);
       const meet = s.type === 'pickup' && x ? meetLine(x) : '';
