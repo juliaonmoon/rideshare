@@ -116,3 +116,5 @@ Picking this up in Claude Code on the owner's own computer? Read this first.
 - **Fast test mode:** with the admin autopilot on, the helper checks every 3 s, the pretend car sets off as soon as a rider is accepted, reaches the pickup and the drop-off 6 s after each step, then drives to the destination so the trip ends by itself. The leave-by test is due in 2 minutes. Migration 041 makes test requests come about every 45 s, appearing after 5 s.
 
 - **Leave now marks the trip as started in the app:** it stores `rs_trip_on` for the new live trip, so the Start trip button and card never show for it, and the trip card says 'You are on your way' until a rider is dropped off.
+
+- **A Leave now trip is always started in the app:** the trip plan never shows Start trip for a live trip; the next button is Picked up / Dropped off.

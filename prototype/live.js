@@ -542,7 +542,7 @@
     const extra = Math.max(0, Math.round(ev.totalMin - direct));
     // One big button at a time, in order: Start trip, then Picked up (per rider, in route order), then Dropped off. Same actions as the phone notification.
     let tripOnId = ''; try { tripOnId = localStorage.getItem('rs_trip_on') || ''; } catch (e) { /* storage blocked */ }
-    const started = acc.some((x) => x.en_route_at) || (curTrip.live && tripOnId === curTrip.id);   // Leave now counts as starting the trip
+    const started = acc.some((x) => x.en_route_at) || !!curTrip.live;   // a Leave now trip has already set off: no Start trip, straight to Picked up / Dropped off
     const bigBtn = (attr, label) => '<button class="btn" ' + attr + ' style="width:100%;padding:14px;font-size:17px">' + label + '</button>';
     let next = '';
     if (!started) next = bigBtn('data-startnav="1"', 'Start trip');
