@@ -30,13 +30,13 @@ begin
     where id = r.request_id;
     insert into public.matches (trip_id, request_id, driver_id, rider_id, pay_with, points, ride_date, created_at)
       values (t.id, r.request_id, t.user_id, r.rider_id, 'cash', 0, t.trip_date, now())
-    on conflict (trip_id, request_id, ride_date) do update set status = 'requested', created_at = excluded.created_at;
+    on conflict (trip_id, request_id, ride_date) do update set status = 'requested', created_at = excluded.created_at where public.matches.status <> 'accepted';
     -- the extra time and distance for this rider, as a real request would carry (shown on the driver's card and phone alert)
     q := public._quote_trip(t.id, t.trip_date, r.request_id, false);
     if coalesce((q->>'ok')::boolean, false) then
       update public.matches set detour_min = (q->>'added_min')::numeric, detour_km = (q->>'added_km')::numeric,
         price_dollars = round(coalesce((q->>'new_dollars')::numeric, 0), 2), cash_cents = floor(coalesce((q->>'new_dollars')::numeric, 0) * 100)::int, quote_source = q->>'source'
-       where trip_id = t.id and request_id = r.request_id and ride_date = t.trip_date;
+       where trip_id = t.id and request_id = r.request_id and ride_date = t.trip_date and status = 'requested';
     end if;
   end loop;
   if n = 0 then raise exception 'No made-up riders found. Run the sample data first.'; end if;
