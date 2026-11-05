@@ -72,6 +72,7 @@ public class LocationService extends Service {
     static volatile long fakeUntil = 0;
     // Test autopilot (admin test mode only): the helper drives the pretend car to each pickup / drop-off by itself.
     static volatile boolean autopilot = false;
+    private volatile boolean haveLeave = false;   // someone is accepted and the driver has not set off (test autopilot sets the car moving)
     private String apKey = ""; private long apSince = 0;
     private boolean fakeLooping = false;
     private final Runnable fakeLoop = new Runnable() {
@@ -132,7 +133,7 @@ public class LocationService extends Service {
     private final Runnable poller = new Runnable() {
         @Override public void run() {
             if (!io.isShutdown()) io.execute(LocationService.this::pollAlerts);
-            main.postDelayed(this, rides.length() > 0 ? 6000 : POLL_MS);   // a ride is under way: check every 6 seconds so the next step shows up fast
+            main.postDelayed(this, autopilot ? 3000 : rides.length() > 0 ? 6000 : POLL_MS);   // test mode: every 3 s; a ride under way: every 6 s; otherwise 15 s   // a ride is under way: check every 6 seconds so the next step shows up fast
         }
     };
 
@@ -316,6 +317,7 @@ public class LocationService extends Service {
                 }
             }
             firstPoll = false;
+            haveLeave = o.optJSONArray("leave") != null && o.optJSONArray("leave").length() > 0;
             try {
                 android.util.Log.d("RideShareLeave", "poll: leave=" + (o.optJSONArray("leave") == null ? "missing" : o.optJSONArray("leave").toString()) + " pending=" + (pend == null ? 0 : pend.length()) + " tripOn=" + tripOn + " ride=" + ride);
                 handleLeave(o.optJSONArray("leave"));
@@ -460,11 +462,20 @@ public class LocationService extends Service {
         bubble = null;
     }
 
-    /** Test autopilot: 20 s after a ride starts the pretend car reaches the pickup; 15 s after Picked up it reaches the drop-off. */
+    /** Test autopilot (fast): a rider is accepted -> the pretend car sets off at once; 6 s later it reaches the pickup; 6 s after Picked up it reaches the drop-off; then it drives to the destination and the trip ends. */
     private void runAutopilot() {
         if (!autopilot) return;
         JSONArray rs = rides;
-        if (rs.length() == 0) { if (apKey.length() > 0) { apKey = ""; fakeUntil = 0; } return; }   // all rides done: back to the real GPS
+        long t0 = System.currentTimeMillis();
+        if (rs.length() == 0) {
+            if ("end".equals(apKey)) { if (!tripOn) { apKey = ""; fakeUntil = 0; } return; }   // wait for the trip to end, then back to the real GPS
+            if (apKey.length() > 0) {   // every ride is done: pretend to arrive at the destination so the trip ends by itself
+                if (!Double.isNaN(destLat) && !Double.isNaN(destLng)) { apKey = "end"; fakeLat = destLat; fakeLng = destLng; fakeUntil = t0 + 15 * 60 * 1000; } else { apKey = ""; fakeUntil = 0; }
+                return;
+            }
+            if (haveLeave && !fakeActive() && lastLoc != null) { fakeLat = lastLoc.getLatitude() + 0.01; fakeLng = lastLoc.getLongitude(); fakeUntil = t0 + 15 * 60 * 1000; }   // a rider is accepted and the car is parked: set off
+            return;
+        }
         JSONObject r = rs.optJSONObject(0);
         if (r == null) return;
         boolean picked = "picked_up".equals(r.optString("stage"));
@@ -472,7 +483,7 @@ public class LocationService extends Service {
         long now = System.currentTimeMillis();
         if (!key.equals(apKey)) { apKey = key; apSince = now; }
         String la = picked ? "dropoff_lat" : "pickup_lat", lo = picked ? "dropoff_lng" : "pickup_lng";
-        if (now - apSince >= (picked ? 15000 : 20000) && !r.isNull(la)) { fakeLat = r.optDouble(la); fakeLng = r.optDouble(lo); fakeUntil = now + 15 * 60 * 1000; }
+        if (now - apSince >= 6000 && !r.isNull(la)) { fakeLat = r.optDouble(la); fakeLng = r.optDouble(lo); fakeUntil = now + 15 * 60 * 1000; }
     }
 
     // ---------- the steps of a ride: Arrived (automatic), Picked up and Dropped off (one tap in a notification) ----------
