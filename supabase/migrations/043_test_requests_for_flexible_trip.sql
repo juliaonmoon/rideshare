@@ -28,6 +28,16 @@ begin
       ready_from = f, ready_to = f + 60,
       ride_date = t.trip_date, repeat_days = '{}'
     where id = r.request_id;
+    -- an exact address (made up) that the driver sees once the seat is accepted; needs migration 045 (skipped if it has not been run)
+    begin
+      insert into public.request_exact (request_id, user_id, pickup_label, pickup_lat, pickup_lng, dropoff_label, dropoff_lat, dropoff_lng)
+        select r.request_id, r.rider_id, (100 * n) || ' Test Street, ' || t.origin || ' (made-up address ' || n || ')',
+               case when t.origin_lat is not null then t.origin_lat + 0.004 * n + 0.0004 end, case when t.origin_lat is not null then t.origin_lng + 0.003 * n + 0.0003 end,
+               '200 Test Avenue, ' || t.dest || ' (made-up address)', case when t.dest_lat is not null then t.dest_lat - 0.003 + 0.0004 end, case when t.dest_lat is not null then t.dest_lng + 0.002 + 0.0003 end
+      on conflict (request_id) do update set pickup_label = excluded.pickup_label, pickup_lat = excluded.pickup_lat, pickup_lng = excluded.pickup_lng,
+        dropoff_label = excluded.dropoff_label, dropoff_lat = excluded.dropoff_lat, dropoff_lng = excluded.dropoff_lng;
+    exception when undefined_table then null;
+    end;
     insert into public.matches (trip_id, request_id, driver_id, rider_id, pay_with, points, ride_date, created_at)
       values (t.id, r.request_id, t.user_id, r.rider_id, 'cash', 0, t.trip_date, now())
     on conflict (trip_id, request_id, ride_date) do update set status = 'requested', created_at = excluded.created_at where public.matches.status <> 'accepted';

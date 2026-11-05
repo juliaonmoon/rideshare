@@ -123,6 +123,7 @@
   let DKOK = null;   // migration 020 (detour limits in km, detour saved with each request) is in place
   let bubbleHidden = false;
   let pastTrips = [];   // my trips that are finished or cancelled
+  let exactBy = {};   // match id -> exact pickup / drop-off, for rides I am driving (the server only gives it to the driver of a booked ride)
   let leaveInfo = {}; // seat request id -> when the driver must leave to reach that rider (Offer a ride now only)
   let fitServer = {}; // seat request id -> true or false from the database: is it inside my detour limits
   let apOn = null;   // test autopilot state last sent to the Android helper
@@ -162,7 +163,8 @@
   const avatar = (id, px) => { const c = cards[id], z = px || 44, base = 'width:' + z + 'px;height:' + z + 'px;border-radius:50%;flex:none;'; return c && c.photo ? '<img src="' + esc(c.photo) + '" alt="" referrerpolicy="no-referrer" style="' + base + 'object-fit:cover;background:var(--line)">' : '<span style="' + base + 'display:inline-flex;align-items:center;justify-content:center;background:var(--line);color:var(--acc);font-weight:700">' + esc((names[id] || '?').trim().charAt(0).toUpperCase()) + '</span>'; };
   const carLine = (id) => { const c = cards[id]; if (!c) return ''; const bits = [[c.car_color, c.car_make].filter(Boolean).join(' '), c.car_plate].filter(Boolean); return bits.length ? esc(bits.join(' \u00b7 ')) : ''; };
   const whoCard = (id, role) => '<div style="display:flex;gap:10px;align-items:center">' + avatar(id) + '<div><b>' + nm(id) + '</b>' + badge(id, role) + scoreTag(id) + (carLine(id) ? '<div class="mut">' + carLine(id) + '</div>' : '') + '</div></div>';
-  const withMeet = (m, q) => (m && q && m.meet_lat != null ? Object.assign({}, q, { pickup_lat: m.meet_lat, pickup_lng: m.meet_lng }) : q);
+  const withExact = (m, q) => { const e = m && q && exactBy[m.id]; if (!e) return q; return Object.assign({}, q, e.pickup_lat != null ? { pickup_label: e.pickup_label, pickup_lat: e.pickup_lat, pickup_lng: e.pickup_lng } : {}, e.dropoff_lat != null ? { dropoff_label: e.dropoff_label, dropoff_lat: e.dropoff_lat, dropoff_lng: e.dropoff_lng } : {}); };
+  const withMeet = (m, q) => { q = withExact(m, q); return m && q && m.meet_lat != null ? Object.assign({}, q, { pickup_lat: m.meet_lat, pickup_lng: m.meet_lng }) : q; };   // exact place first, then a meeting spot the two agreed on
   const meetLine = (m) => (m && (m.meet_note || m.meet_lat != null) ? '<div class="mut" style="margin-top:4px">Meeting spot' + (m.meet_note ? ': ' + esc(m.meet_note) : ' set') + (m.meet_lat != null ? ' &middot; <a ' + mapAttrs(m.meet_lat, m.meet_lng) + '>see it on the map</a>' : '') + '</div>' : '');
   const meetButton = (m) => (m && 'meet_lat' in m && m.status === 'accepted' && !m.picked_up_at ? '<button class="btn ghost" data-meet="' + m.id + '">' + (m.meet_lat != null || m.meet_note ? 'Change meeting spot' : 'Set meeting spot') + '</button>' : '');
   function meetDialog(matchId) {
@@ -486,6 +488,11 @@
         leaveInfo = li;
       } catch (e) { leaveInfo = {}; /* older database: no leave-by */ }
       try {
+        const mineEx = matches.filter((x) => x.driver_id === uid && x.status === 'accepted' && !x.dropped_off_at && x.ride_date >= todayStr()).slice(0, 8), exo = {};
+        await Promise.all(mineEx.map(async (x) => { const r = await sb.rpc('match_exact', { p_match: x.id }); if (!r.error && r.data) exo[x.id] = r.data; }));
+        exactBy = exo;
+      } catch (e) { exactBy = {}; /* older database: rounded places only */ }
+      try {
         const rq = matches.filter((x) => x.driver_id === uid && x.status === 'requested').slice(0, 12); const fv = {};
         await Promise.all(rq.map(async (x) => { const f = await sb.rpc('request_fits', { p_match: x.id }); if (!f.error && typeof f.data === 'boolean') fv[x.id] = f.data; }));
         fitServer = fv;
@@ -579,7 +586,7 @@
     const placeTxt = (row, k) => { const lab = row && row[k + '_label'], area = row && row[k]; return esc(lab || area || '') + (lab && area && lab !== area && !String(lab).includes(area) ? ' <span class="mut">(' + esc(area) + ')</span>' : ''); };
     const mapLink = (loc) => (loc && loc.lat != null && loc.lng != null ? ' <a ' + mapAttrs(loc.lat, loc.lng) + '>Open on map</a>' : '');
     const label = (s) => {
-      const q = s.rider && reqById[s.rider.id], x = s.rider && acc.find((m) => m.request_id === s.rider.id);
+      const x = s.rider && acc.find((m) => m.request_id === s.rider.id), q = x ? withMeet(x, reqById[s.rider.id]) : s.rider && reqById[s.rider.id];
       const meet = s.type === 'pickup' && x ? meetLine(x) : '';
       if (s.type === 'origin') return 'Start: <b>' + placeTxt(curTrip, 'origin') + '</b>' + mapLink(s.loc);
       if (s.type === 'dest') return 'Arrive: <b>' + placeTxt(curTrip, 'dest') + '</b>' + mapLink(s.loc);
@@ -604,7 +611,7 @@
       }
     }
     // Who is riding with me: name, tags, how they pay, where they get in and out.
-    const pax = acc.map((x) => { const q = reqById[x.request_id];
+    const pax = acc.map((x) => { const q = withExact(x, reqById[x.request_id]);
       return '<div style="padding:8px 0;border-top:1px solid var(--line)"><b>' + nm(x.rider_id) + '</b>' + badge(x.rider_id, 'rider') + tagsFor(x.rider_id, 'rider') + '<div class="mut">' + (x.pay_with === 'points' ? x.points + ' pts' : 'cash gas-share') + (q ? ' &middot; ' + esc(disp(q, 'pickup')) + ' to ' + esc(disp(q, 'dropoff')) : '') + '</div>' + meetLine(x) + (msgButton(x) || meetButton(x) ? '<div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap">' + msgButton(x) + meetButton(x) + '</div>' : '') + '</div>'; }).join('');
     const paxBlock = '<div style="margin-top:12px"><b>' + (acc.length > 1 ? 'Passengers' : 'Passenger') + '</b>' + pax + '<p class="mut" style="margin:8px 0 0">For privacy the app only keeps the street or place name (within about 100 m), never a house number. Use <b>Meeting spot</b> to agree the exact place with each rider.</p></div>';
     // Detour: how much extra time and distance the riders add, against the driver's limits
@@ -728,6 +735,9 @@
     const p = PL[id], has = p && !p.isArea;
     return { [key + '_label']: has ? p.label : null, [key + '_lat']: has ? p.lat : null, [key + '_lng']: has ? p.lng : null };
   };
+  // The exact places a rider just chose (only places picked this time, never an old rounded point), saved privately for the driver of a booked ride
+  const plExact = (idP, idD) => { const a = PL[idP], b = PL[idD], ok = (p) => p && !p.isArea && p.full && p.lat != null; return { p_pickup_label: ok(a) ? a.full : null, p_pickup_lat: ok(a) ? a.lat : null, p_pickup_lng: ok(a) ? a.lng : null, p_dropoff_label: ok(b) ? b.full : null, p_dropoff_lat: ok(b) ? b.lat : null, p_dropoff_lng: ok(b) ? b.lng : null }; };
+  const saveExact = async (reqId, ex) => { if (!PLOK || !reqId || !ex || (ex.p_pickup_lat == null && ex.p_dropoff_lat == null)) return; try { await sb.rpc('save_exact_places', Object.assign({ p_request: reqId }, ex)); } catch (e) { /* older database: only the rounded place is kept */ } };
   const plNeed = (id, what) => (!PLOK ? 'Address search is not ready yet. Tap Try again.' : (!PL[id] ? 'Choose ' + what + ' from the suggestions (or tap Use my location)' : ''));
   const samePlace = (a, b, ia, ib) => a === b && !(PL[ia] && PL[ib] && !PL[ia].isArea && !PL[ib].isArea && RS.haversineKm(PL[ia], PL[ib]) > 0.3);
   async function setCols(table, id, ...cols) { if (PLOK && id) { const patchRow = Object.assign({}, ...cols); const r = await sb.from(table).update(patchRow).eq('id', id); if (r.error) throw r.error; } }
@@ -768,7 +778,7 @@
           sug.innerHTML = r.length ? r.map((s, i) => '<button type="button" data-i="' + i + '">' + esc(s.main) + '<span>' + esc(s.sub) + '</span></button>').join('') : '';
           sug.querySelectorAll('button').forEach((b) => (b.onclick = async () => {
             const s = list[+b.dataset.i]; note.textContent = 'Finding that place...';
-            try { const d = await window.RS_PLACES.details(s.id), n = covered(d.lat, d.lng); if (n) setP({ label: s.main, lat: d.lat, lng: d.lng, area: n.a }); }
+            try { const d = await window.RS_PLACES.details(s.id), n = covered(d.lat, d.lng); if (n) setP({ label: s.main, full: s.main + (s.sub ? ', ' + s.sub : ''), lat: d.lat, lng: d.lng, area: n.a }); }
             catch (e) { note.textContent = 'Could not load that place. Try again.'; }
           }));
         }, 250);
@@ -784,7 +794,7 @@
           const n = covered(best.latitude, best.longitude); if (!n) return;
           note.textContent = 'Finding the address...';
           const addr = await window.RS_PLACES.where(best.latitude, best.longitude), acc = Math.round(best.accuracy);
-          setP({ label: addr || 'My location', lat: best.latitude, lng: best.longitude, area: n.a, acc });
+          setP({ label: addr || 'My location', full: addr || '', lat: best.latitude, lng: best.longitude, area: n.a, acc });
         };
         watchId = navigator.geolocation.watchPosition((pos) => {
           if (!best || pos.coords.accuracy < best.accuracy) best = pos.coords;
@@ -1276,7 +1286,8 @@
     on('lr-back', () => { pending = null; formSig = ''; render(); });
     on('lr-confirm', async () => {
       if (needProfile('ride')) return;
-      const row = pending.row; const ok = await run(myReq ? sb.from('ride_requests').update(row).eq('id', myReq.id) : sb.from('ride_requests').insert(row), 'Request saved');
+      const row = pending.row, ex = plExact('lr-p', 'lr-d'), save = myReq ? sb.from('ride_requests').update(row).eq('id', myReq.id).select('id').single() : sb.from('ride_requests').insert(row).select('id').single();
+      const ok = await run(save.then(async (r) => { if (!r.error && r.data) await saveExact(r.data.id, ex); return r; }), 'Request saved');
       if (ok) { editing.req = false; plReset('lr-p', 'lr-d'); pending = null; viewR = null; mapSig = {}; formSig = ''; render(); }
     });
     if ($('del-confirm')) $('del-confirm').oninput = () => { $('del-go').disabled = $('del-confirm').value.trim() !== 'DELETE'; };
@@ -1425,8 +1436,8 @@
     on('rn-go', async () => {
       const p = $('rn-p').value, d = $('rn-d').value, need = plNeed('rn-p', 'where to pick you up') || plNeed('rn-d', 'where to drop you off'); if (need) { formMsg('rn-msg', need); return; }
       if (samePlace(p, d, 'rn-p', 'rn-d')) { formMsg('rn-msg', 'Pick two different places'); return; }
-      const cols = [plCols('rn-p', 'pickup'), plCols('rn-d', 'dropoff')];
-      const ok = await run(sb.rpc('go_live_request', { p_pickup: p, p_dropoff: d, p_pays: $('rn-pay').value }).then(async (r) => { if (!r.error) await setCols('ride_requests', r.data, ...cols); return r; }), 'Drivers can see you for 20 minutes');
+      const cols = [plCols('rn-p', 'pickup'), plCols('rn-d', 'dropoff')], exN = plExact('rn-p', 'rn-d');
+      const ok = await run(sb.rpc('go_live_request', { p_pickup: p, p_dropoff: d, p_pays: $('rn-pay').value }).then(async (r) => { if (!r.error) { await setCols('ride_requests', r.data, ...cols); await saveExact(r.data, exN); } return r; }), 'Drivers can see you for 20 minutes');
       if (ok) { viewR = null; mapSig = {}; }
     });
     each('[data-stoplive]', (b) => { const isTrip = b.dataset.stoplive === 'trip', row = isTrip ? myLiveTrip : myLiveReq; if (isTrip && driveSession && !shouldShare()) stopShare(true); if (row) run(sb.from(isTrip ? 'trips' : 'ride_requests').update({ active: false }).eq('id', row.id), 'Stopped'); });
