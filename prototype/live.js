@@ -1366,7 +1366,18 @@
     each('[data-cancelask]', (b) => { askCancel = b.dataset.cancelask; render(); });
     each('[data-cancelno]', () => { askCancel = null; render(); });
     each('[data-cancelgo]', (b) => { askCancel = null; run(sb.rpc('cancel_ride', { p_match: b.dataset.cancelgo }), 'Ride cancelled. See your points history for any refund.'); });
-    each('[data-step]', (b) => { const [id, st] = b.dataset.step.split('|'); run(sb.rpc('ride_step', { p_match: id, p_step: st }), st === 'dropped_off' ? 'Dropped off. That rider\'s ride is complete and the points are paid. Keep driving to your destination.' : 'Updated'); });
+    // Picked up / Dropped off in the app: record it, say what the next stop is, and refresh Google Maps (the same one tap as the notification button)
+    each('[data-step]', async (b) => {
+      const [id, st] = b.dataset.step.split('|');
+      const ok = await run(sb.rpc('ride_step', { p_match: id, p_step: st }), st === 'dropped_off' ? 'Dropped off. That rider\'s ride is complete and the points are paid.' : 'Picked up');
+      const nat = nativeLoc();
+      if (!ok || !nat || !nat.routeNow || (st !== 'picked_up' && st !== 'dropped_off')) return;
+      try {
+        const r = await nat.routeNow();
+        toast((st === 'picked_up' ? 'Rider is in the car.' : 'Dropped off.') + ' Next stop: ' + (r.text || 'your destination') + (r.url ? '. Updating Google Maps.' : '.'));
+        if (r.url) setTimeout(() => { nat.openUrl({ url: r.url }); }, 1500);
+      } catch (e) { /* the helper is not running: the stops-changed alert covers it */ }
+    });
     each('[data-incar]', (b) => run(sb.rpc('rider_in_car', { p_match: b.dataset.incar }), 'Thanks, confirmed'));
     each('[data-noshow]', (b) => !window.confirm('Is the rider not at the pickup spot?\n\nThe ride closes as a missed pickup and you keep the points. This goes on the rider\'s record.') ? null : run(sb.rpc('mark_no_show', { p_match: b.dataset.noshow }), 'Closed as a missed pickup. You keep the points.'));
     each('[data-acc]', (b) => run(sb.rpc('respond_match', { p_match: b.dataset.acc, p_accept: true }), 'Accepted'));

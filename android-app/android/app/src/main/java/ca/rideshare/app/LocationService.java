@@ -502,8 +502,9 @@ public class LocationService extends Service {
     private static int idOf(int base, String matchId) { return base + (matchId.hashCode() & 0xfff); }
 
     private PendingIntent stepIntent(String step, String matchId, String name, int nid) {
-        Intent i = new Intent(this, LocationService.class).setAction(ACTION_STEP).putExtra("match", matchId).putExtra("step", step).putExtra("name", name).putExtra("nid", nid);
-        return PendingIntent.getService(this, nid * 8 + ("picked_up".equals(step) ? 3 : 5), i, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+        // one tap: records the step, says what the next stop is, and refreshes Google Maps (see StepGoActivity)
+        Intent i = new Intent(this, StepGoActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK).putExtra("match", matchId).putExtra("step", step).putExtra("name", name).putExtra("nid", nid);
+        return PendingIntent.getActivity(this, nid * 8 + ("picked_up".equals(step) ? 3 : 5), i, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
     }
 
     private PendingIntent openIntent() {
@@ -800,6 +801,46 @@ public class LocationService extends Service {
         } else {
             post2("Could not update " + name, err, ID_ERR + (nid & 0xfff));
         }
+    }
+
+    static LocationService get() { return live; }
+
+    static class StepResult { boolean ok; String message = ""; Uri nav; }
+
+    /** What the next stop is, in plain words ("pick up Sam", "drop off Frankie", "your destination"), from the last route read. */
+    String nextStopText() { return nextText.isEmpty() ? "your destination" : nextText; }
+    private volatile String nextText = "";
+
+    /** For a Picked up / Dropped off tap: records the step, then returns what to tell the driver and the Google Maps link for the stops that are left. */
+    StepResult stepThenRoute(String matchId, String step, String name) {
+        StepResult r = new StepResult();
+        NotificationManager nm = getSystemService(NotificationManager.class);
+        String err = stepCall(matchId, step);
+        if (NO_NET.equals(err)) { queueStep(matchId, step, name); r.message = "No signal. Your tap for " + name + " is saved and will be sent when you are back online."; return r; }
+        if (!err.isEmpty()) { r.message = err; return r; }
+        r.ok = true;
+        nm.cancel(idOf(ID_POP, matchId));
+        nm.cancel(idOf(ID_STEP, matchId));
+        r.nav = routeUri();
+        r.message = ("picked_up".equals(step) ? name + " is in the car." : name + " is dropped off.") + " Next stop: " + nextStopText() + (r.nav != null ? ". Updating Google Maps." : ".");
+        if (!io.isShutdown()) io.execute(this::pollAlerts);   // refresh the cards
+        return r;
+    }
+
+    /** The Google Maps link for the stops that are left. Also remembers it as the route Maps has, so no "Your stops changed" alert follows. */
+    Uri routeUri() {
+        try {
+            String b = rpc("driver_route_token", new JSONObject().put("p_token", token));
+            Uri nav = b == null ? null : buildNavUri(new JSONObject(b));
+            if (nav != null) {
+                java.util.List<String> wps = new java.util.ArrayList<>(java.util.Arrays.asList(String.valueOf(nav.getQueryParameter("waypoints")).split("\\|")));
+                java.util.Collections.sort(wps);
+                getSharedPreferences("rideshare_tracking", MODE_PRIVATE).edit().putString("route_sig", nav.getQueryParameter("destination") + "#" + wps)
+                        .putString("route_uri", nav.toString()).putString("route_state", "done").remove("route_gone_at").apply();
+                try { getSystemService(NotificationManager.class).cancel(3000); } catch (Exception ignore) { }
+            }
+            return nav;
+        } catch (Exception e) { return null; }
     }
 
     private PendingIntent answerIntent(String action, String id, String name, int nid) {
@@ -1197,6 +1238,7 @@ public class LocationService extends Service {
         java.util.List<double[]> stops = new java.util.ArrayList<>();   // { lat, lng, 0 pick / 1 drop, match index }
         java.util.List<String> ids = new java.util.ArrayList<>();
         java.util.Set<String> hasPick = new HashSet<>();
+        java.util.Map<Integer, String> stopNames = new java.util.HashMap<>();
         if (st != null) {
             for (int i = 0; i < st.length(); i++) {
                 JSONObject s = st.optJSONObject(i);
@@ -1205,6 +1247,7 @@ public class LocationService extends Service {
                 int ix = ids.indexOf(id); if (ix < 0) { ids.add(id); ix = ids.size() - 1; }
                 boolean pick = "pick".equals(s.optString("type"));
                 if (pick) hasPick.add(id);
+                stopNames.put(ix, s.optString("name", "your rider"));
                 stops.add(new double[]{s.optDouble("lat"), s.optDouble("lng"), pick ? 0 : 1, ix});
             }
         }
@@ -1227,6 +1270,7 @@ public class LocationService extends Service {
             left.remove(best); order.add(best); cl = best[0]; cn = best[1];
             if (best[2] == 0) picked.add((int) best[3]);
         }
+        nextText = order.isEmpty() ? "your destination" : (order.get(0)[2] == 0 ? "pick up " : "drop off ") + stopNames.get((int) order.get(0)[3]);
         double[] last = null;
         if (Double.isNaN(dlat) || Double.isNaN(dlng)) { last = order.remove(order.size() - 1); dlat = last[0]; dlng = last[1]; }
         StringBuilder wp = new StringBuilder();

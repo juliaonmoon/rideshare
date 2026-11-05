@@ -197,6 +197,20 @@ public class RideShareLocationPlugin extends Plugin {
         }
     }
 
+    /** routeNow(): { url, text } for the stops that are left (text = what the next stop is). Used right after the in-app Picked up / Dropped off. */
+    @PluginMethod
+    public void routeNow(final PluginCall call) {
+        final LocationService svc = LocationService.get();
+        if (svc == null) { call.reject("The helper is not running"); return; }
+        new Thread(() -> {
+            android.net.Uri nav = svc.routeUri();
+            JSObject r = new JSObject();
+            r.put("url", nav == null ? "" : nav.toString());
+            r.put("text", svc.nextStopText());
+            call.resolve(r);
+        }).start();
+    }
+
     /** openUrl({ url }): opens a link in the Google Maps app (voice directions), or the browser if Maps is missing. */
     @PluginMethod
     public void openUrl(PluginCall call) {
