@@ -110,7 +110,7 @@
       }
     });
   }
-  let user = null, me = { name: '', points: 0 }, myTrip = null, myReq = null, ledger = [], matches = [];
+  let user = null, me = { name: '', points: 0 }, myTrip = null, myTrips = [], selTripId = null, myReq = null, ledger = [], matches = [];
   let otherTrips = [], otherReqs = [], extraTrips = [], extraReqs = [], names = {}, timer = null, busy = false, formSig = '', mapSig = {};
   let autoAlerts = false;   // started the alert helper for a live trip that was already on when the app opened
   let tripsView = (() => { try { return localStorage.getItem('rs_trips_view') === 'rider' ? 'rider' : 'driver'; } catch (e) { return 'driver'; } })();   // Trips tab: 'driver' (my trip, my riders) or 'rider' (my ride requests, my rides)
@@ -142,7 +142,7 @@
     if (v !== dndOn || o !== overlayOn || hid !== bubbleHidden) { dndOn = v; overlayOn = o; bubbleHidden = hid; formSig = ''; if (typeof render === 'function' && user) render(); }
   }
   document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshDnd(); });
-  const editing = { trip: false, req: false };   // the full form stays hidden behind the summary card until Edit is tapped
+  const editing = { trip: false, req: false, newTrip: false };   // newTrip: the form is posting an additional trip, not editing the one shown   // the full form stays hidden behind the summary card until Edit is tapped
   let pending = null, viewD = null, viewR = null, askCancel = null, rel = {}, mySet = null, styles = {}, isTest = false, testMode = false, drives = [];
   // Personal settings: defaults for new trips and requests (every trip can still be changed before posting).
   const SD = { d_detour_km: null, d_total_detour_km: null, d_detour: 10, d_total_detour: 15, d_wait: 0, d_accepts: 'either', d_seats: 1, d_auto_accept: false, d_chat: 'some', d_pets: true, r_pays: 'points', r_chat: 'some', r_pets: false };
@@ -437,7 +437,7 @@
         sb.from('profiles').select('display_name').eq('id', uid).maybeSingle(),
         sb.from('wallets').select('points').eq('user_id', uid).maybeSingle(),
         sb.from('ledger').select('delta,reason,created_at').order('created_at', { ascending: false }).limit(10),
-        sb.from('trips').select('*').eq('user_id', uid).eq('active', true).order('created_at', { ascending: false }).limit(6),
+        sb.from('trips').select('*').eq('user_id', uid).eq('active', true).order('created_at', { ascending: false }).limit(12),
         sb.from('ride_requests').select('*').eq('user_id', uid).eq('active', true).order('created_at', { ascending: false }).limit(6),
         sb.from('matches').select('*').order('created_at', { ascending: false }).limit(60),
         sb.from('trips').select('*').eq('active', true).neq('user_id', uid).limit(100),
@@ -446,7 +446,9 @@
       me = { name: (p.data && p.data.display_name) || '', points: (w.data && w.data.points) || 0 };
       const stillLive = (x) => x.live && x.expires_at && Date.parse(x.expires_at) > Date.now();
       ledger = l.data || [];
-      myLiveTrip = (t.data || []).find(stillLive) || null; myTrip = (t.data || []).find((x) => !x.live) || null; curTrip = myLiveTrip || myTrip;
+      myLiveTrip = (t.data || []).find(stillLive) || null; const nextOf = (x) => (RSD.nextOccurrences(x.trip_date, x.repeat_days, new Date(), 1)[0] || x.trip_date);
+      myTrips = (t.data || []).filter((x) => !x.live).sort((a, b) => (nextOf(a) + String(10000 + (a.flex_from != null ? a.flex_from : a.depart_min))).localeCompare(nextOf(b) + String(10000 + (b.flex_from != null ? b.flex_from : b.depart_min))));
+      myTrip = myTrips.find((x) => x.id === selTripId) || myTrips[0] || null; selTripId = myTrip ? myTrip.id : null; curTrip = myLiveTrip || myTrip;
       if (!myLiveTrip) autoAlerts = false; else if (!autoAlerts && !driveSession && nativeLoc()) { autoAlerts = true; startAlerts(nativeLoc()); }
       riderAlertsCheck();
       myLiveReq = (r.data || []).find(stillLive) || null; myReq = (r.data || []).find((x) => !x.live) || null; curReq = myLiveReq || myReq;
@@ -556,7 +558,7 @@
     let d = today;
     if (!curTrip.live) { const days = matches.filter((x) => x.driver_id === user.id && x.trip_id === curTrip.id && x.ride_date >= today && x.status === 'accepted').map((x) => x.ride_date).sort(); if (days.length && !days.includes(today)) d = days[0]; }
     const isToday = d === today;
-    const acc = matches.filter((x) => x.driver_id === user.id && x.ride_date === d && x.status === 'accepted' && reqById[x.request_id] && known(reqById[x.request_id]));
+    const acc = matches.filter((x) => x.driver_id === user.id && x.trip_id === curTrip.id && x.ride_date === d && x.status === 'accepted' && reqById[x.request_id] && known(reqById[x.request_id]));
     if (!acc.length) {
       // every rider is dropped off, but the driver is not at the destination yet: keep a final step until they end the trip
       let on = ''; try { on = localStorage.getItem('rs_trip_on') || ''; } catch (e) { /* storage blocked */ }
@@ -644,7 +646,7 @@
       const dr = driverObj(curTrip, x.ride_date);
       if (curTrip.live) dr.departMin = new Date().getHours() * 60 + new Date().getMinutes() + 2;
       if (isFlexFree(curTrip)) { const dep = flexDepart(curTrip, dr, riderObj(q), x.ride_date); if (dep == null) return { fits: false }; dr.departMin = dep; }   // a flexible trip: the leave time that suits this rider
-      const accObjs = matches.filter((a) => a.driver_id === user.id && a.ride_date === x.ride_date && a.status === 'accepted' && reqById[a.request_id] && known(reqById[a.request_id])).map((a) => riderObj(reqById[a.request_id]));
+      const accObjs = matches.filter((a) => a.driver_id === user.id && a.trip_id === x.trip_id && a.ride_date === x.ride_date && a.status === 'accepted' && reqById[a.request_id] && known(reqById[a.request_id])).map((a) => riderObj(reqById[a.request_id]));
       const res = RS.findMatches(dr, [riderObj(q)], accObjs);
       if (!res.length) return { fits: false };
       const m = res[0], limMin = Math.max(dr.maxTotal == null ? dr.maxDetour : dr.maxTotal, dr.maxDetour);
@@ -700,16 +702,28 @@
     const sig = routeSig(r.stops);
     if (mapSig.p !== sig) { mapSig.p = sig; window.RS_UI.drawMap('map-plan', r.stops, []); }
   }
-  function driverTop() {
+  // Every scheduled trip, soonest first. Tap one to see its riders and plan.
+  function tripsList() {
+    if (myTrips.length < 2 || editing.trip || (pending && pending.kind === 'trip')) return '';
+    const rows = myTrips.map((t) => {
+      const nd = RSD.nextOccurrences(t.trip_date, t.repeat_days, new Date(), 1)[0] || t.trip_date, mine = matches.filter((x) => x.trip_id === t.id && x.ride_date >= todayStr());
+      const asks = mine.filter((x) => x.status === 'requested' && fitServer[x.id] !== false).length, acc = mine.filter((x) => x.status === 'accepted').length;
+      const here = !myLiveTrip && myTrip && t.id === myTrip.id;
+      return `<div class="item"><div><b>${esc(disp(t, 'origin'))}</b> to <b>${esc(disp(t, 'dest'))}</b><div class="mut">${tripWhen(t)}${acc ? ' &middot; ' + acc + ' accepted' : ''}${asks ? ' &middot; <b>' + asks + ' asking</b>' : ''}</div></div><div>${here ? '<span class="mut">Showing</span>' : '<button class="btn ghost" data-seltrip="' + t.id + '">Show</button>'}</div></div>`;
+    }).join('');
+    return card('My trips (' + myTrips.length + ')', rows + '<p style="margin-top:8px"><button class="btn ghost" data-newtrip="1">Post another trip</button></p>');
+  }
+  function driverTop() { return tripsList() + driverTopOne(); }
+  function driverTopOne() {
     if (!curTrip || !known(curTrip) || curTrip.live) return '';
     if (false) return card('Start here', `<p><b>1.</b> Fill in the form below: where you drive from and to, the date and time.</p><p><b>2.</b> Tap <b>Review trip</b>, then <b>Confirm and post</b>.</p><p><b>3.</b> Riders who ask for a seat will appear on this page for you to accept.</p><p>${goTo('ld-form')}Go to the form</button></p>`);
     const dates = RSD.nextOccurrences(curTrip.live ? todayStr() : curTrip.trip_date, curTrip.repeat_days, new Date(), 7), d = pickView(viewD, dates);
-    const mine = d ? matches.filter((x) => x.driver_id === user.id && x.ride_date === d) : [];
+    const mine = d ? matches.filter((x) => x.driver_id === user.id && x.trip_id === curTrip.id && x.ride_date === d) : [];
     const asks = mine.filter((x) => x.status === 'requested' && fitServer[x.id] !== false).length, acc = mine.filter((x) => x.status === 'accepted').length;
     const isToday = d === todayStr();
     const line = asks ? `<b>${asks} rider${asks > 1 ? 's' : ''} asked for a seat.</b> Tap <b>See riders</b> to accept.` : acc ? `<b>${acc} rider${acc > 1 ? 's' : ''} accepted.</b> ${isToday ? 'Tap <b>Start trip</b> when you set off.' : 'You can start on the day of the trip.'}` : 'No riders yet. They will show up here when they ask for a seat.';
     return card('Your trip', `<p><b>${esc(disp(curTrip, 'origin'))}</b> to <b>${esc(disp(curTrip, 'dest'))}</b></p><p class="mut">${tripWhen(curTrip)}</p><p>${line}</p>
-      <div class="row2">${isToday ? '<button class="btn" data-startnav="1">Start trip</button> ' : ''}${goTo(asks ? 'seat-requests' : acc ? (isToday ? 'plan-wrap' : 'riding-with-me') : 'ld-lists')}See riders</button> <button class="btn ghost" data-edit="trip">Edit trip</button> <button class="btn ghost" data-reset="trip">Reset trip</button></div>`);
+      <div class="row2">${isToday ? '<button class="btn" data-startnav="1">Start trip</button> ' : ''}${goTo(asks ? 'seat-requests' : acc ? (isToday ? 'plan-wrap' : 'riding-with-me') : 'ld-lists')}See riders</button> <button class="btn ghost" data-edit="trip">Edit trip</button> ${myTrips.length < 2 ? '<button class="btn ghost" data-newtrip="1">Post another trip</button> ' : ''}<button class="btn ghost" data-reset="trip">Reset trip</button></div>`);
   }
   function riderTop() {
     if (!curReq || !known(curReq)) return '';
@@ -966,17 +980,18 @@
   // ---------- driver tab ----------
   function driverForm() {
     if (pending && pending.kind === 'trip') {
-      const r = pending.row;
+      const r = pending.row, upd = myTrip && !editing.newTrip;
       return card('Confirm your trip', `<p><b>${esc(disp(r, 'origin'))}</b> to <b>${esc(disp(r, 'dest'))}</b></p><p>${tripWhen(r)}</p>${pending.note ? '<p class="mut">' + esc(pending.note) + '</p>' : ''}
         <p class="mut">${r.max_pickups === 1 ? 'One pickup only' : 'Up to ' + r.max_pickups + ' pickups'} &middot; max ${r.max_detour} extra min for one pickup${r.max_pickups > 1 && r.max_total_detour != null ? ' &middot; max ' + r.max_total_detour + ' extra min for all pickups together' : ''} &middot; accepts ${r.accepts === 'either' ? 'points or cash' : r.accepts === 'points' ? 'points only' : 'cash gas-share only'}</p>
-        <div style="margin-top:10px"><button class="btn" id="lt-confirm">${myTrip ? 'Confirm and update' : 'Confirm and post'}</button> <button class="btn ghost" id="lt-back">Back</button></div>`);
+        <div style="margin-top:10px"><button class="btn" id="lt-confirm">${upd ? 'Confirm and update' : 'Confirm and post'}</button> <button class="btn ghost" id="lt-back">Back</button></div>`);
     }
     if (myTrip && !editing.trip) return '';
     if (!myTrip && !myLiveTrip && !editing.trip) return '';
     if (myLiveTrip && !myTrip && !editing.trip) return card('Plan ahead', '<p class="mut">Want to drive on a set day and time? Post a scheduled trip.</p><p><button class="btn ghost" data-edit="trip">Post a scheduled trip</button></p>');
-    const t = myTrip || { origin: 'Surrey Central', dest: 'BCIT / Willingdon (Burnaby)', depart_min: 450, max_detour: S_().d_detour, max_total_detour: S_().d_total_detour, max_pickups: Math.min(4, S_().d_seats), max_wait: S_().d_wait, accepts: S_().d_accepts, trip_date: todayStr(), repeat_days: [] };
+    const mt = editing.newTrip ? null : myTrip;
+    const t = mt || { origin: 'Surrey Central', dest: 'BCIT / Willingdon (Burnaby)', depart_min: 450, max_detour: S_().d_detour, max_total_detour: S_().d_total_detour, max_pickups: Math.min(4, S_().d_seats), max_wait: S_().d_wait, accepts: S_().d_accepts, trip_date: todayStr(), repeat_days: [] };
     const date = defaultDate(t.trip_date, t.depart_min);
-    return card(myTrip ? 'My trip' : 'Post a trip', `${placeField('lt-o', 'From', myTrip, 'origin', t.origin)}${placeField('lt-d', 'To', myTrip, 'dest', t.dest)}
+    return card(mt ? 'My trip' : 'Post a trip', `${placeField('lt-o', 'From', mt, 'origin', t.origin)}${placeField('lt-d', 'To', mt, 'dest', t.dest)}
       <div class="row"><div><label>Date</label><input type="date" id="lt-date" min="${todayStr()}" max="${maxDate()}" value="${date}"></div><div><label id="lt-t-lbl">${t.flex_to != null && !t.flex_locked ? 'Earliest I can leave' : 'Leave at'}</label><input type="time" id="lt-t" value="${hmIn(t.flex_to != null && !t.flex_locked ? t.flex_from : t.depart_min)}"></div></div>
       ${t.flex_locked ? '' : flexBox('lt', t.flex_to != null, t.flex_from, t.flex_to, 'leave')}
       <label>Repeat every week on <span class="mut">(optional)</span></label>${dayChips('lt-days', t.repeat_days)}
@@ -984,7 +999,7 @@
       <label>Extra minutes I accept for my whole trip</label><input type="number" id="lt-dt" min="0" max="60" value="${t.max_detour}">
       ${DKOK ? `<label>Extra km I accept for my whole trip <span class="mut">(optional)</span></label><input type="number" id="lt-dk" min="0" max="200" step="0.5" placeholder="no limit" value="${t.max_detour_km == null ? '' : t.max_detour_km}">` : ''}
       <label>Payment I accept</label><select id="lt-a"><option value="either" ${t.accepts === 'either' ? 'selected' : ''}>Points or cash</option><option value="points" ${t.accepts === 'points' ? 'selected' : ''}>Points only</option><option value="cash" ${t.accepts === 'cash' ? 'selected' : ''}>Cash gas-share only</option></select>
-      <div style="margin-top:10px"><button class="btn" id="lt-review">Review trip</button>${myTrip || myLiveTrip ? ' <button class="btn ghost" data-edit-off="trip">Cancel</button>' : ''}</div><p class="warn" id="lt-msg" role="alert"></p>`);
+      <div style="margin-top:10px"><button class="btn" id="lt-review">Review trip</button>${myTrip || myLiveTrip || editing.newTrip ? ' <button class="btn ghost" data-edit-off="trip">Cancel</button>' : ''}</div><p class="warn" id="lt-msg" role="alert"></p>`);
   }
 
   function driverLists() {
@@ -998,7 +1013,7 @@
     const dr = driverObj(curTrip, viewD), reqById = {}; [...otherReqs, ...extraReqs].forEach((q) => { reqById[q.id] = q; });
     const dateCard = card('Date', dateChips('ld-dates', dates, viewD) + `<p class="mut" style="margin-top:8px">${tripWhen(curTrip)}</p>`);
     if (!viewD) return dateCard;
-    const mine = matches.filter((x) => x.driver_id === user.id && x.ride_date === viewD);
+    const mine = matches.filter((x) => x.driver_id === user.id && x.trip_id === curTrip.id && x.ride_date === viewD);
     const inc = mine.filter((x) => x.status === 'requested' && fitServer[x.id] !== false);
     const acc = mine.filter((x) => x.status === 'accepted' && reqById[x.request_id] && known(reqById[x.request_id]));
     const accObjs = acc.map((x) => riderObj(reqById[x.request_id]));
@@ -1208,7 +1223,7 @@
     renderAuth();
     ['sim-d', 'sim-ld', 'map-card'].forEach((id) => { const e = $(id); if (e) e.style.display = isTest ? '' : 'none'; });
     if (!user) { ['ld-top', 'lr-top'].forEach((id) => { $(id).innerHTML = ''; }); ['ld-form', 'ld-lists', 'lr-form', 'lr-lists', 'lu-main', 'lw-main', 'ls-main'].forEach((id) => { $(id).innerHTML = /form|main/.test(id) ? hint : ''; }); return; }
-    const sig = JSON.stringify([myTrip, myReq, me.points, pending, mySet, isTest, testMode]);
+    const sig = JSON.stringify([myTrips, selTripId, myReq, me.points, pending, mySet, isTest, testMode]);
     const typing = document.activeElement && /^(lt|lr|lv|ls|ln|rn)-/.test(document.activeElement.id || '') && document.activeElement.tagName !== 'BUTTON' && !pending;
     if (!typing && sig !== formSig) { formSig = sig; $('ld-form').innerHTML = guard('trip form', driverForm); $('lr-form').innerHTML = guard('ride form', riderForm); $('lw-main').innerHTML = guard('points', walletMain); $('ls-main').innerHTML = guard('settings', settingsMain); }
     const busyIn = (id) => { const a = document.activeElement; return a && /SELECT|INPUT/.test(a.tagName) && a.closest && a.closest('#' + id); };
@@ -1263,15 +1278,17 @@
       if (samePlace(row.origin, row.dest, 'lt-o', 'lt-d')) { formMsg('lt-msg', 'Pick two different places'); return; }
       if (!row.trip_date) { formMsg('lt-msg', 'Pick a date'); return; }
       const trt = timesRead('lt', row, 'lt-o', 'lt-d'); if (trt.err) { formMsg('lt-msg', trt.err); return; }
-      if (row.flex_to == null && myTrip && myTrip.flex_to != null && !myTrip.flex_locked) { row.flex_from = null; row.flex_to = null; }   // the window was switched off
+      if (row.flex_to == null && myTrip && !editing.newTrip && myTrip.flex_to != null && !myTrip.flex_locked) { row.flex_from = null; row.flex_to = null; }   // the window was switched off
       const bad = RSD.check(row.trip_date, row.flex_to != null ? row.flex_to : row.depart_min); if (bad) { formMsg('lt-msg', bad); return; }
       pending = { kind: 'trip', row, note: trt.note }; formSig = ''; render();
     });
     on('lt-back', () => { pending = null; formSig = ''; render(); });
     on('lt-confirm', async () => {
       if (needProfile('drive')) return;
-      const row = pending.row; const ok = await run(myTrip ? sb.from('trips').update(row).eq('id', myTrip.id) : sb.from('trips').insert(row), 'Trip saved');
-      if (ok) { editing.trip = false; plReset('lt-o', 'lt-d', 'ln-o', 'ln-d'); Object.keys(LV).forEach((k) => delete LV[k]); pending = null; viewD = null; mapSig = {}; formSig = ''; render(); }
+      const row = pending.row, upd = myTrip && !editing.newTrip;
+      if (!upd && myTrips.length >= 5) { toast('You can keep up to 5 trips. Reset one first.'); return; }
+      const ok = await run(upd ? sb.from('trips').update(row).eq('id', myTrip.id) : sb.from('trips').insert(row).select('id').single().then((r) => { if (!r.error && r.data) selTripId = r.data.id; return r; }), 'Trip saved');
+      if (ok) { editing.trip = false; editing.newTrip = false; plReset('lt-o', 'lt-d', 'ln-o', 'ln-d'); Object.keys(LV).forEach((k) => delete LV[k]); pending = null; viewD = null; mapSig = {}; formSig = ''; render(); }
     });
     on('lr-review', () => {
       const row = { pickup: $('lr-p').value, dropoff: $('lr-d').value, ride_date: $('lr-date').value, ready_from: hm($('lr-f').value || '07:20'), ready_to: hm($('lr-u').value || '07:50'), repeat_days: readDays('lr-days'), pays: $('lr-pay').value, ...plCols('lr-p', 'pickup'), ...plCols('lr-d', 'dropoff') };
@@ -1327,7 +1344,7 @@
       if (stops.length < 2) { toast('Nothing to navigate yet'); return; }
       const pt = (x) => x.loc.lat + ',' + x.loc.lng, mid = stops.slice(1, -1).map(pt);
       const url = 'https://www.google.com/maps/dir/?api=1&travelmode=driving' + (routeOnly ? '' : '&dir_action=navigate') + '&destination=' + pt(stops[stops.length - 1]) + (mid.length ? '&waypoints=' + encodeURIComponent(mid.join('|')) : '');
-      const accNow = window.__ldAcc || matches.filter((x) => x.driver_id === user.id && x.ride_date === todayStr() && x.status === 'accepted');
+      const accNow = window.__ldAcc || matches.filter((x) => x.driver_id === user.id && (!curTrip || x.trip_id === curTrip.id) && x.ride_date === todayStr() && x.status === 'accepted');
       const todo = routeOnly ? [] : accNow.filter((x) => stageOf(x) === 'accepted' && stepsOpen(x));
       const nat = nativeLoc();
       if (!nat) {
@@ -1387,11 +1404,12 @@
     const resetTrip = async (end) => {
       const live = !!myLiveTrip, oneTime = !!myTrip && !(myTrip.repeat_days && myTrip.repeat_days.length);   // a repeating trip stays; a one-time trip is cancelled
       if (!end && !window.confirm('Reset this trip?\n\nRiders who are not picked up yet are cancelled (their points go back to them). ' + (live ? 'Your Offer a ride now trip is cancelled. ' : '') + (oneTime ? 'Your posted trip is cancelled. ' : myTrip ? 'Your repeating trip stays. ' : '') + 'Driving mode turns off and the form starts fresh.')) return;
-      const todo = matches.filter((x) => x.driver_id === user.id && (x.status === 'accepted' || x.status === 'requested') && !x.picked_up_at);
+      const mineIds = new Set([myLiveTrip && myLiveTrip.id, myTrip && myTrip.id].filter(Boolean));   // only the trip(s) being reset, never another scheduled trip
+      const todo = matches.filter((x) => x.driver_id === user.id && mineIds.has(x.trip_id) && (x.status === 'accepted' || x.status === 'requested') && !x.picked_up_at);
       for (const x of todo) { try { await (x.status === 'requested' ? sb.rpc('respond_match', { p_match: x.id, p_accept: false }) : sb.rpc('cancel_ride', { p_match: x.id })); } catch (e) { /* already finished */ } }
       if (myLiveTrip) { try { const ce = (await cancelTrip(myLiveTrip.id)).error; if (ce) toast(ce.message); } catch (e) { /* ignore */ } }
       if (oneTime) { try { const ce = (await cancelTrip(myTrip.id)).error; if (ce) toast(ce.message); } catch (e) { /* ignore */ } }
-      stopShare(true); editing.trip = false; pending = null; viewD = null; mapSig = {}; formSig = '';
+      stopShare(true); editing.trip = false; editing.newTrip = false; selTripId = null; pending = null; viewD = null; mapSig = {}; formSig = '';
       // back to how the app starts: forget the places and times typed into the driver forms
       [nowSel, LV].forEach((o) => Object.keys(o).forEach((k) => { delete o[k]; })); plReset('ln-o', 'ln-d', 'lt-o', 'lt-d'); tripMode = 'now';
       try { localStorage.setItem('rs_trip_mode', 'now'); } catch (e) { /* storage blocked */ }
@@ -1404,7 +1422,9 @@
     on('ov-go', async () => { const n = nativeLoc(); toast('Opening the setting...'); try { await n.openOverlaySettings(); } catch (e) { toast('Could not open the setting. Open Settings > Apps > RideShare App > Display over other apps.'); } });
     on('dnd-go', async () => { const n = nativeLoc(); toast('Opening the alert settings...'); try { await n.openAlertSettings(); } catch (e) { toast('Could not open the settings. Open Settings > Apps > RideShare App > Notifications > Seat requests.'); } });
     each('[data-edit]', (b) => { editing[b.dataset.edit] = true; formSig = ''; render(); const f = $(b.dataset.edit === 'trip' ? 'ld-form' : 'lr-form'); if (f) f.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
-    each('[data-edit-off]', (b) => { editing[b.dataset.editOff] = false; pending = null; formSig = ''; plReset('lt-o', 'lt-d', 'lr-p', 'lr-d'); render(); });
+    each('[data-seltrip]', (b) => { selTripId = b.dataset.seltrip; myTrip = myTrips.find((x) => x.id === selTripId) || myTrip; curTrip = myLiveTrip || myTrip; editing.trip = false; editing.newTrip = false; pending = null; viewD = null; mapSig = {}; formSig = ''; render(); });
+    each('[data-newtrip]', () => { if (myTrips.length >= 5) { toast('You can keep up to 5 trips. Reset one first.'); return; } editing.trip = true; editing.newTrip = true; pending = null; formSig = ''; render(); const f = $('ld-form'); if (f) f.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+    each('[data-edit-off]', (b) => { editing[b.dataset.editOff] = false; if (b.dataset.editOff === 'trip') editing.newTrip = false; pending = null; formSig = ''; plReset('lt-o', 'lt-d', 'lr-p', 'lr-d'); render(); });
     each('[data-scroll]', (b) => { const e = $(b.dataset.scroll); if (e) e.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
     document.querySelectorAll('#ln-o, #ln-d, #rn-p, #rn-d, #rn-pay').forEach((e) => { e.onchange = () => { nowSel[e.id] = e.value; }; });
     wirePlaces();
