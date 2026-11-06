@@ -51,9 +51,16 @@
     return dep > t.flex_to || dep + off > me.readyTo ? null : dep;
   };
   // the time options on the trip forms: leave at / arrive by, and the "any time between" range
-  const flexBox = (p, on, from, to, mode) => '<label>I set my</label><select id="' + p + '-mode"><option value="leave"' + (mode === 'arrive' ? '' : ' selected') + '>Leave time</option><option value="arrive"' + (mode === 'arrive' ? ' selected' : '') + '>Arrival time (arrive by)</option></select>'
-    + '<label style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="' + p + '-flex"' + (on ? ' checked' : '') + ' style="width:auto"> <span>I am flexible: any time between two times</span></label>'
-    + '<div id="' + p + '-flexbox" style="' + (on ? '' : 'display:none') + '"><label id="' + p + '-t2-lbl">Latest I can leave</label><input type="time" id="' + p + '-t2" value="' + hmIn(to != null ? to : Math.min(1439, (from || 450) + 360)) + '"><p class="mut" style="margin:4px 0 0">Riders say when they are ready. The first rider you accept sets your leave time. After that the trip is fixed.</p></div>';
+  const whenBox = (p, dateHtml, timeStr, on, from, to, mode, locked) => {
+    if (locked) return '<div class="row"><div><label>Date</label>' + dateHtml + '</div><div><label id="' + p + '-t-lbl">Leave at</label><input type="time" id="' + p + '-t" value="' + timeStr + '"></div></div>';
+    const cur = on ? 'range' : mode === 'arrive' ? 'arrive' : 'leave';
+    const seg = [['leave', 'Leave'], ['arrive', 'Arrive'], ['range', 'Flexible']].map(([v, l]) => '<button type="button" data-seg="' + v + '" class="' + (v === cur ? 'on' : '') + '">' + l + '</button>').join('');
+    return '<label>Time</label><div class="days" id="' + p + '-seg">' + seg + '</div>'
+      + '<select id="' + p + '-mode" style="display:none" aria-hidden="true"><option value="leave"' + (cur === 'arrive' ? '' : ' selected') + '>leave</option><option value="arrive"' + (cur === 'arrive' ? ' selected' : '') + '>arrive</option></select>'
+      + '<input type="checkbox" id="' + p + '-flex"' + (on ? ' checked' : '') + ' style="display:none" aria-hidden="true">'
+      + '<div class="row"><div><label>Date</label>' + dateHtml + '</div><div><label id="' + p + '-t-lbl">' + (on ? 'From' : cur === 'arrive' ? 'Arrive by' : 'Leave at') + '</label><input type="time" id="' + p + '-t" value="' + timeStr + '"></div></div>'
+      + '<div id="' + p + '-flexbox" style="' + (on ? '' : 'display:none') + '"><label id="' + p + '-t2-lbl">To</label><input type="time" id="' + p + '-t2" value="' + hmIn(to != null ? to : Math.min(1439, (from || 450) + 360)) + '"><p class="mut" style="margin:4px 0 0">Riders say when they are ready. The first rider you accept sets your leave time. After that the trip is fixed.</p></div>';
+  };
   // the point of a place field: the address chosen, else the neighbourhood
   const placePt = (id, area) => (PL[id] && !PL[id].isArea && PL[id].lat != null ? { lat: PL[id].lat, lng: PL[id].lng } : LOC[area]);
   // Read the time fields into the trip row. "Arrive by" works out when to leave: arrival minus the drive minus the extra minutes allowed for pickups.
@@ -903,8 +910,7 @@
       if (editing.trip || (pending && pending.kind === 'trip')) return share;   // the full form or the confirm card is showing
       const sx = S_(), seg = (m, label) => '<button type="button" class="btn' + (tripMode === m ? '' : ' ghost') + '" data-tmode="' + m + '" style="flex:1;min-width:0">' + label + '</button>';
       const val = (id, dflt) => esc(LV[id] != null ? LV[id] : dflt);
-      const later = '<div class="row"><div><label>Date</label><input type="date" id="ln-date" min="' + todayStr() + '" max="' + maxDate() + '" value="' + val('ln-date', defaultDate('', 450)) + '"></div><div><label id="ln-t-lbl">' + (LV['ln-flex'] ? 'Earliest I can leave' : LV['ln-mode'] === 'arrive' ? 'Arrive by' : 'Leave at') + '</label><input type="time" id="ln-t" value="' + val('ln-t', '07:30') + '"></div></div>'
-        + flexBox('ln', !!LV['ln-flex'], null, LV['ln-t2'] == null ? null : hm(LV['ln-t2']), LV['ln-mode'])
+      const later = whenBox('ln', '<input type="date" id="ln-date" min="' + todayStr() + '" max="' + maxDate() + '" value="' + val('ln-date', defaultDate('', 450)) + '">', val('ln-t', '07:30'), !!LV['ln-flex'], null, LV['ln-t2'] == null ? null : hm(LV['ln-t2']), LV['ln-mode'], false)
         + '<label>Repeat every week on <span class="mut">(optional)</span></label>' + dayChips('ln-days', LV.days || [])
         + '<details style="margin-top:12px"><summary class="mut" style="cursor:pointer">More options (rider limits, payment)</summary>'
         + '<label>Most riders I will take</label><select id="ln-pk">' + [1, 2, 3, 4].map((n) => '<option value="' + n + '"' + (n === +(LV['ln-pk'] != null ? LV['ln-pk'] : Math.min(4, sx.d_seats)) ? ' selected' : '') + '>' + (n === 1 ? 'Just 1 rider' : 'Up to ' + n) + '</option>').join('') + '</select>'
@@ -1062,8 +1068,7 @@
     const t = mt || { origin: 'Surrey Central', dest: 'BCIT / Willingdon (Burnaby)', depart_min: 450, max_detour: S_().d_detour, max_total_detour: S_().d_total_detour, max_pickups: Math.min(4, S_().d_seats), max_wait: S_().d_wait, accepts: S_().d_accepts, trip_date: todayStr(), repeat_days: [] };
     const date = defaultDate(t.trip_date, t.depart_min);
     return card(mt ? 'My trip' : 'Post a trip', `${placeField('lt-o', 'From', mt, 'origin', t.origin)}${placeField('lt-d', 'To', mt, 'dest', t.dest)}
-      <div class="row"><div><label>Date</label><input type="date" id="lt-date" min="${todayStr()}" max="${maxDate()}" value="${date}"></div><div><label id="lt-t-lbl">${t.flex_to != null && !t.flex_locked ? 'Earliest I can leave' : 'Leave at'}</label><input type="time" id="lt-t" value="${hmIn(t.flex_to != null && !t.flex_locked ? t.flex_from : t.depart_min)}"></div></div>
-      ${t.flex_locked ? '' : flexBox('lt', t.flex_to != null, t.flex_from, t.flex_to, 'leave')}
+      ${whenBox('lt', `<input type="date" id="lt-date" min="${todayStr()}" max="${maxDate()}" value="${date}">`, hmIn(t.flex_to != null && !t.flex_locked ? t.flex_from : t.depart_min), t.flex_to != null && !t.flex_locked, t.flex_from, t.flex_to, 'leave', !!t.flex_locked)}
       ${repeatBox('lt', t)}
       <label>Most riders I will take</label><select id="lt-pk">${[1, 2, 3, 4].map((n) => '<option value="' + n + '"' + (n === (t.max_pickups || 1) ? ' selected' : '') + '>' + (n === 1 ? 'Just 1 rider' : 'Up to ' + n) + '</option>').join('')}</select>
       <label>Extra minutes I accept for my whole trip</label><input type="number" id="lt-dt" min="0" max="60" value="${t.max_detour}">
@@ -1355,12 +1360,17 @@
       const mode = $(p + '-mode');
       const relabel = () => {
         const ar = mode && mode.value === 'arrive', l1 = $(p + '-t-lbl'), l2 = $(p + '-t2-lbl');
-        if (l1) l1.textContent = box.checked ? 'Earliest I can leave' : ar ? 'Arrive by' : 'Leave at';
-        if (l2) l2.textContent = ar ? 'I must arrive by' : 'Latest I can leave';
+        if (l1) l1.textContent = box.checked ? 'From' : ar ? 'Arrive by' : 'Leave at';
+        if (l2) l2.textContent = 'To';
       };
       box.onchange = () => { $(p + '-flexbox').style.display = box.checked ? '' : 'none'; if (p === 'ln') LV['ln-flex'] = box.checked ? '1' : ''; relabel(); };
       if (mode) mode.onchange = () => { if (p === 'ln') LV['ln-mode'] = mode.value; relabel(); };
       relabel();
+      const seg = $(p + '-seg');
+      if (seg) seg.querySelectorAll('button').forEach((bt) => (bt.onclick = () => {
+        const v = bt.dataset.seg; mode.value = v === 'arrive' ? 'arrive' : 'leave'; box.checked = v === 'range';
+        seg.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === bt)); box.onchange(); mode.onchange();
+      }));
       const t2 = $(p + '-t2'); if (t2 && p === 'ln') t2.onchange = () => { LV['ln-t2'] = t2.value; };
     });
     document.querySelectorAll('#ln-days button').forEach((b) => (b.onclick = () => { b.classList.toggle('on'); LV.days = readDays('ln-days'); }));
