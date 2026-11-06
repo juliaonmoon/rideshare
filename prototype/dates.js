@@ -14,17 +14,18 @@
   const today = (now) => toStr(now || new Date());
 
   // Does an item (base date + optional weekly repeat days) happen on this date?
-  function occursOn(baseDate, repeatDays, date) {
+  function occursOn(baseDate, repeatDays, date, until) {
     if (!baseDate || !date) return false;
     if (date === baseDate) return true;
+    if (until && date > until) return false;   // a repeating item can have a last day
     return Array.isArray(repeatDays) && repeatDays.length > 0 && date > baseDate && repeatDays.includes(isoDow(date));
   }
   // The next dates (from today, up to `max` of them, within the booking window) on which an item happens.
-  function nextOccurrences(baseDate, repeatDays, now, max) {
+  function nextOccurrences(baseDate, repeatDays, now, max, until) {
     const t = today(now), out = [];
     for (let i = 0; i <= MAX_AHEAD_DAYS && out.length < (max || 7); i++) {
       const d = addDays(t, i);
-      if (occursOn(baseDate, repeatDays, d)) out.push(d);
+      if (occursOn(baseDate, repeatDays, d, until)) out.push(d);
     }
     return out;
   }
