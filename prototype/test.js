@@ -201,4 +201,23 @@ t('Google times change who matches: the same pickup costs a different detour at 
   RS.setTraffic(null);
 });
 
+t('Repeat patterns: every 2 weeks, the last Thursday of the month, ends after N times', () => {
+  const D = require('./dates.js');
+  // 2026-11-05 is a Thursday
+  assert.strictEqual(D.occursOn('2026-11-05', [4], '2026-11-12', null, 2, null), false);
+  assert.strictEqual(D.occursOn('2026-11-05', [4], '2026-11-19', null, 2, null), true);
+  assert.strictEqual(D.occursOn('2026-11-05', [1, 4], '2026-11-16', null, 2, null), true);
+  assert.strictEqual(D.occursOn('2026-11-05', [1, 4], '2026-11-23', null, 2, null), false);
+  assert.strictEqual(D.occursOn('2026-11-05', [4], '2026-11-26', null, 1, 5), true);
+  assert.strictEqual(D.occursOn('2026-11-05', [4], '2026-12-24', null, 1, 5), false);
+  assert.strictEqual(D.occursOn('2026-11-05', [4], '2026-12-31', null, 1, 5), true);
+  assert.strictEqual(D.occursOn('2026-11-05', [4], '2026-12-24', null, 1, 4), true);
+  assert.strictEqual(D.occursOn('2026-11-05', [4], '2026-12-31', '2026-12-01', 1, 5), false);
+  assert.strictEqual(D.nthDate('2026-11-05', [4], 1, null, 3), '2026-11-19');
+  assert.strictEqual(D.nthDate('2026-11-05', [4], 2, null, 3), '2026-12-03');
+  assert.deepStrictEqual(D.nextOccurrences('2026-11-05', [1, 2, 3, 4, 5, 6, 7], new Date(2026, 10, 6), 4, null, 1, null, new Set(['2026-11-07'])), ['2026-11-06', '2026-11-08', '2026-11-09', '2026-11-10']);
+  assert.strictEqual(D.repeatLabel([4], 1, 5), 'on the last Thursday of every month');
+  assert.strictEqual(D.repeatLabel([1, 2, 3, 4, 5], 1, null), 'every weekday');
+  assert.strictEqual(D.repeatLabel([1, 4], 2, null), 'every 2 weeks on Mon Thu');
+});
 console.log(`\n${n} tests passed`);

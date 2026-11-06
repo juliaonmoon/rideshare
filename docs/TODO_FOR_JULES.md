@@ -36,6 +36,7 @@ Open https://supabase.com/dashboard/project/iivhfapvkseeomxtsrxf/sql/new, paste 
 | `supabase/migrations/045_exact_places_for_booked_driver.sql` | Riders' exact pickup / drop-off addresses, shown only to the driver of an accepted ride until the drop-off (needs 026, 042) | **To run** |
 | `supabase/migrations/046_regular_rides_and_auto_accept.sql` | Per-trip auto-accept that fills the car, regular (repeating) rides that book themselves, end a regular booking, blocking cancels coming rides (needs 027, 029, 042) | **To run** |
 | `supabase/migrations/047_repeat_until.sql` | "Repeat until" last day for repeating trips and requests (needs 046) | **To run** |
+| `supabase/migrations/048_repeat_patterns_and_skip_day.sql` | Every N weeks, monthly (e.g. the last Thursday), end after N times, skip any single day of a repeating trip (needs 046, 047) | **To run** |
 
 How to copy a file to the clipboard: ask Claude, or open the file on GitHub, click "Copy raw file", then paste it into the SQL editor.
 
