@@ -14,18 +14,38 @@
   const today = (now) => toStr(now || new Date());
 
   // Does an item (base date + optional weekly repeat days) happen on this date?
-  function occursOn(baseDate, repeatDays, date, until) {
+  // every = repeat every N weeks (1 = every week). nth = the nth weekday of a month (1 to 4, 5 = the last one), with the weekday in repeatDays[0].
+  function occursOn(baseDate, repeatDays, date, until, every, nth) {
     if (!baseDate || !date) return false;
     if (date === baseDate) return true;
+    if (date < baseDate) return false;
     if (until && date > until) return false;   // a repeating item can have a last day
-    return Array.isArray(repeatDays) && repeatDays.length > 0 && date > baseDate && repeatDays.includes(isoDow(date));
+    if (!Array.isArray(repeatDays) || !repeatDays.length) return false;
+    const dow = isoDow(date);
+    if (nth) {
+      if (dow !== repeatDays[0]) return false;
+      const dom = +date.slice(8, 10), dim = new Date(+date.slice(0, 4), +date.slice(5, 7), 0).getDate();
+      return nth === 5 ? dom + 7 > dim : Math.floor((dom - 1) / 7) + 1 === nth;
+    }
+    if (!repeatDays.includes(dow)) return false;
+    if ((every || 1) > 1) {
+      const monday = addDays(baseDate, -(isoDow(baseDate) - 1)), weeks = Math.round((parse(date) - parse(monday)) / 604800000);
+      return weeks % every === 0;
+    }
+    return true;
+  }
+  // The date of the Nth time an item happens (the start day counts as the first). Used for "ends after N times".
+  function nthDate(baseDate, repeatDays, every, nth, count) {
+    let n = 0;
+    for (let i = 0; i <= 1100; i++) { const d = addDays(baseDate, i); if (occursOn(baseDate, repeatDays, d, null, every, nth) && ++n >= count) return d; }
+    return null;
   }
   // The next dates (from today, up to `max` of them, within the booking window) on which an item happens.
-  function nextOccurrences(baseDate, repeatDays, now, max, until) {
+  function nextOccurrences(baseDate, repeatDays, now, max, until, every, nth, skips) {
     const t = today(now), out = [];
     for (let i = 0; i <= MAX_AHEAD_DAYS && out.length < (max || 7); i++) {
       const d = addDays(t, i);
-      if (occursOn(baseDate, repeatDays, d, until)) out.push(d);
+      if (occursOn(baseDate, repeatDays, d, until, every, nth) && !(skips && skips.has(d))) out.push(d);
     }
     return out;
   }
@@ -37,6 +57,16 @@
     return DAY_NAMES[isoDow(date) - 1] + ' ' + parse(date).toLocaleString('en-CA', { month: 'short' }) + ' ' + parse(date).getDate();
   }
   // 'Mon Tue Wed' for a repeat list, '' if none
+  const FULL_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'], NTH_NAMES = { 1: 'first', 2: 'second', 3: 'third', 4: 'fourth', 5: 'last' };
+  // 'every day', 'every weekday', 'every week on Mon Wed', 'every 2 weeks on Mon', 'on the last Thursday of every month'
+  function repeatLabel(days, every, nth) {
+    const ds = (days || []).slice().sort((a, b) => a - b);
+    if (nth && ds.length) return 'on the ' + NTH_NAMES[nth] + ' ' + FULL_DAYS[ds[0] - 1] + ' of every month';
+    if ((every || 1) > 1) return 'every ' + every + ' weeks on ' + ds.map((d) => DAY_NAMES[d - 1]).join(' ');
+    if (ds.length === 7) return 'every day';
+    if (ds.join('') === '12345') return 'every weekday';
+    return 'every week on ' + ds.map((d) => DAY_NAMES[d - 1]).join(' ');
+  }
   const repeatText = (days) => (days || []).slice().sort((a, b) => a - b).map((d) => DAY_NAMES[d - 1]).join(' ');
   // Is this date/time allowed? Returns '' if fine, else a plain-language reason.
   function check(date, minutes, now) {
@@ -61,6 +91,6 @@
   }
   // Same calendar month in Vancouver time?
   const vanMonth = (epoch) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Vancouver', year: 'numeric', month: '2-digit' }).format(new Date(epoch));
-  const RSD = { DAY_NAMES, MIN_LEAD_MIN, MAX_AHEAD_DAYS, toStr, parse, isoDow, addDays, today, occursOn, nextOccurrences, label, repeatText, check, vanEpoch, vanMonth };
+  const RSD = { DAY_NAMES, MIN_LEAD_MIN, MAX_AHEAD_DAYS, toStr, parse, isoDow, addDays, today, occursOn, nextOccurrences, nthDate, FULL_DAYS, repeatLabel, label, repeatText, check, vanEpoch, vanMonth };
   if (typeof module !== 'undefined' && module.exports) module.exports = RSD; else root.RSD = RSD;
 })(typeof window !== 'undefined' ? window : globalThis);
