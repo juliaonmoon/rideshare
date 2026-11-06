@@ -33,7 +33,8 @@
   const maxDate = () => RSD.addDays(todayStr(), RSD.MAX_AHEAD_DAYS);
   const dayChips = (id, sel) => `<div class="days" id="${id}">${RSD.DAY_NAMES.map((n, i) => `<button type="button" data-day="${i + 1}" class="${(sel || []).includes(i + 1) ? 'on' : ''}">${n}</button>`).join('')}</div>`;
   const readDays = (id) => [...document.querySelectorAll('#' + id + ' button.on')].map((b) => +b.dataset.day);
-  const whenText = (date, mins, days) => RSD.label(date) + ' at ' + clk(mins) + (days && days.length ? ' &middot; repeats ' + RSD.repeatText(days) : ' &middot; one time');
+  const untilTxt = (u) => (u ? ' until ' + RSD.label(u) : '');
+  const whenText = (date, mins, days, until) => RSD.label(date) + ' at ' + clk(mins) + (days && days.length ? ' &middot; repeats ' + RSD.repeatText(days) + untilTxt(until) : ' &middot; one time');
   const mapAttrs = (lat, lng) => (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform() ? 'href="geo:' + lat + ',' + lng + '?q=' + lat + ',' + lng + '"' : 'href="https://www.google.com/maps/search/?api=1&query=' + lat + ',' + lng + '" target="_blank" rel="noopener"');
   // "2 days 6 h", "1 h 20 min", "35 min" instead of "3275 min"
   const fmtLeft = (m) => { m = Math.max(0, Math.round(m)); const d = Math.floor(m / 1440), h = Math.floor((m % 1440) / 60), mi = m % 60; if (d) return d + (d > 1 ? ' days' : ' day') + (h ? ' ' + h + ' h' : ''); return h ? h + ' h' + (mi ? ' ' + mi + ' min' : '') : mi + ' min'; };
@@ -42,7 +43,7 @@
   // a trip with a time window has no fixed leave time until the first rider is accepted
   const isFlexFree = (t) => !!t && t.flex_to != null && !t.live && !t.flex_locked;
   const tripWhen = (t) => isFlexFree(t) ? RSD.label(t.trip_date) + ' any time between ' + clk(t.flex_from) + ' and ' + clk(t.flex_to) + ' &middot; flexible, one time'
-    : whenText(t.trip_date, t.depart_min, t.repeat_days) + (t.flex_to != null && !t.live ? ' &middot; set by your first rider' : '');
+    : whenText(t.trip_date, t.depart_min, t.repeat_days, t.repeat_until) + (t.flex_to != null && !t.live ? ' &middot; set by your first rider' : '');
   // when a flexible driver would have to leave to reach this rider on time (null: the window does not fit)
   const flexDepart = (t, dr, me, date) => {
     const n = new Date(), lo = Math.max(t.flex_from, date === todayStr() ? n.getHours() * 60 + n.getMinutes() + 2 : 0);
@@ -120,6 +121,8 @@
   let myBlocks = new Set();   // people I chose never to be matched with (migration 029)
   let MSOK = null, msgs = [], myRatings = {}, scores = {}, adminReports = [];   // migration 024 (messages, ratings, admin reports)
   let PCOK = null, cards = {};   // migration 021 (photo and car details shown to a matched driver or rider, Report a problem) is in place
+  let UNOK = null;   // migration 047 (repeat until) is in place
+  const untilRead = (idUntil, idDays) => { const e = document.getElementById(idUntil); return e && e.value && readDays(idDays).length ? e.value : null; };
   let AAOK = null, SYOK = null, lastSync = 0, calMonth = null, calDay = null, offSet = new Set();   // AAOK/SYOK: migration 046 is in place; offSet: regular bookings that were ended
   let DKOK = null;   // migration 020 (detour limits in km, detour saved with each request) is in place
   let bubbleHidden = false;
@@ -422,8 +425,8 @@
   const driverObj = (t, date) => ({ dow: dowOf(date || t.trip_date), origin: pt(t, 'origin'), dest: pt(t, 'dest'), departMin: t.depart_min, maxDetour: t.max_detour, maxTotal: t.max_total_detour == null ? null : t.max_total_detour, maxKm: t.max_detour_km == null ? null : +t.max_detour_km, maxTotalKm: t.max_total_detour_km == null ? null : +t.max_total_detour_km, maxPickups: t.max_pickups == null ? null : t.max_pickups, maxWait: t.max_wait, accepts: t.accepts, cpk: Number(t.cost_per_km) || 0.2, name: names[t.user_id] || 'Driver' });
   const riderObj = (r) => ({ id: r.id, name: names[r.user_id] || 'Rider', pickup: pt(r, 'pickup'), dropoff: pt(r, 'dropoff'), readyFrom: r.ready_from, readyTo: r.ready_to, pays: r.pays });
   const known = (x) => LOC[x.origin || x.pickup] && LOC[x.dest || x.dropoff];
-  const tripOn = (t, d) => RSD.occursOn(t.live ? todayStr() : t.trip_date, t.repeat_days, d);   // Offer a ride now trips always count as today, even after midnight
-  const reqOn = (r, d) => RSD.occursOn(r.live ? todayStr() : r.ride_date, r.repeat_days, d);
+  const tripOn = (t, d) => RSD.occursOn(t.live ? todayStr() : t.trip_date, t.repeat_days, d, t.repeat_until);   // Offer a ride now trips always count as today, even after midnight
+  const reqOn = (r, d) => RSD.occursOn(r.live ? todayStr() : r.ride_date, r.repeat_days, d, r.repeat_until);
 
   // A repeating trip and a repeating request that were accepted once keep booking the coming week by themselves (server side).
   async function syncSeries() {
@@ -445,6 +448,7 @@
       if (dndOn === null) refreshDnd();
       if (DKOK === null) DKOK = !(await sb.from('trips').select('max_detour_km').limit(1)).error;
       if (AAOK === null) AAOK = !(await sb.from('trips').select('auto_accept').limit(1)).error;
+      if (UNOK === null) UNOK = !(await sb.from('trips').select('repeat_until').limit(1)).error;
       if (!PLOK) { const was = PLOK; PLOK = !!(window.RS_PLACES && window.RS_PLACES.available()) && !(await sb.from('trips').select('origin_lat').limit(1)).error; if (PLOK && was === false) formSig = ''; }
       const [p, w, l, t, r, m, ot, orq] = await Promise.all([
         sb.from('profiles').select('display_name').eq('id', uid).maybeSingle(),
@@ -459,7 +463,7 @@
       me = { name: (p.data && p.data.display_name) || '', points: (w.data && w.data.points) || 0 };
       const stillLive = (x) => x.live && x.expires_at && Date.parse(x.expires_at) > Date.now();
       ledger = l.data || [];
-      myLiveTrip = (t.data || []).find(stillLive) || null; const nextOf = (x) => (RSD.nextOccurrences(x.trip_date, x.repeat_days, new Date(), 1)[0] || x.trip_date);
+      myLiveTrip = (t.data || []).find(stillLive) || null; const nextOf = (x) => (RSD.nextOccurrences(x.trip_date, x.repeat_days, new Date(), 1, x.repeat_until)[0] || x.trip_date);
       myTrips = (t.data || []).filter((x) => !x.live).sort((a, b) => (nextOf(a) + String(10000 + (a.flex_from != null ? a.flex_from : a.depart_min))).localeCompare(nextOf(b) + String(10000 + (b.flex_from != null ? b.flex_from : b.depart_min))));
       myTrip = myTrips.find((x) => x.id === selTripId) || myTrips[0] || null; selTripId = myTrip ? myTrip.id : null; curTrip = myLiveTrip || myTrip;
       if (!myLiveTrip) autoAlerts = false; else if (!autoAlerts && !driveSession && nativeLoc()) { autoAlerts = true; startAlerts(nativeLoc()); }
@@ -720,7 +724,7 @@
   function tripsList() {
     if (myTrips.length < 2 || editing.trip || (pending && pending.kind === 'trip')) return '';
     const rows = myTrips.map((t) => {
-      const nd = RSD.nextOccurrences(t.trip_date, t.repeat_days, new Date(), 1)[0] || t.trip_date, mine = matches.filter((x) => x.trip_id === t.id && x.ride_date >= todayStr());
+      const nd = RSD.nextOccurrences(t.trip_date, t.repeat_days, new Date(), 1, t.repeat_until)[0] || t.trip_date, mine = matches.filter((x) => x.trip_id === t.id && x.ride_date >= todayStr());
       const asks = mine.filter((x) => x.status === 'requested' && fitServer[x.id] !== false).length, acc = mine.filter((x) => x.status === 'accepted').length;
       const here = !myLiveTrip && myTrip && t.id === myTrip.id;
       return `<div class="item"><div><b>${esc(disp(t, 'origin'))}</b> to <b>${esc(disp(t, 'dest'))}</b><div class="mut">${tripWhen(t)}${acc ? ' &middot; ' + acc + ' accepted' : ''}${asks ? ' &middot; <b>' + asks + ' asking</b>' : ''}</div></div><div>${here ? '<span class="mut">Showing</span>' : '<button class="btn ghost" data-seltrip="' + t.id + '">Show</button>'}</div></div>`;
@@ -731,7 +735,7 @@
   function driverTopOne() {
     if (!curTrip || !known(curTrip) || curTrip.live) return '';
     if (false) return card('Start here', `<p><b>1.</b> Fill in the form below: where you drive from and to, the date and time.</p><p><b>2.</b> Tap <b>Review trip</b>, then <b>Confirm and post</b>.</p><p><b>3.</b> Riders who ask for a seat will appear on this page for you to accept.</p><p>${goTo('ld-form')}Go to the form</button></p>`);
-    const dates = RSD.nextOccurrences(curTrip.live ? todayStr() : curTrip.trip_date, curTrip.repeat_days, new Date(), 7), d = pickView(viewD, dates);
+    const dates = RSD.nextOccurrences(curTrip.live ? todayStr() : curTrip.trip_date, curTrip.repeat_days, new Date(), 7, curTrip.repeat_until), d = pickView(viewD, dates);
     const mine = d ? matches.filter((x) => x.driver_id === user.id && x.trip_id === curTrip.id && x.ride_date === d) : [];
     const asks = mine.filter((x) => x.status === 'requested' && fitServer[x.id] !== false).length, acc = mine.filter((x) => x.status === 'accepted').length;
     const isToday = d === todayStr();
@@ -742,7 +746,7 @@
   // Days of my regular request that have no driver any more (the driver cancelled, or I ended the booking). The rider chooses the new driver.
   function lostRides() {
     if (!user || !myReq || myReq.live) return [];
-    return RSD.nextOccurrences(myReq.ride_date, myReq.repeat_days, new Date(), 7).filter((ds) => {
+    return RSD.nextOccurrences(myReq.ride_date, myReq.repeat_days, new Date(), 7, myReq.repeat_until).filter((ds) => {
       const ms = matches.filter((x) => x.rider_id === user.id && x.request_id === myReq.id && x.ride_date === ds);
       if (!ms.length || ms.some((x) => ['requested', 'accepted', 'completed'].includes(x.status))) return false;
       return ms.some((x) => x.status === 'cancelled' && (x.cancelled_by !== user.id || offSet.has(x.trip_id + '|' + x.request_id)));
@@ -757,7 +761,7 @@
   function riderTopOne() {
     if (!curReq || !known(curReq)) return '';
     if (false) return card('Start here', `<p><b>1.</b> Fill in the form below: where you want to be picked up and dropped off, the date and when you are ready.</p><p><b>2.</b> Tap <b>Review request</b>, then <b>Confirm and post</b>.</p><p><b>3.</b> Pick a driver from the list and tap <b>Request</b>.</p><p>${goTo('lr-form')}Go to the form</button></p>`);
-    const dates = RSD.nextOccurrences(curReq.live ? todayStr() : curReq.ride_date, curReq.repeat_days, new Date(), 7), d = pickView(viewR, dates);
+    const dates = RSD.nextOccurrences(curReq.live ? todayStr() : curReq.ride_date, curReq.repeat_days, new Date(), 7, curReq.repeat_until), d = pickView(viewR, dates);
     const mine = d ? matches.filter((x) => x.rider_id === user.id && x.request_id === curReq.id && x.ride_date === d) : [];
     const acc = mine.find((x) => x.status === 'accepted' || x.status === 'completed'), pend = mine.some((x) => x.status === 'requested');
     const line = acc ? `<b>${esc(STEP_LABEL[stageOf(acc)])}.</b> Tap <b>See my ride</b> for live updates.` : pend ? 'You asked a driver for a seat. Waiting for them to accept. Nothing is confirmed yet.' : 'No driver has been asked yet. Posting your request does not reserve a seat. Pick a driver below and tap <b>Request</b>.';
@@ -1024,6 +1028,7 @@
       <div class="row"><div><label>Date</label><input type="date" id="lt-date" min="${todayStr()}" max="${maxDate()}" value="${date}"></div><div><label id="lt-t-lbl">${t.flex_to != null && !t.flex_locked ? 'Earliest I can leave' : 'Leave at'}</label><input type="time" id="lt-t" value="${hmIn(t.flex_to != null && !t.flex_locked ? t.flex_from : t.depart_min)}"></div></div>
       ${t.flex_locked ? '' : flexBox('lt', t.flex_to != null, t.flex_from, t.flex_to, 'leave')}
       <label>Repeat every week on <span class="mut">(optional)</span></label>${dayChips('lt-days', t.repeat_days)}
+      ${UNOK ? `<label>Repeat until <span class="mut">(optional: the last day; empty = keeps going)</span></label><input type="date" id="lt-until" min="${todayStr()}" value="${t.repeat_until || ''}">` : ''}
       <label>Most riders I will take</label><select id="lt-pk">${[1, 2, 3, 4].map((n) => '<option value="' + n + '"' + (n === (t.max_pickups || 1) ? ' selected' : '') + '>' + (n === 1 ? 'Just 1 rider' : 'Up to ' + n) + '</option>').join('')}</select>
       <label>Extra minutes I accept for my whole trip</label><input type="number" id="lt-dt" min="0" max="60" value="${t.max_detour}">
       ${DKOK ? `<label>Extra km I accept for my whole trip <span class="mut">(optional)</span></label><input type="number" id="lt-dk" min="0" max="200" step="0.5" placeholder="no limit" value="${t.max_detour_km == null ? '' : t.max_detour_km}">` : ''}
@@ -1038,7 +1043,7 @@
     if (mapEl) mapEl.style.display = showMap ? '' : 'none';
     if (simEl && !showMap) simEl.style.display = 'none';
     if (!showMap) { mapSig.d = ''; window.__ldStops = []; window.__ldAcc = []; return ''; }
-    const dates = RSD.nextOccurrences(curTrip.live ? todayStr() : curTrip.trip_date, curTrip.repeat_days, new Date(), 7);
+    const dates = RSD.nextOccurrences(curTrip.live ? todayStr() : curTrip.trip_date, curTrip.repeat_days, new Date(), 7, curTrip.repeat_until);
     viewD = pickView(viewD, dates);
     const dr = driverObj(curTrip, viewD), reqById = {}; [...otherReqs, ...extraReqs].forEach((q) => { reqById[q.id] = q; });
     const dateCard = card('Date', dateChips('ld-dates', dates, viewD) + `<p class="mut" style="margin-top:8px">${tripWhen(curTrip)}</p>`);
@@ -1077,7 +1082,7 @@
   function riderForm() {
     if (pending && pending.kind === 'req') {
       const r = pending.row;
-      return card('Confirm your request', `<p><b>${esc(disp(r, 'pickup'))}</b> to <b>${esc(disp(r, 'dropoff'))}</b></p><p>${RSD.label(r.ride_date)}, ready ${clk(r.ready_from)} to ${clk(r.ready_to)}${r.repeat_days.length ? ' &middot; repeats ' + RSD.repeatText(r.repeat_days) : ' &middot; one time'}</p>
+      return card('Confirm your request', `<p><b>${esc(disp(r, 'pickup'))}</b> to <b>${esc(disp(r, 'dropoff'))}</b></p><p>${RSD.label(r.ride_date)}, ready ${clk(r.ready_from)} to ${clk(r.ready_to)}${r.repeat_days.length ? ' &middot; repeats ' + RSD.repeatText(r.repeat_days) + untilTxt(r.repeat_until) : ' &middot; one time'}</p>
         <p class="mut">Paying with ${r.pays === 'either' ? 'points or cash' : r.pays === 'points' ? 'points' : 'cash gas-share'}</p>
         <div style="margin-top:10px"><button class="btn" id="lr-confirm">${myReq ? 'Confirm and update' : 'Confirm and post'}</button> <button class="btn ghost" id="lr-back">Back</button></div>`);
     }
@@ -1089,6 +1094,7 @@
       <label>Date</label><input type="date" id="lr-date" min="${todayStr()}" max="${maxDate()}" value="${date}">
       <div class="row"><div><label>Earliest pickup</label><input type="time" id="lr-f" value="${hmIn(r.ready_from)}"></div><div><label>Latest pickup</label><input type="time" id="lr-u" value="${hmIn(r.ready_to)}"></div></div>
       <label>Repeat every week on <span class="mut">(optional)</span></label>${dayChips('lr-days', r.repeat_days)}
+      ${UNOK ? `<label>Repeat until <span class="mut">(optional: the last day; empty = keeps going)</span></label><input type="date" id="lr-until" min="${todayStr()}" value="${r.repeat_until || ''}">` : ''}
       <label>I'll pay with</label><select id="lr-pay"><option value="points" ${r.pays === 'points' ? 'selected' : ''}>Points</option><option value="cash" ${r.pays === 'cash' ? 'selected' : ''}>Cash gas-share</option><option value="either" ${r.pays === 'either' ? 'selected' : ''}>Either</option></select>
       <div style="margin-top:10px"><button class="btn" id="lr-review">Review request</button>${myReq ? ' <button class="btn ghost" data-edit-off="req">Cancel</button>' : ''}</div><p class="warn" id="lr-msg" role="alert"></p>
       <div class="mut" style="margin-top:10px">Your points: <b>${me.points} pts</b></div>`);
@@ -1096,9 +1102,9 @@
 
   function riderLists() {
     if (!curReq || !known(curReq)) return card('Drivers going your way', '<p class="mut">Ask for a ride on Home to see matching drivers.</p>');
-    const dates = RSD.nextOccurrences(curReq.live ? todayStr() : curReq.ride_date, curReq.repeat_days, new Date(), 7);
+    const dates = RSD.nextOccurrences(curReq.live ? todayStr() : curReq.ride_date, curReq.repeat_days, new Date(), 7, curReq.repeat_until);
     viewR = pickView(viewR, dates);
-    const dateCard = card('Date', dateChips('lr-dates', dates, viewR) + `<p class="mut" style="margin-top:8px">Ready ${clk(curReq.ready_from)} to ${clk(curReq.ready_to)}${curReq.repeat_days.length ? ' &middot; repeats ' + RSD.repeatText(curReq.repeat_days) : ' &middot; one time'}</p>`);
+    const dateCard = card('Date', dateChips('lr-dates', dates, viewR) + `<p class="mut" style="margin-top:8px">Ready ${clk(curReq.ready_from)} to ${clk(curReq.ready_to)}${curReq.repeat_days.length ? ' &middot; repeats ' + RSD.repeatText(curReq.repeat_days) + untilTxt(curReq.repeat_until) : ' &middot; one time'}</p>`);
     if (!viewR) return dateCard;
     const meO = riderObj(curReq), tripById = {}; [...otherTrips, ...extraTrips].forEach((t) => { tripById[t.id] = t; });
     const mine = matches.filter((x) => x.rider_id === user.id && x.request_id === curReq.id && x.ride_date === viewR);
@@ -1185,7 +1191,7 @@
     if (!calMonth) calMonth = t0.slice(0, 7);
     const [cy, cm] = calMonth.split('-').map(Number), dim = new Date(cy, cm, 0).getDate(), lead = (new Date(cy, cm - 1, 1).getDay() + 6) % 7;
     const dayInfo = (ds) => {
-      const dt = myTrips.filter((t) => RSD.occursOn(t.trip_date, t.repeat_days, ds)), dl = myLiveTrip && ds === t0 ? [myLiveTrip] : [];
+      const dt = myTrips.filter((t) => RSD.occursOn(t.trip_date, t.repeat_days, ds, t.repeat_until)), dl = myLiveTrip && ds === t0 ? [myLiveTrip] : [];
       const dm = matches.filter((x) => x.driver_id === user.id && x.ride_date === ds && (x.status === 'accepted' || (x.status === 'requested' && fitsOk(x))));
       const rm = matches.filter((x) => x.rider_id === user.id && x.ride_date === ds && (x.status === 'accepted' || x.status === 'requested'));
       return { trips: dt.concat(dl), dm, rm };
@@ -1334,12 +1340,13 @@
       pending = { kind: 'trip', row, note: trn.note }; formSig = ''; render();
     });
     on('lt-review', () => {
-      const row = { origin: $('lt-o').value, dest: $('lt-d').value, trip_date: $('lt-date').value, depart_min: hm($('lt-t').value || '07:30'), repeat_days: readDays('lt-days'), max_detour: +$('lt-dt').value, max_total_detour: +$('lt-dt').value, ...(DKOK ? { max_detour_km: optNum('lt-dk'), max_total_detour_km: optNum('lt-dk') } : {}), max_pickups: +$('lt-pk').value, max_wait: 0, accepts: $('lt-a').value, ...(AAOK && $('lt-auto') ? { auto_accept: $('lt-auto').checked } : {}), ...plCols('lt-o', 'origin'), ...plCols('lt-d', 'dest') };
+      const row = { origin: $('lt-o').value, dest: $('lt-d').value, trip_date: $('lt-date').value, depart_min: hm($('lt-t').value || '07:30'), repeat_days: readDays('lt-days'), max_detour: +$('lt-dt').value, max_total_detour: +$('lt-dt').value, ...(DKOK ? { max_detour_km: optNum('lt-dk'), max_total_detour_km: optNum('lt-dk') } : {}), max_pickups: +$('lt-pk').value, max_wait: 0, accepts: $('lt-a').value, ...(AAOK && $('lt-auto') ? { auto_accept: $('lt-auto').checked } : {}), ...(UNOK ? { repeat_until: untilRead('lt-until', 'lt-days') } : {}), ...plCols('lt-o', 'origin'), ...plCols('lt-d', 'dest') };
       const need = plNeed('lt-o', 'where you start') || plNeed('lt-d', 'where you are going'); if (need) { formMsg('lt-msg', need); return; }
       if (row.max_pickups === 1) row.max_total_detour = null; else if (row.max_total_detour < row.max_detour) { formMsg('lt-msg', 'The total for all pickups cannot be less than the time for one pickup'); return; }
       formMsg('lt-msg', '');
       if (samePlace(row.origin, row.dest, 'lt-o', 'lt-d')) { formMsg('lt-msg', 'Pick two different places'); return; }
       if (!row.trip_date) { formMsg('lt-msg', 'Pick a date'); return; }
+      if (row.repeat_until && row.repeat_until < row.trip_date) { formMsg('lt-msg', 'The last day cannot be before the first day'); return; }
       const trt = timesRead('lt', row, 'lt-o', 'lt-d'); if (trt.err) { formMsg('lt-msg', trt.err); return; }
       if (row.flex_to == null && myTrip && !editing.newTrip && myTrip.flex_to != null && !myTrip.flex_locked) { row.flex_from = null; row.flex_to = null; }   // the window was switched off
       const bad = RSD.check(row.trip_date, row.flex_to != null ? row.flex_to : row.depart_min); if (bad) { formMsg('lt-msg', bad); return; }
@@ -1354,11 +1361,12 @@
       if (ok) { editing.trip = false; editing.newTrip = false; plReset('lt-o', 'lt-d', 'ln-o', 'ln-d'); Object.keys(LV).forEach((k) => delete LV[k]); pending = null; viewD = null; mapSig = {}; formSig = ''; render(); }
     });
     on('lr-review', () => {
-      const row = { pickup: $('lr-p').value, dropoff: $('lr-d').value, ride_date: $('lr-date').value, ready_from: hm($('lr-f').value || '07:20'), ready_to: hm($('lr-u').value || '07:50'), repeat_days: readDays('lr-days'), pays: $('lr-pay').value, ...plCols('lr-p', 'pickup'), ...plCols('lr-d', 'dropoff') };
+      const row = { pickup: $('lr-p').value, dropoff: $('lr-d').value, ride_date: $('lr-date').value, ready_from: hm($('lr-f').value || '07:20'), ready_to: hm($('lr-u').value || '07:50'), repeat_days: readDays('lr-days'), pays: $('lr-pay').value, ...(UNOK ? { repeat_until: untilRead('lr-until', 'lr-days') } : {}), ...plCols('lr-p', 'pickup'), ...plCols('lr-d', 'dropoff') };
       formMsg('lr-msg', '');
       const need = plNeed('lr-p', 'where to pick you up') || plNeed('lr-d', 'where to drop you off'); if (need) { formMsg('lr-msg', need); return; }
       if (samePlace(row.pickup, row.dropoff, 'lr-p', 'lr-d')) { formMsg('lr-msg', 'Pick two different places'); return; }
       if (!row.ride_date) { formMsg('lr-msg', 'Pick a date'); return; }
+      if (row.repeat_until && row.repeat_until < row.ride_date) { formMsg('lr-msg', 'The last day cannot be before the first day'); return; }
       if (row.ready_to < row.ready_from) { formMsg('lr-msg', '"Latest pickup" must be after "Earliest pickup"'); return; }
       const bad = RSD.check(row.ride_date, row.ready_from); if (bad) { formMsg('lr-msg', bad); return; }
       pending = { kind: 'req', row }; formSig = ''; render();
