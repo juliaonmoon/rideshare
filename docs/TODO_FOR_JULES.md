@@ -34,6 +34,7 @@ Open https://supabase.com/dashboard/project/iivhfapvkseeomxtsrxf/sql/new, paste 
 | `supabase/migrations/043_test_requests_for_flexible_trip.sql` | Test data: up to 4 made-up riders ask for a seat on your open trip with a time window (needs 042) | **To run** |
 | `supabase/migrations/044_time_window_fixes.sql` | Fixes from the code review: a booked trip's time window can no longer be changed; safer reopen when a rider cancels (needs 042) | **To run** |
 | `supabase/migrations/045_exact_places_for_booked_driver.sql` | Riders' exact pickup / drop-off addresses, shown only to the driver of an accepted ride until the drop-off (needs 026, 042) | **To run** |
+| `supabase/migrations/046_regular_rides_and_auto_accept.sql` | Per-trip auto-accept that fills the car, regular (repeating) rides that book themselves, end a regular booking, blocking cancels coming rides (needs 027, 029, 042) | **To run** |
 
 How to copy a file to the clipboard: ask Claude, or open the file on GitHub, click "Copy raw file", then paste it into the SQL editor.
 
