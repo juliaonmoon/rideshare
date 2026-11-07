@@ -134,6 +134,7 @@ html[data-ui=b] .uitoggle{display:none}
   <div class="sub">Share the cost of your commute. Driver-first: you set the detour and wait you'll accept.</div>
 </header>
 <nav role="tablist">
+  <button role="tab" id="t-home" aria-selected="false">Home</button>
   <button role="tab" id="t-driver" aria-selected="true">I'm driving</button>
   <button role="tab" id="t-rider" aria-selected="false">I need a ride</button>
   <button role="tab" id="t-upcoming" aria-selected="false">Upcoming</button>
@@ -198,8 +199,12 @@ html[data-ui=b] .uitoggle{display:none}
   </section>
 </main>
 
-<main id="v-ldriver">
+<main id="v-lhome" class="hide">
   <div id="req-wrap" class="hide" style="grid-column:1/-1"><div class="card" style="border-left:5px solid var(--acc)"><h2 id="req-title">Seat requests</h2><div id="req-body"></div></div></div>
+  <div id="lh-feed" style="grid-column:1/-1"></div>
+</main>
+
+<main id="v-ldriver">
   <div id="ld-top" style="grid-column:1/-1"></div>
   <div id="plan-wrap" class="hide" style="grid-column:1/-1"><div class="card"><h2>Trip plan</h2><div id="map-plan-box"><div id="map-plan"></div><button type="button" id="plan-full" class="btn" style="position:absolute;top:10px;right:10px;padding:8px 12px;min-height:0;background:var(--card);color:var(--acc);border:1px solid var(--line);box-shadow:0 1px 4px rgba(0,0,0,.25)">Full screen</button></div><div id="plan-body"></div></div></div>
   <section id="ld-form"></section>
@@ -618,7 +623,7 @@ dayButtons('d-days',S.driver.days,renderSched); dayButtons('r-days',S.rider.days
 let resetArmed=false;
 $('w-reset').onclick=()=>{ if(!resetArmed){ resetArmed=true; $('w-reset').textContent='Tap again to reset all demo data'; setTimeout(()=>{resetArmed=false;$('w-reset').textContent='Reset demo';},4000); return; }
   S=JSON.parse(JSON.stringify(DEFAULT)); save(); location.reload(); };
-const tabs={driver:'v-ldriver',rider:'v-lrider',upcoming:'v-lupcoming',wallet:'v-lwallet',settings:'v-lsettings'};
+const tabs={home:'v-lhome',driver:'v-ldriver',rider:'v-lrider',upcoming:'v-lupcoming',wallet:'v-lwallet',settings:'v-lsettings'};
 Object.keys(tabs).forEach(k=>$('t-'+k).onclick=()=>{
   Object.keys(tabs).forEach(j=>{ $(tabs[j]).classList.toggle('hide',j!==k); $('t-'+j).setAttribute('aria-selected',j===k); });
   renderAll(); setTimeout(()=>{ Object.values(maps).forEach(m=>m.invalidateSize()); Object.values(gmaps).forEach(g=>{ google.maps.event.trigger(g.map,'resize'); if(g.bounds) g.map.fitBounds(g.bounds,40); }); },60); });
@@ -661,17 +666,19 @@ renderAll(); renderMapStatus(); loadGoogle();
   const get = (k, d) => { try { return localStorage.getItem(k) || d; } catch (e) { return d; } };
   const set = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
   let role = get('rs_role', 'driving'), view = 'home';
-  const oldTab = () => (view === 'home' ? (role === 'driving' ? 't-driver' : 't-rider') : view === 'trips' ? 't-upcoming' : view === 'points' ? 't-wallet' : 't-settings');
+  const oldTab = () => (view === 'home' ? (window.rsHomeTab ? window.rsHomeTab() : (role === 'driving' ? 't-driver' : 't-rider')) : view === 'trips' ? 't-upcoming' : view === 'points' ? 't-wallet' : 't-settings');
   function apply(scroll) {
     const t = $(oldTab()); if (t) t.click();
     document.documentElement.setAttribute('data-view', view);
     ['driving', 'riding'].forEach((r) => $('rs-' + r).setAttribute('aria-selected', r === role));
     ['home', 'trips', 'points', 'me'].forEach((v) => $('nb-' + v).setAttribute('aria-selected', v === view));
-    $('roleSwitch').style.display = view === 'home' ? '' : 'none';
+    $('roleSwitch').style.display = 'none';   // Home is one screen for drivers and riders: no Driving | Riding switch
     if (scroll) window.scrollTo(0, 0);
   }
   ['driving', 'riding'].forEach((r) => ($('rs-' + r).onclick = () => { role = r; set('rs_role', r); view = 'home'; apply(true); }));
-  ['home', 'trips', 'points', 'me'].forEach((v) => ($('nb-' + v).onclick = () => { view = v; apply(true); }));
+  ['home', 'trips', 'points', 'me'].forEach((v) => ($('nb-' + v).onclick = () => { if (v === 'home' && window.rsHome) window.rsHome.toFeed(); view = v; apply(true); }));
+  window.rsGo = (v) => { view = v; apply(true); };   // used by the app to open Home or Trips
+  window.rsView = () => view;
   // old layout <-> new layout
   document.addEventListener('click', (e) => {
     const b = e.target.closest && e.target.closest('[data-uimode]'); if (!b) return;
