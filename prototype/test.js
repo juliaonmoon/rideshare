@@ -88,7 +88,7 @@ t('dates: one-off and weekly repeat occurrences (ISO days, Mon=1)', () => {
   assert.ok(!D.occursOn('2026-10-19', [1, 2, 3, 4, 5], '2026-10-24'));  // Sat not in list
   assert.ok(!D.occursOn('2026-10-19', [1, 2, 3, 4, 5], '2026-10-16'));  // before start
   const now = new Date(2026, 9, 18, 10, 0);
-  assert.deepStrictEqual(D.nextOccurrences('2026-10-18', [1, 2, 3, 4, 5], now, 3), ['2026-10-18', '2026-10-19', '2026-10-20']);
+  assert.deepStrictEqual(D.nextOccurrences('2026-10-18', [1, 2, 3, 4, 5], now, 3), ['2026-10-19', '2026-10-20', '2026-10-21']);   // the Sunday start is not a weekday, so it is not a day
   assert.strictEqual(D.label('2026-10-18', now), 'Today');
   assert.strictEqual(D.label('2026-10-19', now), 'Tomorrow');
   assert.strictEqual(D.label('2026-10-22', now), 'Thu Oct 22');
@@ -216,6 +216,12 @@ t('Repeat patterns: every 2 weeks, the last Thursday of the month, ends after N 
   assert.strictEqual(D.nthDate('2026-11-05', [4], 1, null, 3), '2026-11-19');
   assert.strictEqual(D.nthDate('2026-11-05', [4], 2, null, 3), '2026-12-03');
   assert.deepStrictEqual(D.nextOccurrences('2026-11-05', [1, 2, 3, 4, 5, 6, 7], new Date(2026, 10, 6), 4, null, 1, null, new Set(['2026-11-07'])), ['2026-11-06', '2026-11-08', '2026-11-09', '2026-11-10']);
+  // the start date only counts when it is one of the repeat days (2026-11-07 is a Saturday)
+  assert.strictEqual(D.occursOn('2026-11-07', [7], '2026-11-07', null, 1, null), false);
+  assert.strictEqual(D.occursOn('2026-11-07', [7], '2026-11-08', null, 1, null), true);
+  assert.strictEqual(D.occursOn('2026-11-07', [], '2026-11-07', null, 1, null), true);
+  assert.strictEqual(D.occursOn('2026-11-07', [], '2026-11-08', null, 1, null), false);
+  assert.strictEqual(D.nthDate('2026-11-07', [7], 1, null, 1), '2026-11-08');
   assert.strictEqual(D.repeatLabel([4], 1, 5), 'on the last Thursday of every month');
   assert.strictEqual(D.repeatLabel([1, 2, 3, 4, 5], 1, null), 'every weekday');
   assert.strictEqual(D.repeatLabel([1, 4], 2, null), 'every 2 weeks on Mon Thu');

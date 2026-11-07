@@ -34,7 +34,8 @@
   const dayChips = (id, sel) => `<div class="days" id="${id}">${RSD.DAY_NAMES.map((n, i) => `<button type="button" data-day="${i + 1}" class="${(sel || []).includes(i + 1) ? 'on' : ''}">${n}</button>`).join('')}</div>`;
   const readDays = (id) => [...document.querySelectorAll('#' + id + ' button.on')].map((b) => +b.dataset.day);
   const untilTxt = (u) => (u ? ' until ' + RSD.label(u) : '');
-  const whenText = (date, mins, days, until, every, nth) => RSD.label(date) + ' at ' + clk(mins) + (days && days.length ? ' &middot; repeats ' + RSD.repeatLabel(days, every, nth) + untilTxt(until) : ' &middot; one time');
+  const firstDay = (date, days, every, nth) => (days && days.length ? (RSD.nthDate(date, days, every, nth, 1) || date) : date);   // a repeating trip starts on its first repeat day
+  const whenText = (date, mins, days, until, every, nth) => RSD.label(firstDay(date, days, every, nth)) + ' at ' + clk(mins) + (days && days.length ? ' &middot; repeats ' + RSD.repeatLabel(days, every, nth) + untilTxt(until) : ' &middot; one time');
   const mapAttrs = (lat, lng) => (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform() ? 'href="geo:' + lat + ',' + lng + '?q=' + lat + ',' + lng + '"' : 'href="https://www.google.com/maps/search/?api=1&query=' + lat + ',' + lng + '" target="_blank" rel="noopener"');
   // "2 days 6 h", "1 h 20 min", "35 min" instead of "3275 min"
   const fmtLeft = (m) => { m = Math.max(0, Math.round(m)); const d = Math.floor(m / 1440), h = Math.floor((m % 1440) / 60), mi = m % 60; if (d) return d + (d > 1 ? ' days' : ' day') + (h ? ' ' + h + ' h' : ''); return h ? h + ' h' + (mi ? ' ' + mi + ' min' : '') : mi + ' min'; };
@@ -42,7 +43,7 @@
   const leaveWhen = (ms) => { const iso = new Date(ms).toISOString(), day = new Date(ms).toLocaleDateString('en-CA', { timeZone: 'America/Vancouver' }); return (day === todayStr() ? '' : RSD.label(day) + ' ') + clk(vanMin(iso)); };
   // a trip with a time window has no fixed leave time until the first rider is accepted
   const isFlexFree = (t) => !!t && t.flex_to != null && !t.live && !t.flex_locked;
-  const tripWhen = (t) => isFlexFree(t) ? (t.repeat_days && t.repeat_days.length ? 'Starts ' + RSD.label(t.trip_date) + ' &middot; repeats ' + RSD.repeatLabel(t.repeat_days, t.repeat_every, t.repeat_nth) + untilTxt(t.repeat_until) + ' &middot; any time between ' + clk(t.flex_from) + ' and ' + clk(t.flex_to) + ' &middot; your first rider each day sets the time' : RSD.label(t.trip_date) + ' any time between ' + clk(t.flex_from) + ' and ' + clk(t.flex_to) + ' &middot; flexible, one time')
+  const tripWhen = (t) => isFlexFree(t) ? (t.repeat_days && t.repeat_days.length ? 'Starts ' + RSD.label(firstDay(t.trip_date, t.repeat_days, t.repeat_every, t.repeat_nth)) + ' &middot; repeats ' + RSD.repeatLabel(t.repeat_days, t.repeat_every, t.repeat_nth) + untilTxt(t.repeat_until) + ' &middot; any time between ' + clk(t.flex_from) + ' and ' + clk(t.flex_to) + ' &middot; your first rider each day sets the time' : RSD.label(t.trip_date) + ' any time between ' + clk(t.flex_from) + ' and ' + clk(t.flex_to) + ' &middot; flexible, one time')
     : whenText(t.trip_date, t.depart_min, t.repeat_days, t.repeat_until, t.repeat_every, t.repeat_nth) + (t.flex_to != null && !t.live ? ' &middot; set by your first rider' : '');
   // when a flexible driver would have to leave to reach this rider on time (null: the window does not fit)
   const flexDepart = (t, dr, me, date) => {
@@ -1329,7 +1330,7 @@
     }
     const calCard = card('Calendar', '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><button type="button" class="btn ghost" data-calmove="-1" aria-label="Previous month">&lsaquo;</button><b>' + esc(mName) + '</b><button type="button" class="btn ghost" data-calmove="1" aria-label="Next month">&rsaquo;</button></div>'
       + '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;text-align:center"><span class="mut" style="font-size:11px">Mon</span><span class="mut" style="font-size:11px">Tue</span><span class="mut" style="font-size:11px">Wed</span><span class="mut" style="font-size:11px">Thu</span><span class="mut" style="font-size:11px">Fri</span><span class="mut" style="font-size:11px">Sat</span><span class="mut" style="font-size:11px">Sun</span>' + cells + '</div>'
-      + '<p class="mut" style="margin-top:8px;font-size:12px"><b>D</b> = you drive (number = riders booked), <b>R</b> = you ride. Tap a day to see it.</p>' + dayBox);
+      + '<p class="mut hint" data-once="calendar" style="margin-top:8px;font-size:12px"><b>D</b> = you drive (number = riders booked), <b>R</b> = you ride. Tap a day to see it.</p>' + dayBox);
     const segT = (v, label) => '<button type="button" class="btn' + (tripsView === v ? '' : ' ghost') + '" data-tview="' + v + '" style="flex:1;min-width:0">' + label + '</button>';
     const toggle = '<div style="display:flex;gap:8px;margin:0 0 12px">' + segT('driver', 'As a driver') + segT('rider', 'As a rider') + '</div>';
     const paneSeg = (v, l) => '<button type="button" class="btn' + (tripsPane === v ? '' : ' ghost') + '" data-tpane="' + v + '" style="flex:1;min-width:0">' + l + '</button>';
@@ -1466,6 +1467,7 @@
     on('ln-review', () => {
       const rp = repeatRead('ln', $('ln-date').value); if (rp.err) { formMsg('ln-msg', rp.err); return; }
       const row = { origin: $('ln-o').value, dest: $('ln-d').value, trip_date: $('ln-date').value, depart_min: hm($('ln-t').value || '07:30'), repeat_days: rp.days, ...rp.extra, ...(AAOK && $('ln-auto') ? { auto_accept: $('ln-auto').checked } : {}), max_detour: +$('ln-dt').value, max_total_detour: +$('ln-dt').value, max_pickups: +$('ln-pk').value, max_wait: 0, accepts: $('ln-a').value, ...(DKOK ? { max_detour_km: optNum('ln-dk'), max_total_detour_km: optNum('ln-dk') } : {}), ...plCols('ln-o', 'origin'), ...plCols('ln-d', 'dest') };
+      if (rp.days.length) { const f0 = RSD.nthDate(row.trip_date, rp.days, rp.every, rp.nth, 1); if (f0) row.trip_date = f0; }
       const need = plNeed('ln-o', 'where you start') || plNeed('ln-d', 'where you are going'); if (need) { formMsg('ln-msg', need); return; }
       if (row.max_pickups === 1) row.max_total_detour = null; else if (row.max_total_detour < row.max_detour) { formMsg('ln-msg', 'The total for all pickups cannot be less than the time for one pickup'); return; }
       formMsg('ln-msg', '');
@@ -1478,6 +1480,7 @@
     on('lt-review', () => {
       const rp = repeatRead('lt', $('lt-date').value); if (rp.err) { formMsg('lt-msg', rp.err); return; }
       const row = { origin: $('lt-o').value, dest: $('lt-d').value, trip_date: $('lt-date').value, depart_min: hm($('lt-t').value || '07:30'), repeat_days: rp.days, max_detour: +$('lt-dt').value, max_total_detour: +$('lt-dt').value, ...(DKOK ? { max_detour_km: optNum('lt-dk'), max_total_detour_km: optNum('lt-dk') } : {}), max_pickups: +$('lt-pk').value, max_wait: 0, accepts: $('lt-a').value, ...(AAOK && $('lt-auto') ? { auto_accept: $('lt-auto').checked } : {}), ...rp.extra, ...plCols('lt-o', 'origin'), ...plCols('lt-d', 'dest') };
+      if (rp.days.length) { const f0 = RSD.nthDate(row.trip_date, rp.days, rp.every, rp.nth, 1); if (f0) row.trip_date = f0; }
       const need = plNeed('lt-o', 'where you start') || plNeed('lt-d', 'where you are going'); if (need) { formMsg('lt-msg', need); return; }
       if (row.max_pickups === 1) row.max_total_detour = null; else if (row.max_total_detour < row.max_detour) { formMsg('lt-msg', 'The total for all pickups cannot be less than the time for one pickup'); return; }
       formMsg('lt-msg', '');
@@ -1500,6 +1503,7 @@
     on('lr-review', () => {
       const rp = repeatRead('lr', $('lr-date').value); if (rp.err) { formMsg('lr-msg', rp.err); return; }
       const row = { pickup: $('lr-p').value, dropoff: $('lr-d').value, ride_date: $('lr-date').value, ready_from: hm($('lr-f').value || '07:20'), ready_to: hm($('lr-u').value || '07:50'), repeat_days: rp.days, pays: $('lr-pay').value, ...rp.extra, ...plCols('lr-p', 'pickup'), ...plCols('lr-d', 'dropoff') };
+      if (rp.days.length) { const f0 = RSD.nthDate(row.ride_date, rp.days, rp.every, rp.nth, 1); if (f0) row.ride_date = f0; }
       formMsg('lr-msg', '');
       const need = plNeed('lr-p', 'where to pick you up') || plNeed('lr-d', 'where to drop you off'); if (need) { formMsg('lr-msg', need); return; }
       if (samePlace(row.pickup, row.dropoff, 'lr-p', 'lr-d')) { formMsg('lr-msg', 'Pick two different places'); return; }
