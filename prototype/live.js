@@ -135,13 +135,14 @@
   const repeatKind = (x) => (!x.repeat_days || !x.repeat_days.length ? 'none' : x.repeat_nth ? 'monthly' : (x.repeat_every || 1) === 2 ? 'biweekly' : x.repeat_days.length === 7 ? 'daily' : (x.repeat_days.length === 5 && [1, 2, 3, 4, 5].every((d) => x.repeat_days.includes(d))) ? 'weekdays' : 'weekly');
   // Repeat + Ends, in the style of a calendar app. p = 'lt' (trip) or 'lr' (request)
   function repeatBox(p, x) {
-    const kind = repeatKind(x), kinds = ['none', 'daily', 'weekdays', 'weekly'].concat(RPOK ? ['biweekly', 'monthly'] : []);
-    const nth = x.repeat_nth || 1, dow = (x.repeat_days && x.repeat_days[0]) || 1;
+    const L = (id, d) => (p === 'ln' && LV[id] != null ? LV[id] : d);   // the Home form keeps its choices across refreshes
+    const kind = L(p + '-rep', repeatKind(x)), kinds = ['none', 'daily', 'weekdays', 'weekly'].concat(RPOK ? ['biweekly', 'monthly'] : []);
+    const nth = +L(p + '-nth', x.repeat_nth || 1), dow = +L(p + '-dow', (x.repeat_days && x.repeat_days[0]) || 1), endKind = L(p + '-end', x.repeat_until ? 'date' : 'never');
     return `<label>Repeat</label><select id="${p}-rep">${kinds.map((k) => '<option value="' + k + '"' + (k === kind ? ' selected' : '') + '>' + REP_LABELS[k] + '</option>').join('')}</select>
       <div id="${p}-rep-days"><label>On these days</label>${dayChips(p + '-days', x.repeat_days)}</div>
       <div id="${p}-rep-month"><label>Which day of the month</label><div class="row"><select id="${p}-nth">${['First', 'Second', 'Third', 'Fourth', 'Last'].map((n, i) => '<option value="' + (i + 1) + '"' + (i + 1 === nth ? ' selected' : '') + '>' + n + '</option>').join('')}</select><select id="${p}-dow">${RSD.FULL_DAYS.map((n, i) => '<option value="' + (i + 1) + '"' + (i + 1 === dow ? ' selected' : '') + '>' + n + '</option>').join('')}</select></div></div>
-      ${UNOK ? `<div id="${p}-rep-end"><label>Ends</label><select id="${p}-end"><option value="never">Never</option><option value="date"${x.repeat_until ? ' selected' : ''}>On a date</option><option value="count">After a number of times</option></select>
-        <input type="date" id="${p}-until" min="${todayStr()}" value="${x.repeat_until || ''}"><input type="number" id="${p}-count" min="1" max="100" value="10" aria-label="Number of times"></div>` : ''}`;
+      ${UNOK ? `<div id="${p}-rep-end"><label>Ends</label><select id="${p}-end"><option value="never"${endKind === 'never' ? ' selected' : ''}>Never</option><option value="date"${endKind === 'date' ? ' selected' : ''}>On a date</option><option value="count"${endKind === 'count' ? ' selected' : ''}>After a number of times</option></select>
+        <input type="date" id="${p}-until" min="${todayStr()}" value="${L(p + '-until', x.repeat_until || '')}"><input type="number" id="${p}-count" min="1" max="100" value="${L(p + '-count', 10)}" aria-label="Number of times"></div>` : ''}`;
   }
   function repUi(p) {
     const k = $(p + '-rep') && $(p + '-rep').value, show = (id, on) => { const e = $(id); if (e) e.style.display = on ? '' : 'none'; };
@@ -930,8 +931,9 @@
       const sx = S_(), seg = (m, label) => '<button type="button" class="btn' + (tripMode === m ? '' : ' ghost') + '" data-tmode="' + m + '" style="flex:1;min-width:0">' + label + '</button>';
       const val = (id, dflt) => esc(LV[id] != null ? LV[id] : dflt);
       const later = whenBox('ln', '<input type="date" id="ln-date" min="' + todayStr() + '" max="' + maxDate() + '" value="' + val('ln-date', defaultDate('', 450)) + '">', val('ln-t', '07:30'), !!LV['ln-flex'], null, LV['ln-t2'] == null ? null : hm(LV['ln-t2']), LV['ln-mode'], false)
-        + '<label>Repeat every week on <span class="mut">(optional)</span></label>' + dayChips('ln-days', LV.days || [])
+        + repeatBox('ln', { repeat_days: LV.days || [] })
         + '<details style="margin-top:12px"><summary class="mut" style="cursor:pointer">More options (rider limits, payment)</summary>'
+        + (AAOK ? '<label style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="ln-auto"' + ((LV['ln-auto'] != null ? LV['ln-auto'] === '1' : sx.d_auto_accept) ? ' checked' : '') + '> Accept riders automatically: anyone who fits my limits, until the car is full</label>' : '')
         + '<label>Most riders I will take</label><select id="ln-pk">' + [1, 2, 3, 4].map((n) => '<option value="' + n + '"' + (n === +(LV['ln-pk'] != null ? LV['ln-pk'] : Math.min(4, sx.d_seats)) ? ' selected' : '') + '>' + (n === 1 ? 'Just 1 rider' : 'Up to ' + n) + '</option>').join('') + '</select>'
         + '<label>Extra minutes I accept for my whole trip</label><input type="number" id="ln-dt" min="0" max="60" value="' + val('ln-dt', sx.d_detour) + '">'
         + (DKOK ? '<label>Extra km I accept for my whole trip (optional)</label><input type="number" id="ln-dk" min="0" max="200" step="0.5" placeholder="no limit" value="' + val('ln-dk', sx.d_detour_km == null ? '' : sx.d_detour_km) + '">' : '')
@@ -1405,7 +1407,8 @@
     });
     document.querySelectorAll('#ln-days button').forEach((b) => (b.onclick = () => { b.classList.toggle('on'); LV.days = readDays('ln-days'); }));
     on('ln-review', () => {
-      const row = { origin: $('ln-o').value, dest: $('ln-d').value, trip_date: $('ln-date').value, depart_min: hm($('ln-t').value || '07:30'), repeat_days: readDays('ln-days'), max_detour: +$('ln-dt').value, max_total_detour: +$('ln-dt').value, max_pickups: +$('ln-pk').value, max_wait: 0, accepts: $('ln-a').value, ...(DKOK ? { max_detour_km: optNum('ln-dk'), max_total_detour_km: optNum('ln-dk') } : {}), ...plCols('ln-o', 'origin'), ...plCols('ln-d', 'dest') };
+      const rp = repeatRead('ln', $('ln-date').value); if (rp.err) { formMsg('ln-msg', rp.err); return; }
+      const row = { origin: $('ln-o').value, dest: $('ln-d').value, trip_date: $('ln-date').value, depart_min: hm($('ln-t').value || '07:30'), repeat_days: rp.days, ...rp.extra, ...(AAOK && $('ln-auto') ? { auto_accept: $('ln-auto').checked } : {}), max_detour: +$('ln-dt').value, max_total_detour: +$('ln-dt').value, max_pickups: +$('ln-pk').value, max_wait: 0, accepts: $('ln-a').value, ...(DKOK ? { max_detour_km: optNum('ln-dk'), max_total_detour_km: optNum('ln-dk') } : {}), ...plCols('ln-o', 'origin'), ...plCols('ln-d', 'dest') };
       const need = plNeed('ln-o', 'where you start') || plNeed('ln-d', 'where you are going'); if (need) { formMsg('ln-msg', need); return; }
       if (row.max_pickups === 1) row.max_total_detour = null; else if (row.max_total_detour < row.max_detour) { formMsg('ln-msg', 'The total for all pickups cannot be less than the time for one pickup'); return; }
       formMsg('ln-msg', '');
@@ -1662,7 +1665,12 @@
     each('[data-offtrip]', (b) => !window.confirm('Cancel this trip?\n\nAny rider who is booked is cancelled and gets their points back.') ? null : run(cancelTrip(b.dataset.offtrip), 'Trip cancelled'));
     each('[data-offreq]', (b) => !window.confirm('Cancel this request?\n\nIf a driver has accepted, the cancellation rules apply.') ? null : run(cancelRequest(b.dataset.offreq), 'Request cancelled'));
     each('[data-go]', (b) => $(b.dataset.go).click());
-    ['lt', 'lr'].forEach((p) => { const e = $(p + '-rep'); if (e) { e.onchange = () => repUi(p); if ($(p + '-end')) $(p + '-end').onchange = () => repUi(p); repUi(p); } });
+    ['ln', 'lt', 'lr'].forEach((p) => {
+      const e = $(p + '-rep'); if (!e) return;
+      e.onchange = () => repUi(p); if ($(p + '-end')) $(p + '-end').onchange = () => repUi(p); repUi(p);
+      if (p === 'ln') ['rep', 'nth', 'dow', 'end', 'until', 'count'].forEach((k) => { const el = $(p + '-' + k); if (!el) return; const prev = el.onchange; el.onchange = () => { LV[p + '-' + k] = el.value; if (prev) prev(); }; });
+    });
+    { const au = $('ln-auto'); if (au) au.onchange = () => { LV['ln-auto'] = au.checked ? '1' : '0'; }; }
     each('[data-skipday]', (b) => { if (!window.confirm('Skip this day?\n\nRiders booked on this day are cancelled and get their points back. The trip carries on the other days.')) return; const [tp, ds] = b.dataset.skipday.split('|'); run(sb.rpc('skip_trip_day', { p_trip: tp, p_date: ds }), 'Day skipped'); });
     each('[data-unskipday]', (b) => { const [tp, ds] = b.dataset.unskipday.split('|'); run(sb.rpc('unskip_trip_day', { p_trip: tp, p_date: ds }), 'The day is back on'); });
     each('[data-edittrip]', (b) => { selTripId = b.dataset.edittrip; myTrip = myTrips.find((x) => x.id === selTripId) || myTrip; curTrip = myLiveTrip || myTrip; editing.trip = true; editing.newTrip = false; pending = null; viewD = null; mapSig = {}; formSig = ''; $('t-driver').click(); render(); });
