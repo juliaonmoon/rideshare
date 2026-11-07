@@ -132,8 +132,8 @@
   let PCOK = null, cards = {};   // migration 021 (photo and car details shown to a matched driver or rider, Report a problem) is in place
   const DEV = (() => { try { return localStorage.getItem('rs_dev') === '1'; } catch (e) { return false; } })();   // developer tools (route simulator, test cards) only when switched on
   const store = (k, d) => { try { return localStorage.getItem(k) || d; } catch (e) { return d; } }, keep = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* storage blocked */ } };
-  const loadTf = () => { try { const o = JSON.parse(store('rs_trips_filter', '{}')); return { when: ['upcoming', 'past', 'all'].includes(o.when) ? o.when : 'upcoming', role: ['all', 'drive', 'ride'].includes(o.role) ? o.role : 'all', st: new Set(Array.isArray(o.st) ? o.st : []) }; } catch (e) { return { when: 'upcoming', role: 'all', st: new Set() }; } };
-  const saveTf = () => keep('rs_trips_filter', JSON.stringify({ when: tf.when, role: tf.role, st: [...tf.st] }));
+  const loadTf = () => { try { const o = JSON.parse(store('rs_trips_filter', '{}')); return { when: ['upcoming', 'past', 'all'].includes(o.when) ? o.when : 'upcoming', role: ['all', 'drive', 'ride'].includes(o.role) ? o.role : 'all', st: new Set(Array.isArray(o.st) ? o.st : []), view: o.view === 'trip' ? 'trip' : 'date', trip: null }; } catch (e) { return { when: 'upcoming', role: 'all', st: new Set(), view: 'date', trip: null }; } };
+  const saveTf = () => keep('rs_trips_filter', JSON.stringify({ when: tf.when, role: tf.role, st: [...tf.st], view: tf.view }));
   let offerOpen = false, tripsPane = store('rs_trips_pane', 'list') === 'cal' ? 'cal' : 'list';   // the Trips tab opens on the List with its filters, and remembers the last choice
   let tf = loadTf();   // Trips > List filters: when (upcoming / past / all), what (driving / riding), and status chips   // Home: the Offer a ride now form is open; Trips tab: 'cal' or 'list'
   const foldOpen = new Set();   // which collapsed lists the person opened (kept across screen refreshes)
@@ -203,7 +203,7 @@
       <div id="${p}-rep-days"><label>On these days</label>${dayChips(p + '-days', x.repeat_days)}</div>
       <div id="${p}-rep-month"><label>Which day of the month</label><div class="row"><select id="${p}-nth">${['First', 'Second', 'Third', 'Fourth', 'Last'].map((n, i) => '<option value="' + (i + 1) + '"' + (i + 1 === nth ? ' selected' : '') + '>' + n + '</option>').join('')}</select><select id="${p}-dow">${RSD.FULL_DAYS.map((n, i) => '<option value="' + (i + 1) + '"' + (i + 1 === dow ? ' selected' : '') + '>' + n + '</option>').join('')}</select></div></div>
       ${UNOK ? `<div id="${p}-rep-end"><label>Ends</label><select id="${p}-end"><option value="date"${endKind !== 'count' ? ' selected' : ''}>On a date</option><option value="count"${endKind === 'count' ? ' selected' : ''}>After a number of times</option></select>
-        <input type="date" id="${p}-until" min="${todayStr()}" value="${L(p + '-until', x.repeat_until || RSD.addDays(todayStr(), 90))}"><input type="number" id="${p}-count" min="1" max="100" value="${L(p + '-count', 10)}" aria-label="Number of times"></div>` : ''}
+        <input type="date" id="${p}-until" min="${todayStr()}" max="${RSD.addDays(todayStr(), 183)}" value="${L(p + '-until', x.repeat_until || RSD.addDays(todayStr(), 90))}"><input type="number" id="${p}-count" min="1" max="26" value="${L(p + '-count', 10)}" aria-label="Number of times"></div>` : ''}
       <div id="${p}-rep-prev" style="margin-top:8px">${fold(p + '-prev', '<span id="' + p + '-prevsum">Preview the days</span>', '<div id="' + p + '-prevbody"></div>')}</div>`;
   }
   function miniCal(ym, hits) {
@@ -243,8 +243,9 @@
     if (days.length && UNOK && $(p + '-end')) {
       const ek = $(p + '-end').value;
       if (ek === 'date') { until = $(p + '-until').value; if (!until) return { err: 'Pick the last day of the repeat' }; if (start && until < start) return { err: 'The last day cannot be before the first day' }; }
-      else if (ek === 'count') { const n = Math.max(1, Math.min(100, +$(p + '-count').value || 0)); until = RSD.nthDate(start, days, every, nth, n); if (!until) return { err: 'That many repeats do not fit in the next 3 years' }; }
+      else if (ek === 'count') { const n = Math.max(1, Math.min(26, +$(p + '-count').value || 0)); until = RSD.nthDate(start, days, every, nth, n); if (!until) return { err: 'That many repeats do not fit in the next 3 years' }; }
     }
+    if (until && until > RSD.addDays(todayStr(), 183)) return { err: 'A repeat can run for at most 6 months. Pick an earlier last day or fewer times.' };
     return { days, every, nth, until, extra: Object.assign(RPOK ? { repeat_every: every, repeat_nth: nth } : {}, UNOK ? { repeat_until: until } : {}) };
   }
   let AAOK = null, SYOK = null, lastSync = 0, calMonth = null, calDay = null, offSet = new Set();   // AAOK/SYOK: migration 046 is in place; offSet: regular bookings that were ended
@@ -1421,7 +1422,7 @@
       const ms = matches.filter((x) => x.trip_id === t.id), done = ms.filter((x) => x.status === 'completed'), km = kmOf(t.id);
       const who = done.length ? done.map((x) => nm(x.rider_id)).join(', ') : '';
       const html = '<div style="padding:8px 0;border-top:1px solid var(--line)"><b><span class="tag">Driving</span> ' + esc(disp(t, 'origin')) + ' to ' + esc(disp(t, 'dest')) + '</b> <span class="tag">' + (done.length ? 'completed' : 'no riders') + '</span> <button class="btn ghost" style="padding:4px 10px;min-height:0" data-ptrip="' + t.id + '">Details</button><div class="mut">' + esc(RSD.label(t.trip_date)) + ' at ' + clk(t.depart_min) + (who ? ' &middot; ' + who : '') + ' &middot; ' + done.length + ' rider' + (done.length === 1 ? '' : 's') + kmLabel(t, km) + '</div>' + done.map((x) => rateLine(x, x.rider_id) + reportLine(x, x.rider_id)).join('') + '</div>';
-      return { role: 'drive', past: true, date: t.trip_date, time: t.depart_min, html, f: { completed: done.length > 0, cancelled: done.length === 0 } };
+      return { role: 'drive', past: true, tripId: t.id, date: t.trip_date, time: t.depart_min, html, f: { completed: done.length > 0, cancelled: done.length === 0 } };
     });
     const tripRows = pastTripItems.slice(0, 8).map((i) => i.html).join('');
     const pastRideItems = past.filter((x) => x.rider_id === user.id).map((x) => ({ role: 'ride', past: true, date: x.ride_date, time: 0, f: { completed: x.status === 'completed', cancelled: x.status !== 'completed' }, html: '<div style="padding:8px 0;border-top:1px solid var(--line)"><b><span class="tag">Riding</span> Ride with ' + nm(x.driver_id) + '</b> <span class="tag">' + esc(statusText(x.status)) + '</span> <button class="btn ghost" style="padding:4px 10px;min-height:0" data-pride="' + x.id + '">Details</button><div class="mut">' + when(x) + ' &middot; ' + (x.pay_with === 'points' ? x.points + ' pts' : 'cash') + '</div>' + rateLine(x, x.driver_id) + reportLine(x, x.driver_id) + '</div>' }));
@@ -1472,26 +1473,37 @@
     const allItems = [];
     dayItems.forEach((it) => {
       const { acc, ask } = dayStat(it), ft = forDate(it.t, it.d), rep = !!(it.t.repeat_days && it.t.repeat_days.length) && !it.t.live;
-      allItems.push({ role: 'drive', past: false, date: it.d, time: it.time, html: dayRow(it), f: { waiting: ask > 0, confirmed: acc > 0, empty: acc === 0 && ask === 0, repeating: rep, oneTime: !rep, flex: isFlexFree(ft) } });
+      allItems.push({ role: 'drive', past: false, tripId: it.t.id, date: it.d, time: it.time, html: dayRow(it), f: { waiting: ask > 0, confirmed: acc > 0, empty: acc === 0 && ask === 0, repeating: rep, oneTime: !rep, flex: isFlexFree(ft) } });
     });
     homeItems().filter((i) => i.kind !== 'drive').forEach((it) => {
       const rep = it.kind === 'looking' ? !!(it.q.repeat_days && it.q.repeat_days.length) : !!(myReq && it.x.request_id === myReq.id && myReq.repeat_days && myReq.repeat_days.length);
       allItems.push({ role: 'ride', past: false, date: it.d, time: it.time, html: rideItemRow(it), f: { waiting: it.kind === 'looking' || it.x.status === 'requested', confirmed: it.kind === 'ride' && it.x.status === 'accepted', repeating: rep, oneTime: !rep } });
     });
     pastTripItems.concat(pastRideItems).forEach((it) => allItems.push(it));
+    // By trip: one row per trip I drive (a repeating trip is ONE row; open it for its dates, Edit, Stop), instead of one row per date
+    const seriesItems = tripList.map((t) => {
+      const rep = !!(t.repeat_days && t.repeat_days.length) && !t.live, dates = t.live ? [] : occOf(t, 31), fam = matches.filter((x) => x.driver_id === user.id && inFam(x.trip_id, t) && x.ride_date >= t0);
+      const asks = fam.filter((x) => x.status === 'requested' && fitServer[x.id] !== false).length, acc = fam.filter((x) => x.status === 'accepted').length, first = dates[0] || t.trip_date;
+      return { role: 'drive', past: false, tripId: t.id, date: first, time: t.depart_min, html: tripRow(t), f: { waiting: asks > 0, confirmed: acc > 0, empty: asks === 0 && acc === 0, repeating: rep, oneTime: !rep, flex: isFlexFree(forDate(t, first)) } };
+    });
+    const byTrip = tf.view === 'trip' && tf.role !== 'ride', pool = byTrip ? seriesItems.concat(pastTripItems) : allItems;
+    const tripOk = (it) => !tf.trip || it.tripId === tf.trip;
     const whenOk = (it) => tf.when === 'all' || (tf.when === 'past') === it.past, roleOk = (it) => tf.role === 'all' || tf.role === it.role;
     const STAT = [['waiting', 'Waiting'], ['confirmed', 'Confirmed'], ['empty', 'No riders yet'], ['repeating', 'Repeating'], ['oneTime', 'One-time'], ['flex', 'Flexible time'], ['completed', 'Completed'], ['cancelled', 'Cancelled or empty']];
     const chip = (attr, val, label, on) => '<button type="button" ' + attr + '="' + val + '" class="' + (on ? 'on' : '') + '">' + label + '</button>';
-    const nWhen = (w) => allItems.filter((it) => roleOk(it) && (w === 'all' || (w === 'past') === it.past)).length, nRole = (r) => allItems.filter((it) => whenOk(it) && (r === 'all' || it.role === r)).length;
-    const base = allItems.filter((it) => whenOk(it) && roleOk(it));
+    const nWhen = (w) => pool.filter((it) => roleOk(it) && tripOk(it) && (w === 'all' || (w === 'past') === it.past)).length, nRole = (r) => pool.filter((it) => whenOk(it) && tripOk(it) && (r === 'all' || it.role === r)).length;
+    const base = pool.filter((it) => whenOk(it) && roleOk(it) && tripOk(it));
     const statChips = STAT.map(([k, l]) => ({ k, l, n: base.filter((it) => it.f[k]).length })).filter((c) => c.n > 0 || tf.st.has(c.k)).map((c) => chip('data-tfs', c.k, c.l + ' (' + c.n + ')', tf.st.has(c.k))).join('');
     const filtered = base.filter((it) => !tf.st.size || [...tf.st].some((k) => it.f[k])).sort((a, b) => (a.past !== b.past ? (a.past ? 1 : -1) : a.past ? (a.date < b.date ? 1 : a.date > b.date ? -1 : 0) : (a.date < b.date ? -1 : a.date > b.date ? 1 : a.time - b.time)));
-    const filtersOn = tf.when !== 'upcoming' || tf.role !== 'all' || tf.st.size > 0, LIM = 12;
+    const filtersOn = tf.when !== 'upcoming' || tf.role !== 'all' || tf.st.size > 0 || !!tf.trip, LIM = 12;
+    const shortRep = (t) => { const ds = (t.repeat_days || []).slice().sort((a, b) => a - b); if (t.repeat_nth) return 'monthly'; if (!ds.length) return RSD.label(t.trip_date); if (ds.length === 7) return 'daily'; if (ds.join('') === '12345') return 'weekdays'; return (t.repeat_every > 1 ? 'every ' + t.repeat_every + ' wks ' : '') + ds.map((d) => RSD.DAY_NAMES[d - 1]).join(' '); };
+    const tripChips = tripList.length >= 2 && !byTrip ? '<div class="days" style="margin-bottom:6px">' + tripList.map((t) => chip('data-tft', t.id, esc(disp(t, 'dest')) + ' &middot; ' + esc(shortRep(t)), tf.trip === t.id)).join('') + '</div>' : '';
+    const viewBar = tripList.length >= 1 && tf.role !== 'ride' ? '<div class="days" style="margin-bottom:6px">' + chip('data-tfv', 'date', 'By date', tf.view !== 'trip') + chip('data-tfv', 'trip', 'By trip (' + tripList.length + ')', tf.view === 'trip') + '</div>' : '';
     const listBody = filtered.length ? filtered.slice(0, LIM).map((i) => i.html).join('') + (filtered.length > LIM ? fold('f-list-more', 'Show ' + (filtered.length - LIM) + ' more', filtered.slice(LIM).map((i) => i.html).join('')) : '') : '<p class="mut">Nothing matches.' + (filtersOn ? ' <button type="button" class="btn ghost" data-tfclear="1" style="padding:4px 10px;min-height:0">Clear filters</button>' : '') + '</p>';
-    const filterBar = '<div class="days" style="margin-bottom:6px">' + chip('data-tfw', 'upcoming', 'Upcoming (' + nWhen('upcoming') + ')', tf.when === 'upcoming') + chip('data-tfw', 'past', 'Past (' + nWhen('past') + ')', tf.when === 'past') + chip('data-tfw', 'all', 'All', tf.when === 'all') + '</div>'
+    const filterBar = viewBar + '<div class="days" style="margin-bottom:6px">' + chip('data-tfw', 'upcoming', 'Upcoming (' + nWhen('upcoming') + ')', tf.when === 'upcoming') + chip('data-tfw', 'past', 'Past (' + nWhen('past') + ')', tf.when === 'past') + chip('data-tfw', 'all', 'All', tf.when === 'all') + '</div>'
       + '<div class="days" style="margin-bottom:6px">' + chip('data-tfr', 'all', 'All', tf.role === 'all') + chip('data-tfr', 'drive', 'Driving (' + nRole('drive') + ')', tf.role === 'drive') + chip('data-tfr', 'ride', 'Riding (' + nRole('ride') + ')', tf.role === 'ride') + '</div>'
-      + (statChips ? '<div class="days" style="margin-bottom:6px">' + statChips + '</div>' : '') + (filtersOn && filtered.length ? '<div style="margin-bottom:4px"><button type="button" class="btn ghost" data-tfclear="1" style="padding:4px 10px;min-height:0">Clear filters</button></div>' : '');
-    const listPaneHtml = paneSegBar() + lostBanner() + card('Trips', filterBar + listBody) + (tripList.length ? card('Manage my trips', fold('f-manage-trips', 'My trips (' + tripList.length + '): edit or stop', tripList.map(tripRow).join(''))) : '') + cancelAllCard();
+      + tripChips + (statChips ? '<div class="days" style="margin-bottom:6px">' + statChips + '</div>' : '') + (filtersOn && filtered.length ? '<div style="margin-bottom:4px"><button type="button" class="btn ghost" data-tfclear="1" style="padding:4px 10px;min-height:0">Clear filters</button></div>' : '');
+    const listPaneHtml = paneSegBar() + lostBanner() + card('Trips', filterBar + listBody) + (tripList.length && !byTrip ? card('Manage my trips', fold('f-manage-trips', 'My trips (' + tripList.length + '): edit or stop', tripList.map(tripRow).join(''))) : '') + cancelAllCard();
     window.__rules = card('Cancellation rules', policy);
     if (tripsPane === 'list') return listPaneHtml;
     if (tripsView === 'rider') {
@@ -1595,7 +1607,7 @@
     homeView = 'feed'; detailTripId = null; selTripId = null; pending = null; viewD = null; viewR = null; calDay = null; calMonth = null; askCancel = null; mapSig = {}; formSig = '';
     [nowSel, LV].forEach((o) => Object.keys(o).forEach((k) => { delete o[k]; }));
     plReset('ln-o', 'ln-d', 'lt-o', 'lt-d', 'lr-p', 'lr-d', 'rn-p', 'rn-d');
-    tripMode = 'now'; rideMode = 'now'; tripsView = 'driver'; offerOpen = false; tripsPane = 'list'; tf = { when: 'upcoming', role: 'all', st: new Set() }; saveTf(); keep('rs_trips_pane', 'list');
+    tripMode = 'now'; rideMode = 'now'; tripsView = 'driver'; offerOpen = false; tripsPane = 'list'; tf = { when: 'upcoming', role: 'all', st: new Set(), view: 'date', trip: null }; saveTf(); keep('rs_trips_pane', 'list');
     try { localStorage.setItem('rs_trip_mode', 'now'); localStorage.removeItem('rs_trip_on'); localStorage.removeItem('rs_ride_mode'); localStorage.removeItem('rs_trips_view'); } catch (e) { /* storage blocked */ }
   }
   async function run(p, ok) { try { const r = await p; if (r.error) throw r.error; if (ok) toast(ok); return true; } catch (e) { fail(e); return false; } finally { formSig = ''; await loadAll(); } }
@@ -1831,7 +1843,9 @@
     each('[data-tfw]', (b) => { tf.when = b.dataset.tfw; tf.st = new Set(); saveTf(); render(); });
     each('[data-tfr]', (b) => { tf.role = b.dataset.tfr; tf.st = new Set(); saveTf(); render(); });
     each('[data-tfs]', (b) => { const k = b.dataset.tfs; if (tf.st.has(k)) tf.st.delete(k); else tf.st.add(k); saveTf(); render(); });
-    each('[data-tfclear]', () => { tf = { when: 'upcoming', role: 'all', st: new Set() }; saveTf(); render(); });
+    each('[data-tfv]', (b) => { tf.view = b.dataset.tfv; tf.trip = null; saveTf(); render(); });
+    each('[data-tft]', (b) => { tf.trip = tf.trip === b.dataset.tft ? null : b.dataset.tft; render(); });
+    each('[data-tfclear]', () => { tf = { when: 'upcoming', role: 'all', st: new Set(), view: 'date', trip: null }; saveTf(); render(); });
     each('[data-askride]', () => { const rd = $('rs-riding'); if (rd) rd.click(); });   // the Riding side of Home has the Ask for a ride form open
     each('[data-seltrip]', (b) => { selTripId = b.dataset.seltrip; myTrip = myTrips.find((x) => x.id === selTripId) || myTrip; curTrip = myLiveTrip || myTrip; editing.trip = false; editing.newTrip = false; pending = null; viewD = null; mapSig = {}; formSig = ''; render(); });
     each('[data-newtrip]', () => { if (myTrips.length >= 5) { toast('You can keep up to 5 trips. Cancel one first.'); return; } detailFrom = (window.rsView && window.rsView() === 'trips') ? 'trips' : 'home'; editing.trip = true; editing.newTrip = true; pending = null; goHome('post'); });
