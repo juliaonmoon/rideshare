@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RideShare design brief</title>
+<style>
+  :root{--bg:#f6f7f9;--card:#fff;--ink:#1b2430;--mut:#5d6b7c;--line:#d9dee5;--acc:#0b7a5b;--acc2:#e8f5f0;--bad:#b42318;--warn:#b45309}
+  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,Segoe UI,Roboto,sans-serif;padding:16px}
+  main{max-width:1100px;margin:0 auto} h1{font-size:26px;margin:8px 0} h2{font-size:20px;margin:32px 0 8px} h3{font-size:16px;margin:0 0 6px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin:12px 0}
+  .mut{color:var(--mut)} button.copy{background:var(--acc);color:#fff;border:0;border-radius:8px;padding:10px 16px;font:inherit;cursor:pointer}
+  pre{white-space:pre-wrap;word-wrap:break-word;background:#f0f3f6;border-radius:8px;padding:12px;max-height:340px;overflow:auto;font:13px/1.5 ui-monospace,Consolas,monospace}
+  .shots{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px}
+  .shots figure{margin:0;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px}
+  .shots img{width:100%;border-radius:6px;display:block} .shots figcaption{font-size:13px;margin-top:6px;color:var(--mut)}
+  .wires{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:18px;align-items:start}
+  .phone{width:260px;border:2px solid #28323f;border-radius:22px;padding:10px;background:#fff;margin:0 auto}
+  .phone h4{margin:0 0 8px;font-size:14px;text-align:center}
+  .b{border:1.5px solid #9aa7b6;border-radius:8px;padding:6px 8px;margin:6px 0;font-size:12px;background:#fbfcfd}
+  .b.pri{background:var(--acc);color:#fff;border-color:var(--acc);text-align:center;font-weight:600}
+  .b.sec{border-color:var(--acc);color:var(--acc);text-align:center;font-weight:600}
+  .b.map{background:repeating-linear-gradient(45deg,#e4f1ea,#e4f1ea 8px,#d7eadf 8px,#d7eadf 16px);text-align:center;color:#40604f;padding:26px 6px}
+  .b.bad{border-color:var(--bad);background:#fdf1f0} .b.new{border-color:var(--acc);background:var(--acc2)}
+  .row{display:flex;gap:6px} .row>.b{flex:1} .chips span{display:inline-block;border:1px solid #9aa7b6;border-radius:999px;padding:1px 8px;margin:1px;font-size:11px}
+  .tabs{display:flex;justify-content:space-around;border-top:1.5px solid #9aa7b6;margin-top:8px;padding-top:6px;font-size:11px;color:var(--mut)} .tabs b{color:var(--acc)}
+  .note{font-size:12px;color:var(--bad);margin:2px 0 0} .note.ok{color:var(--acc)}
+  .legend span{display:inline-block;margin-right:14px;font-size:13px}
+  .sw{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:-1px;margin-right:4px}
+</style>
+</head>
+<body>
+<main>
+<h1>RideShare: Home vs Trips (markup)</h1><p class="mut">Wireframes of the phone screens: how they are today, and a starting idea. Companion to the 7 phone screenshots.</p><h2>3. Markup: how it is today</h2>
+<p class="mut">Red = confusing or duplicated. The same trip information shows in 3 places: the "Your trip" card on Home, the plan on Home, and the list on Trips.</p>
+<div class="wires">
+  <div class="phone"><h4>HOME, Driving (today)</h4>
+    <div class="b sec">Driving | Riding</div>
+    <div class="row"><div class="b pri">Offer a ride now</div><div class="b sec">Post a trip</div></div>
+    <div class="b bad">"Your trip" card (ONE trip only)<br>route, repeat text, Start trip, See riders, Edit, Cancel this trip</div>
+    <div class="note">Only one trip: where are the others?</div>
+    <div class="b">Cancel all upcoming</div>
+    <div class="b map">Google map<br>(for one chosen date)</div>
+    <div class="b bad chips">Date chips: <span>Today</span><span>Tomorrow</span><span>Sun 15</span><span>Sun 22</span>...</div>
+    <div class="b bad">Plan of that day<br>leave time, stops, cost</div>
+    <div class="note">Plan on Home...</div>
+    <div class="b">Seat requests</div>
+    <div class="b">Confirmed riders</div>
+    <div class="tabs"><b>Home</b><span>Trips</span><span>Points</span><span>Me</span></div>
+  </div>
+  <div class="phone"><h4>TRIPS, Driver (today)</h4>
+    <div class="b sec">As a driver | As a rider</div>
+    <div class="b sec">Calendar | List</div>
+    <div class="b pri">+ Post a trip</div>
+    <div class="b bad">Calendar<br>D on days I drive, R on days I ride<br>tap a day: its trip and riders</div>
+    <div class="note">...and trips and riders again here</div>
+    <div class="b bad">(List view) Upcoming trips<br>route, repeat text, Edit, Cancel this trip</div>
+    <div class="b">Past trips (collapsed)</div>
+    <div class="b">Your drives</div>
+    <div class="tabs"><span>Home</span><b>Trips</b><span>Points</span><span>Me</span></div>
+  </div>
+  <div class="phone"><h4>HOME, Riding (today)</h4>
+    <div class="b sec">Driving | Riding</div>
+    <div class="b bad">"Ask for a ride" form (Now | Schedule)<br>pick up, drop off, pay with, Request</div>
+    <div class="note">The form is first, even if I already have a ride booked</div>
+    <div class="b">My ride request / seat confirmed card</div>
+    <div class="b">Drivers going my way (list)</div>
+    <div class="tabs"><b>Home</b><span>Trips</span><span>Points</span><span>Me</span></div>
+  </div>
+</div>
+
+<h2>4. Markup: my starting idea (for ChatGPT to critique)</h2>
+<p class="mut">Green = new or moved. Home answers "what do I do next?". Trips answers "show me everything".</p>
+<div class="wires">
+  <div class="phone"><h4>HOME, Driving (idea)</h4>
+    <div class="b sec">Driving | Riding</div>
+    <div class="b new"><b>Next up: Sun Nov 8</b><br>Leave 7:40 am<br>Surrey to Richmond Centre<br>2 riders confirmed</div>
+    <div class="b pri">Start trip</div>
+    <div class="b new">2 seat requests waiting: Yes / No</div>
+    <div class="b map">Map of that day</div>
+    <div class="b new">Plan: stops and times</div>
+    <div class="b new chips">Coming up: <span>Sun 15</span><span>Sun 22</span><span>Sun 29</span> &rsaquo; All trips</div>
+    <div class="row"><div class="b sec">Post a trip</div><div class="b sec">Offer a ride now</div></div>
+    <div class="tabs"><b>Home</b><span>Trips</span><span>Points</span><span>Me</span></div>
+  </div>
+  <div class="phone"><h4>TRIPS (idea)</h4>
+    <div class="b sec">Driver | Rider</div>
+    <div class="b sec">Upcoming | Past</div>
+    <div class="b sec">Calendar | List</div>
+    <div class="b pri">+ Post a trip</div>
+    <div class="b new">Calendar (D / R days)<br>tap a day: short list of that day</div>
+    <div class="b new">List: one line per trip<br>Sun Nov 8 · 7:40 am · Surrey to Richmond · 2 riders<br>(tap opens the trip page)</div>
+    <div class="tabs"><span>Home</span><b>Trips</b><span>Points</span><span>Me</span></div>
+  </div>
+  <div class="phone"><h4>TRIP PAGE (idea): opened from Trips or "Coming up"</h4>
+    <div class="b new"><b>Sun Nov 8, 7:40 am</b><br>Surrey to Richmond Centre</div>
+    <div class="b map">Map</div>
+    <div class="b new">Plan: stops and times</div>
+    <div class="b new">Confirmed riders</div>
+    <div class="b new">Seat requests: Yes / No</div>
+    <div class="row"><div class="b sec">Edit</div><div class="b sec">Skip this day</div></div>
+    <div class="b sec">Cancel this trip</div>
+  </div>
+</div>
+
+<div class="card legend"><span><i class="sw" style="background:#fdf1f0;border:1px solid #b42318"></i>confusing / duplicated</span><span><i class="sw" style="background:#e8f5f0;border:1px solid #0b7a5b"></i>new or moved</span><span><i class="sw" style="background:#0b7a5b"></i>main button</span></div>
+</main></body></html>
