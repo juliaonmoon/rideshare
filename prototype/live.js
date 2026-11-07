@@ -134,6 +134,7 @@
   document.addEventListener('toggle', (e) => { const t = e.target; if (t && t.dataset && t.dataset.fold) { if (t.open) foldOpen.add(t.dataset.fold); else foldOpen.delete(t.dataset.fold); } }, true);
   // Long explanations are not shown all the time: a small (i) opens them, and a few guide the person once, the first time they see them.
   const tipsSeen = () => { try { return JSON.parse(localStorage.getItem('rs_tips_seen') || '[]'); } catch (e) { return []; } };
+  const AUTO_TIPS = false;   // one-time guide pop-ups are switched off for now; the (i) buttons still open the text
   let tipOpen = false;
   function showTip(html, key) {
     if (tipOpen || !html) return; tipOpen = true;
@@ -152,7 +153,7 @@
       b.dataset.tipHtml = p.innerHTML; if (p.dataset.once) b.dataset.once = p.dataset.once;
       p.replaceWith(b);
     });
-    if (!tipOpen) { const seen = tipsSeen(), nb = [...document.querySelectorAll('button.tipbtn[data-once]')].find((x) => !seen.includes(x.dataset.once) && x.offsetParent !== null); if (nb) showTip(nb.dataset.tipHtml, nb.dataset.once); }
+    if (AUTO_TIPS && !tipOpen) { const seen = tipsSeen(), nb = [...document.querySelectorAll('button.tipbtn[data-once]')].find((x) => !seen.includes(x.dataset.once) && x.offsetParent !== null); if (nb) showTip(nb.dataset.tipHtml, nb.dataset.once); }
   }
   document.addEventListener('click', (e) => { const b = e.target.closest && e.target.closest('button.tipbtn'); if (b) showTip(b.dataset.tipHtml, b.dataset.once); });
   const fold = (id, summary, html) => '<details data-fold="' + id + '"' + (foldOpen.has(id) ? ' open' : '') + '><summary class="mut" style="cursor:pointer;padding:4px 0">' + summary + '</summary>' + html + '</details>';
