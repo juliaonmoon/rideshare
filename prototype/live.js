@@ -191,12 +191,12 @@
   function repeatBox(p, x) {
     const L = (id, d) => (p === 'ln' && LV[id] != null ? LV[id] : d);   // the Home form keeps its choices across refreshes
     const kind = L(p + '-rep', repeatKind(x)), kinds = ['none', 'daily', 'weekdays', 'weekly'].concat(RPOK ? ['biweekly', 'monthly'] : []);
-    const nth = +L(p + '-nth', x.repeat_nth || 1), dow = +L(p + '-dow', (x.repeat_days && x.repeat_days[0]) || 1), endKind = L(p + '-end', x.repeat_until ? 'date' : 'never');
+    const nth = +L(p + '-nth', x.repeat_nth || 1), dow = +L(p + '-dow', (x.repeat_days && x.repeat_days[0]) || 1), endKind = L(p + '-end', 'date');   // a repeating trip must end: on a date (3 months out until changed) or after a number of times
     return `<label>Repeat</label><select id="${p}-rep">${kinds.map((k) => '<option value="' + k + '"' + (k === kind ? ' selected' : '') + '>' + REP_LABELS[k] + '</option>').join('')}</select>
       <div id="${p}-rep-days"><label>On these days</label>${dayChips(p + '-days', x.repeat_days)}</div>
       <div id="${p}-rep-month"><label>Which day of the month</label><div class="row"><select id="${p}-nth">${['First', 'Second', 'Third', 'Fourth', 'Last'].map((n, i) => '<option value="' + (i + 1) + '"' + (i + 1 === nth ? ' selected' : '') + '>' + n + '</option>').join('')}</select><select id="${p}-dow">${RSD.FULL_DAYS.map((n, i) => '<option value="' + (i + 1) + '"' + (i + 1 === dow ? ' selected' : '') + '>' + n + '</option>').join('')}</select></div></div>
-      ${UNOK ? `<div id="${p}-rep-end"><label>Ends</label><select id="${p}-end"><option value="never"${endKind === 'never' ? ' selected' : ''}>Never</option><option value="date"${endKind === 'date' ? ' selected' : ''}>On a date</option><option value="count"${endKind === 'count' ? ' selected' : ''}>After a number of times</option></select>
-        <input type="date" id="${p}-until" min="${todayStr()}" value="${L(p + '-until', x.repeat_until || '')}"><input type="number" id="${p}-count" min="1" max="100" value="${L(p + '-count', 10)}" aria-label="Number of times"></div>` : ''}
+      ${UNOK ? `<div id="${p}-rep-end"><label>Ends</label><select id="${p}-end"><option value="date"${endKind !== 'count' ? ' selected' : ''}>On a date</option><option value="count"${endKind === 'count' ? ' selected' : ''}>After a number of times</option></select>
+        <input type="date" id="${p}-until" min="${todayStr()}" value="${L(p + '-until', x.repeat_until || RSD.addDays(todayStr(), 90))}"><input type="number" id="${p}-count" min="1" max="100" value="${L(p + '-count', 10)}" aria-label="Number of times"></div>` : ''}
       <div id="${p}-rep-prev" style="margin-top:8px">${fold(p + '-prev', '<span id="' + p + '-prevsum">Preview the days</span>', '<div id="' + p + '-prevbody"></div>')}</div>`;
   }
   function miniCal(ym, hits) {
@@ -235,7 +235,7 @@
     let until = null;
     if (days.length && UNOK && $(p + '-end')) {
       const ek = $(p + '-end').value;
-      if (ek === 'date') { until = $(p + '-until').value; if (!until) return { err: 'Pick the last day, or choose Never' }; if (start && until < start) return { err: 'The last day cannot be before the first day' }; }
+      if (ek === 'date') { until = $(p + '-until').value; if (!until) return { err: 'Pick the last day of the repeat' }; if (start && until < start) return { err: 'The last day cannot be before the first day' }; }
       else if (ek === 'count') { const n = Math.max(1, Math.min(100, +$(p + '-count').value || 0)); until = RSD.nthDate(start, days, every, nth, n); if (!until) return { err: 'That many repeats do not fit in the next 3 years' }; }
     }
     return { days, every, nth, until, extra: Object.assign(RPOK ? { repeat_every: every, repeat_nth: nth } : {}, UNOK ? { repeat_until: until } : {}) };
