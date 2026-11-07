@@ -40,6 +40,7 @@ Open https://supabase.com/dashboard/project/iivhfapvkseeomxtsrxf/sql/new, paste 
 | `supabase/migrations/049_repeating_trip_with_time_window.sql` | A repeating trip can have a time window; the first rider each day sets that day's leave time (needs 042, 046, 048) | **To run** |
 | `supabase/migrations/050_start_fresh.sql` | "Start fresh" in Settings: cancel everything coming up in one step, keep history (needs 025, 044) | **To run** |
 | `supabase/migrations/051_start_date_must_match.sql` | A repeating trip or request only runs on its repeat days; the start date counts only if it is one of them (needs 048) | **To run** |
+| `supabase/migrations/052_test_requests_for_recurring_trips.sql` | Test data: made-up riders ask for a seat on your repeating trips, each on a different date (needs 046, 048 and the sample data) | **To run** |
 
 How to copy a file to the clipboard: ask Claude, or open the file on GitHub, click "Copy raw file", then paste it into the SQL editor.
 
