@@ -59,7 +59,7 @@
       + '<select id="' + p + '-mode" style="display:none" aria-hidden="true"><option value="leave"' + (cur === 'arrive' ? '' : ' selected') + '>leave</option><option value="arrive"' + (cur === 'arrive' ? ' selected' : '') + '>arrive</option></select>'
       + '<input type="checkbox" id="' + p + '-flex"' + (on ? ' checked' : '') + ' style="display:none" aria-hidden="true">'
       + '<div class="row"><div><label>Date</label>' + dateHtml + '</div><div><label id="' + p + '-t-lbl">' + (on ? 'From' : cur === 'arrive' ? 'Arrive by' : 'Leave at') + '</label><input type="time" id="' + p + '-t" value="' + timeStr + '"></div></div>'
-      + '<div id="' + p + '-flexbox" style="' + (on ? '' : 'display:none') + '"><label id="' + p + '-t2-lbl">To</label><input type="time" id="' + p + '-t2" value="' + hmIn(to != null ? to : Math.min(1439, (from || 450) + 360)) + '"><p class="mut" style="margin:4px 0 0">Riders say when they are ready. The first rider you accept sets your leave time for that day. After that the day is fixed.</p></div>';
+      + '<div id="' + p + '-flexbox" style="' + (on ? '' : 'display:none') + '"><label id="' + p + '-t2-lbl">To</label><input type="time" id="' + p + '-t2" value="' + hmIn(to != null ? to : Math.min(1439, (from || 450) + 360)) + '"><p class="mut hint" data-once="flex-window" style="margin:4px 0 0">Riders say when they are ready. The first rider you accept sets your leave time for that day. After that the day is fixed.</p></div>';
   };
   // the point of a place field: the address chosen, else the neighbourhood
   const placePt = (id, area) => (PL[id] && !PL[id].isArea && PL[id].lat != null ? { lat: PL[id].lat, lng: PL[id].lng } : LOC[area]);
@@ -127,8 +127,33 @@
   let myBlocks = new Set();   // people I chose never to be matched with (migration 029)
   let MSOK = null, msgs = [], myRatings = {}, scores = {}, adminReports = [];   // migration 024 (messages, ratings, admin reports)
   let PCOK = null, cards = {};   // migration 021 (photo and car details shown to a matched driver or rider, Report a problem) is in place
+  const DEV = (() => { try { return localStorage.getItem('rs_dev') === '1'; } catch (e) { return false; } })();   // developer tools (route simulator, test cards) only when switched on
+  let offerOpen = false, tripsPane = 'cal';   // Home: the Offer a ride now form is open; Trips tab: 'cal' or 'list'
   const foldOpen = new Set();   // which collapsed lists the person opened (kept across screen refreshes)
   document.addEventListener('toggle', (e) => { const t = e.target; if (t && t.dataset && t.dataset.fold) { if (t.open) foldOpen.add(t.dataset.fold); else foldOpen.delete(t.dataset.fold); } }, true);
+  // Long explanations are not shown all the time: a small (i) opens them, and a few guide the person once, the first time they see them.
+  const tipsSeen = () => { try { return JSON.parse(localStorage.getItem('rs_tips_seen') || '[]'); } catch (e) { return []; } };
+  let tipOpen = false;
+  function showTip(html, key) {
+    if (tipOpen || !html) return; tipOpen = true;
+    const o = document.createElement('div'); o.id = 'rs-tip'; o.setAttribute('role', 'dialog'); o.setAttribute('aria-modal', 'true');
+    o.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:9999;padding:24px';
+    o.innerHTML = '<div style="background:var(--card);color:var(--ink);border-radius:14px;padding:18px;max-width:420px;width:100%;box-shadow:0 8px 30px rgba(0,0,0,.3)"><div style="font-size:16px;line-height:1.5">' + html + '</div><div style="margin-top:14px;text-align:right"><button type="button" class="btn" id="rs-tip-ok">Got it</button></div></div>';
+    const close = () => { o.remove(); tipOpen = false; if (key) { try { const a = tipsSeen(); if (!a.includes(key)) { a.push(key); localStorage.setItem('rs_tips_seen', JSON.stringify(a)); } } catch (e) { /* storage blocked */ } } };
+    o.addEventListener('click', (e) => { if (e.target === o || e.target.id === 'rs-tip-ok') close(); });
+    document.body.appendChild(o);
+  }
+  function tipify() {
+    document.querySelectorAll('p.hint').forEach((p) => {
+      if (p.closest('#rs-tip')) return;
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'tipbtn'; b.textContent = 'i'; b.setAttribute('aria-label', 'More information');
+      b.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;border:1px solid var(--mut);background:var(--card);color:var(--mut);font:italic 700 14px Georgia,serif;padding:0;cursor:pointer;margin:4px 0';
+      b.dataset.tipHtml = p.innerHTML; if (p.dataset.once) b.dataset.once = p.dataset.once;
+      p.replaceWith(b);
+    });
+    if (!tipOpen) { const seen = tipsSeen(), nb = [...document.querySelectorAll('button.tipbtn[data-once]')].find((x) => !seen.includes(x.dataset.once) && x.offsetParent !== null); if (nb) showTip(nb.dataset.tipHtml, nb.dataset.once); }
+  }
+  document.addEventListener('click', (e) => { const b = e.target.closest && e.target.closest('button.tipbtn'); if (b) showTip(b.dataset.tipHtml, b.dataset.once); });
   const fold = (id, summary, html) => '<details data-fold="' + id + '"' + (foldOpen.has(id) ? ' open' : '') + '><summary class="mut" style="cursor:pointer;padding:4px 0">' + summary + '</summary>' + html + '</details>';
   let prevMode = 'cal'; const prevMonthBy = {};   // the days preview on the trip forms: calendar or list
   let freshBusy = false;   // Start fresh is running
@@ -248,7 +273,7 @@
     const ov = document.createElement('div'); ov.id = 'mt-ov'; ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:12px;overflow:auto';
     const hasMap = !!(window.google && google.maps);
     ov.innerHTML = '<div style="background:var(--card);color:var(--ink);border-radius:14px;padding:16px;max-width:460px;width:100%"><h2 style="margin:0 0 6px">Where should your driver meet you?</h2>'
-      + (hasMap ? '<p class="mut" style="margin:0 0 8px">Move the pin, or tap the map, to the exact spot.</p><div id="mt-map" style="height:260px;border-radius:10px;background:var(--line)"></div>' : '<p class="mut">The map is not available right now. Use your current location, and add a note.</p>')
+      + (hasMap ? '<p class="mut" style="margin:0 0 8px">Move the pin, or tap the map, to the exact spot.</p><div id="mt-map" style="height:260px;border-radius:10px;background:var(--line)"></div>' : '<p class="mut hint">The map is not available right now. Use your current location, and add a note.</p>')
       + '<div style="margin:8px 0"><button class="btn ghost" id="mt-here">Use my current location</button></div>'
       + '<label>Note for the driver (optional)</label><textarea id="mt-note" rows="2" maxlength="200" placeholder="For example: outside the Tim Hortons, by the bus stop" style="' + INPUT + '">' + esc(x.meet_note || '') + '</textarea>'
       + '<p class="warn" id="mt-msg" role="alert"></p><div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="mt-save">Save</button>' + (x.meet_lat != null || x.meet_note ? '<button class="btn ghost" id="mt-clear">Remove</button>' : '') + '<button class="btn ghost" id="mt-cancel">Cancel</button></div></div>';
@@ -391,7 +416,7 @@
     const rows = adminReports.length ? adminReports.map((r) => '<div style="padding:8px 0;border-top:1px solid var(--line)"><b>' + esc(r.reported_name) + '</b> reported by ' + esc(r.reporter_name) + ' <span class="tag">' + esc(String(r.reason).replace(/_/g, ' ')) + '</span>' + (r.reported_blocked ? ' <span class="tag">blocked</span>' : '')
       + '<div class="mut">' + esc(r.details || 'No details') + ' &middot; ' + esc(new Date(r.created_at).toLocaleString()) + ' &middot; ' + r.reports_about_them + ' report' + (r.reports_about_them == 1 ? '' : 's') + ' about them</div>'
       + '<div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn ghost" data-adm="' + r.id + '|0">Mark handled</button><button class="btn ghost" data-adm="' + r.id + '|1">Handle and block ' + esc(r.reported_name) + '</button>' + (r.reported_blocked ? '<button class="btn ghost" data-unblock="' + r.reported_id + '">Unblock</button>' : '') + '</div></div>').join('') : '<p class="mut">No open reports.</p>';
-    return card('Reports to review (admin)', '<p class="mut">Only you see this. Blocking stops that account posting trips or requests, getting seats, accepting riders and messaging.</p>' + rows);
+    return card('Reports to review (admin)', '<p class="mut hint">Only you see this. Blocking stops that account posting trips or requests, getting seats, accepting riders and messaging.</p>' + rows);
   };
   // photo (and car plate for drivers) must be set before asking for or offering a ride
   const needProfile = (kind) => { if (!PCOK || !user) return false; const c = cards[user.id] || {}; const miss = !c.photo ? 'Add your photo first. It is at the top of the Me tab.' : (kind === 'drive' && !c.car_plate ? 'Add your car details first. They are at the top of the Me tab.' : ''); if (!miss) return false; toast(miss); const b = document.getElementById('nb-me'); if (b) b.click(); return true; };
@@ -620,7 +645,7 @@
     }
     bar.innerHTML = `<div class="card"><h2>Sign in</h2>
       <button class="btn" id="lv-google" style="width:100%;padding:12px;font-size:15px">Continue with Google</button>
-      <p class="mut">Others only see your first name and neighbourhood-level areas. Or use an email link:</p>
+      <p class="mut hint">Others only see your first name and neighbourhood-level areas. Or use an email link:</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap"><input type="email" id="lv-email" autocomplete="email" placeholder="you@example.com" style="${INPUT};flex:1;min-width:200px"><button class="btn" id="lv-send">Email me a sign-in link</button></div>
       <p class="mut" id="lv-note"></p></div>`;
     $('lv-google').onclick = async () => {
@@ -675,7 +700,7 @@
             + '<div style="margin-top:12px"><button class="btn" data-startnav="1" style="width:100%;padding:14px;font-size:17px">Start trip</button></div><div style="margin-top:12px"><button class="btn ghost" data-reset="trip">Cancel this trip</button></div>' };
       }
       return { stops: [{ loc: pt(curTrip, 'origin'), type: 'origin' }, { loc: pt(curTrip, 'dest'), type: 'dest' }],
-        html: '<p style="margin-top:0">' + (matches.some((x) => x.driver_id === user.id && x.ride_date === d && x.status === 'completed') ? '<b>All riders are dropped off.</b> Keep driving to <b>' : '<b>You are on your way.</b> Riders along your route can still ask for a seat. Keep driving to <b>') + esc(disp(curTrip, 'dest')) + '</b>.</p><div style="margin-top:12px"><button class="btn" data-reset="end" style="width:100%;padding:14px;font-size:17px">I have arrived: end trip</button></div><p class="mut" style="margin:8px 0 0">Tap this when you reach your destination. It turns off driving mode and takes the trip down.</p>' };
+        html: '<p style="margin-top:0">' + (matches.some((x) => x.driver_id === user.id && x.ride_date === d && x.status === 'completed') ? '<b>All riders are dropped off.</b> Keep driving to <b>' : '<b>You are on your way.</b> Riders along your route can still ask for a seat. Keep driving to <b>') + esc(disp(curTrip, 'dest')) + '</b>.</p><div style="margin-top:12px"><button class="btn" data-reset="end" style="width:100%;padding:14px;font-size:17px">I have arrived: end trip</button></div><p class="mut hint" style="margin:8px 0 0">Tap this when you reach your destination. It turns off driving mode and takes the trip down.</p>' };
     }
     let dr = driverObj(curTrip, d);
     if (curTrip.live) { const n = new Date(); dr = Object.assign({}, dr, { departMin: n.getHours() * 60 + n.getMinutes() + 2 }); }   // an Offer a ride now trip leaves about now
@@ -717,7 +742,7 @@
     // Who is riding with me: name, tags, how they pay, where they get in and out.
     const pax = acc.map((x) => { const q = withExact(x, reqById[x.request_id]);
       return '<div style="padding:8px 0;border-top:1px solid var(--line)"><b>' + nm(x.rider_id) + '</b>' + badge(x.rider_id, 'rider') + tagsFor(x.rider_id, 'rider') + '<div class="mut">' + (x.pay_with === 'points' ? x.points + ' pts' : 'cash gas-share') + (q ? ' &middot; ' + esc(disp(q, 'pickup')) + ' to ' + esc(disp(q, 'dropoff')) : '') + '</div>' + meetLine(x) + (msgButton(x) || meetButton(x) ? '<div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap">' + msgButton(x) + meetButton(x) + '</div>' : '') + '</div>'; }).join('');
-    const paxBlock = '<div style="margin-top:12px"><b>' + (acc.length > 1 ? 'Passengers' : 'Passenger') + '</b>' + pax + '<p class="mut" style="margin:8px 0 0">For privacy the app only keeps the street or place name (within about 100 m), never a house number. Use <b>Meeting spot</b> to agree the exact place with each rider.</p></div>';
+    const paxBlock = '<div style="margin-top:12px"><b>' + (acc.length > 1 ? 'Passengers' : 'Passenger') + '</b>' + pax + '<p class="mut hint" style="margin:8px 0 0">For privacy the app only keeps the street or place name (within about 100 m), never a house number. Use <b>Meeting spot</b> to agree the exact place with each rider.</p></div>';
     // Detour: how much extra time and distance the riders add, against the driver's limits
     const baseStops = [{ loc: dr.origin, type: 'origin' }, { loc: dr.dest, type: 'dest' }], limMin = Math.max(dr.maxTotal == null ? dr.maxDetour : dr.maxTotal, dr.maxDetour);
     const limKm = dr.maxKm == null && dr.maxTotalKm == null ? null : Math.max(dr.maxTotalKm == null ? dr.maxKm : dr.maxTotalKm, dr.maxKm || 0);
@@ -726,9 +751,9 @@
     const over = totMin > limMin + 0.5 || (limKm != null && totKm > limKm + 0.1);
     const detourBlock = '<div style="margin-top:12px;padding:10px 12px;border-radius:10px;background:' + (over ? '#fdecea' : 'var(--acc2)') + '"><b>Detour: +' + Math.round(totMin) + ' min</b> of ' + limMin + ' allowed' + (limKm != null ? ' &middot; <b>+' + totKm.toFixed(1) + ' km</b> of ' + limKm + ' allowed' : (totKm > 0.05 ? ' &middot; +' + totKm.toFixed(1) + ' km' : '')) + (parts ? '<div class="mut" style="margin-top:2px">' + parts + '</div>' : '') + (over ? '<div class="warn" style="margin-top:2px">Over your limit. Accepted riders stay on the trip.</div>' : '') + '</div>';
     const note = started
-      ? '<p class="mut" style="margin:8px 0 0">This is the next step. The same button also appears in your phone notification, so you can stay in Google Maps. </p><button class="btn ghost" data-startnav="1" style="margin-top:6px">Open Google Maps again</button>'
-      : !isToday ? '<p class="mut" style="margin:8px 0 0">On the day, open the app and tap <b>Start trip</b> (or <b>Leave now</b>). This plan updates by itself when you accept or cancel a rider.</p>'
-      : '<p class="mut" style="margin:8px 0 0">Start trip tells your riders you are on your way and opens Google Maps with all of these stops. If Maps is already navigating, tap X in Maps first.</p>';
+      ? '<p class="mut hint" style="margin:8px 0 0">This is the next step. The same button also appears in your phone notification, so you can stay in Google Maps. </p><button class="btn ghost" data-startnav="1" style="margin-top:6px">Open Google Maps again</button>'
+      : !isToday ? '<p class="mut hint" style="margin:8px 0 0">On the day, open the app and tap <b>Start trip</b> (or <b>Leave now</b>). This plan updates by itself when you accept or cancel a rider.</p>'
+      : '<p class="mut hint" style="margin:8px 0 0">Start trip tells your riders you are on your way and opens Google Maps with all of these stops. If Maps is already navigating, tap X in Maps first.</p>';
     return { stops, html: '<p class="mut" style="margin-top:0">' + (started ? 'Your trip is under way. About ' : isToday ? 'Review this, then tap Start trip. About ' : 'Your plan for <b>' + esc(RSD.label(d)) + '</b>: leave at <b>' + clk(dr.departMin) + '</b>. About ') + fmtMin(ev.totalMin) + ' in all' + (extra ? ', ' + extra + ' min more than driving alone' : '') + '.</p>' + rows
       + detourBlock
       + paxBlock
@@ -813,14 +838,14 @@
       const here = !myLiveTrip && myTrip && t.id === myTrip.id;
       return `<div class="item"><div><b>${esc(disp(t, 'origin'))}</b> to <b>${esc(disp(t, 'dest'))}</b><div class="mut">${tripWhen(t)}${acc ? ' &middot; ' + acc + ' accepted' : ''}${asks ? ' &middot; <b>' + asks + ' asking</b>' : ''}</div></div><div>${here ? '<span class="mut">Showing</span>' : '<button class="btn ghost" data-seltrip="' + t.id + '">Show</button>'}</div></div>`;
     }).join('');
-    return card('My trips (' + myTrips.length + ')', fold('f-mytrips', myTrips.length + ' trips &middot; tap to show', rows) + '<p style="margin-top:8px"><button class="btn ghost" data-newtrip="1">Post another trip</button></p>');
+    return card('My trips (' + myTrips.length + ')', fold('f-mytrips', myTrips.length + ' trips &middot; tap to show', rows));
   }
   // Home: the way out of everything at once (only shown when there is something upcoming)
   function cancelAllCard() {
     if (!user) return '';
     const t0 = todayStr(), any = myTrips.length || myLiveTrip || myReq || myLiveReq || matches.some((x) => (x.status === 'accepted' || x.status === 'requested') && !x.picked_up_at && x.ride_date >= t0 && (x.driver_id === user.id || x.rider_id === user.id));
     if (!any) return '';
-    return card('Cancel all upcoming', '<p class="mut">Cancels all your upcoming trips, ride requests and booked rides in one go. Anyone booked with you is told and gets their points back. Your history stays.</p><p><button class="btn ghost" data-cancelall="1" style="color:var(--bad);border-color:var(--bad)">Cancel all my upcoming trips and rides</button></p>');
+    return card('Cancel all upcoming', '<p class="mut hint">Cancels all your upcoming trips, ride requests and booked rides in one go. Anyone booked with you is told and gets their points back. Your history stays.</p><p><button class="btn ghost" data-cancelall="1" style="color:var(--bad);border-color:var(--bad)">Cancel all my upcoming trips and rides</button></p>');
   }
   function driverTop() { return tripsList() + driverTopOne() + cancelAllCard(); }
   function driverTopOne() {
@@ -832,7 +857,7 @@
     const isToday = d === todayStr();
     const line = asks ? `<b>${asks} rider${asks > 1 ? 's' : ''} asked for a seat.</b> Tap <b>See riders</b> to accept.` : acc ? `<b>${acc} rider${acc > 1 ? 's' : ''} accepted.</b> ${isToday ? 'Tap <b>Start trip</b> when you set off.' : 'You can start on the day of the trip.'}` : 'No riders yet. They will show up here when they ask for a seat.';
     return card('Your trip', `<p><b>${esc(disp(curTrip, 'origin'))}</b> to <b>${esc(disp(curTrip, 'dest'))}</b></p><p class="mut">${tripWhen(curTrip)}</p><p>${line}</p>
-      <div class="row2">${isToday ? '<button class="btn" data-startnav="1">Start trip</button> ' : ''}${goTo(asks ? 'seat-requests' : acc ? (isToday ? 'plan-wrap' : 'riding-with-me') : 'ld-lists')}See riders</button> <button class="btn ghost" data-edit="trip">Edit trip</button> ${myTrips.length < 2 ? '<button class="btn ghost" data-newtrip="1">Post another trip</button> ' : ''}<button class="btn ghost" data-reset="trip">Cancel this trip</button></div>`);
+      <div class="row2">${isToday ? '<button class="btn" data-startnav="1">Start trip</button> ' : ''}${goTo(asks ? 'seat-requests' : acc ? (isToday ? 'plan-wrap' : 'riding-with-me') : 'ld-lists')}See riders</button> <button class="btn ghost" data-edit="trip">Edit trip</button> <button class="btn ghost" data-reset="trip">Cancel this trip</button></div>`);
   }
   // Days of my regular request that have no driver any more (the driver cancelled, or I ended the booking). The rider chooses the new driver.
   function lostRides() {
@@ -966,21 +991,22 @@
         + (DKOK ? '<label>Extra km I accept for my whole trip (optional)</label><input type="number" id="ln-dk" min="0" max="200" step="0.5" placeholder="no limit" value="' + val('ln-dk', sx.d_detour_km == null ? '' : sx.d_detour_km) + '">' : '')
         + '<label>Payment I accept</label><select id="ln-a">' + [['either', 'Points or cash'], ['points', 'Points only'], ['cash', 'Cash gas-share only']].map(([v, l]) => '<option value="' + v + '"' + (v === (LV['ln-a'] || sx.d_accepts) ? ' selected' : '') + '>' + l + '</option>').join('') + '</select></details>'
         + '<div style="margin-top:12px"><button class="btn" id="ln-review" style="width:100%;padding:12px;font-size:16px">Review trip</button></div>';
-      const now = '<p class="mut" style="margin:12px 0 0">Riders along your route can ask for a seat, and you get a phone alert for each one. You can switch this off any time.</p><div style="margin-top:12px"><button class="btn" id="ln-nav" style="width:100%;padding:14px;font-size:17px">Leave now</button></div><div style="margin-top:8px;text-align:center"><button class="btn ghost" data-tmode="later">Plan a trip for later instead</button></div>';
+      const now = '<p class="mut hint" data-once="leave-now" style="margin:12px 0 0">Riders along your route can ask for a seat, and you get a phone alert for each one. You can switch this off any time.</p><div style="margin-top:12px"><button class="btn" id="ln-nav" style="width:100%;padding:14px;font-size:17px">Leave now</button></div><div style="margin-top:8px;text-align:center"><button class="btn ghost" data-tmode="later">Plan a trip for later instead</button></div>';
       return share + card('Where are you driving?', placeField('ln-o', 'From', null, 'origin', o) + placeField('ln-d', 'To', null, 'dest', d)
         + (tripMode === 'later' ? '<p class="mut" style="margin:12px 0 0">Plan a trip for later. <button class="btn ghost" data-tmode="now" style="padding:4px 10px">Leave now instead</button></p>' + later : now) + '<p class="warn" id="ln-msg" role="alert"></p>');
     }
-    return share + card('Not on a schedule? Offer a ride now', `<p class="mut">For a spur-of-the-moment drive: no date or time. Switch it on and riders along your route can ask for a seat. You get a phone alert for each request, even before you leave. It stays on until you switch it off (or after 12 hours). Already posted a trip? Use <b>Start trip</b> instead.</p>
+    if (!offerOpen) return share + card('Driving', '<div class="row2"><button class="btn" data-offeropen="1">Offer a ride now</button> <button class="btn ghost" data-newtrip="1">Post a trip</button></div>');
+    return share + card('Offer a ride now', `<p class="mut hint" data-once="offer-now">For a spur-of-the-moment drive: no date or time. Switch it on and riders along your route can ask for a seat. You get a phone alert for each request, even before you leave. It stays on until you switch it off (or after 12 hours). Already posted a trip? Use <b>Start trip</b> instead.</p>
       ${placeField('ln-o', 'From', myTrip, 'origin', o)}
       ${placeField('ln-d', 'To', myTrip, 'dest', d)}
-      <div style="margin-top:10px"><button class="btn" id="ln-go" style="width:100%;padding:12px;font-size:16px">Offer a ride now</button></div><p class="warn" id="ln-msg" role="alert"></p>`);
+      <div style="margin-top:10px"><button class="btn" id="ln-go" style="width:100%;padding:12px;font-size:16px">Offer a ride now</button> <button class="btn ghost" data-offerclose="1" style="width:100%;margin-top:8px">Close</button></div><p class="warn" id="ln-msg" role="alert"></p>`);
   }
   const rideToggle = () => '<div style="display:flex;gap:8px;margin:0 0 12px">' + [['now', 'Now'], ['later', 'Schedule']].map(([m, l]) => '<button type="button" class="btn' + (rideMode === m ? '' : ' ghost') + '" data-rmode="' + m + '" style="flex:1;min-width:0">' + l + '</button>').join('') + '</div>';
   function riderNow() {
     if (myLiveReq) return card('You are looking for a ride now', `<p><b>${esc(disp(myLiveReq, 'pickup'))}</b> to <b>${esc(disp(myLiveReq, 'dropoff'))}</b></p><p class="mut">Visible to drivers for ${minsLeft(myLiveReq.expires_at)} more minutes.</p><p><button class="btn ghost" data-stoplive="req">Stop</button></p>`);
     if (rideMode === 'later') return '';
     const p = nowSel['rn-p'] || (myReq && myReq.pickup) || 'Whalley (Surrey)', d = nowSel['rn-d'] || (myReq && myReq.dropoff) || 'Brentwood (Burnaby)', pay = nowSel['rn-pay'] || 'points';
-    return card('Ask for a ride', `${rideToggle()}<p class="mut">Leaving now. Your request stays visible to matching drivers for 20 minutes.</p>
+    return card('Ask for a ride', `${rideToggle()}<p class="mut hint">Leaving now. Your request stays visible to matching drivers for 20 minutes.</p>
       ${placeField('rn-p', 'Pick me up at', myReq, 'pickup', p)}
       ${placeField('rn-d', 'Drop me at', myReq, 'dropoff', d)}
       <label>I'll pay with</label><select id="rn-pay"><option value="points" ${pay === 'points' ? 'selected' : ''}>Points</option><option value="cash" ${pay === 'cash' ? 'selected' : ''}>Cash gas-share</option><option value="either" ${pay === 'either' ? 'selected' : ''}>Either</option></select>
@@ -1012,7 +1038,7 @@
       if (t && pt(t, 'origin') && pt(t, 'dest')) plan = ' &middot; without stops about ' + fmtMin(RS.minutes(pt(t, 'origin'), pt(t, 'dest'), t.depart_min, dowOf(d.ride_date)));
       return '<div style="padding:6px 0;border-top:1px solid var(--line)"><b>' + (live ? 'Drive in progress' : esc(RSD.label(d.ride_date))) + '</b> ' + fmtMin((end - start) / 60000) + ' &middot; ' + (+d.distance_km).toFixed(1) + ' km' + (riders ? ' &middot; ' + riders + ' rider' + (riders > 1 ? 's' : '') : '') + plan + '</div>';
     }).join('');
-    return card('Your drives', rows + '<p class="mut">Time includes pickups and waiting. Distance is counted while your phone shares its location during a ride.</p>');
+    return card('Your drives', rows + '<p class="mut hint">Time includes pickups and waiting. Distance is counted while your phone shares its location during a ride.</p>');
   };
   const rideStats = (m) => (m.picked_up_at && m.dropped_off_at ? '<p>Your ride: ' + fmtMin((Date.parse(m.dropped_off_at) - Date.parse(m.picked_up_at)) / 60000) + (+m.ride_km > 0 ? ' &middot; ' + (+m.ride_km).toFixed(1) + ' km' : '') + '</p>' : '');
   // Test tools (only for accounts listed in test_accounts): a made-up rider asks for a seat on my latest trip, now or after a delay.
@@ -1064,7 +1090,7 @@
     if (shouldShare()) { if (shareWatch == null) startShare(); } else if (shareWatch != null && !(shareWatch === 'native-pending' || (driveSession && shareWatch === 'native'))) stopShare(true);
   }
   const ago = (ms) => (ms ? Math.max(0, Math.round((Date.now() - ms) / 1000)) + ' s ago' : 'not yet');
-  function sharingInner() { if (!shareState.err && nativeLoc()) return `<p>Riders on this ride can see you on their map, even while Google Maps is open.</p><p class="mut">Android shows a small "RideShare is sharing your location" notification while this is on. It stops by itself when the ride ends.</p>`; return shareState.err ? `<p class="warn">${esc(shareState.err)}</p>` : `<p>Riders on this ride can see you on their map. Last sent: ${ago(shareState.lastOk)}.</p><p class="mut">Keep this screen open. If you use Google Maps for directions, put RideShare and Google Maps side by side (split screen) so sharing keeps working.</p>`; }
+  function sharingInner() { if (!shareState.err && nativeLoc()) return `<p>Riders on this ride can see you on their map, even while Google Maps is open.</p><p class="mut hint">Android shows a small "RideShare is sharing your location" notification while this is on. It stops by itself when the ride ends.</p>`; return shareState.err ? `<p class="warn">${esc(shareState.err)}</p>` : `<p>Riders on this ride can see you on their map. Last sent: ${ago(shareState.lastOk)}.</p><p class="mut hint">Keep this screen open. If you use Google Maps for directions, put RideShare and Google Maps side by side (split screen) so sharing keeps working.</p>`; }
   const sharingCard = () => (user && shouldShare() ? `<div class="card" id="share-card"><h2>Sharing your location</h2><div id="share-inner">${sharingInner()}</div></div>` : '');
   function paintSharing() { const e = $('share-inner'); if (e) e.innerHTML = sharingInner(); }
 
@@ -1149,7 +1175,7 @@
     const pr = RS.priceRoute(stops, dr.cpk);
     const summary = card(RSD.label(viewD) + '\'s trip', `<div class="stat"><div><span class="mut">Cost if driving alone</span><b>${RS.money(RS.priceRoute(RS.buildRoute(dr, []), dr.cpk).total)}</b></div><div><span class="mut">Your share now</span><b>${RS.money(pr.driverShare)}</b></div></div>
       <p class="mut">${RS.km(stops).toFixed(1)} km total &middot; riders pay only their share, never more.</p>
-      <button class="btn ghost" id="ld-start">Preview route (watch the car)</button> <button class="btn ghost" id="ld-stop">Stop preview</button>
+      ${DEV ? '<button class="btn ghost" id="ld-start">Preview route (watch the car)</button> <button class="btn ghost" id="ld-stop">Stop preview</button>' : ''}
       <p class="mut" style="margin-top:8px">${viewD === todayStr() ? 'When you set off, tap Start trip at the top. It opens Google Maps with your destination and your riders as stops, and tells your riders you are on the way.' : 'Start trip is available on the day of the trip.'}</p>`);
     const reqs = card('Seat requests', inc.length ? inc.map((x) => `<div style="padding:8px 0;border-top:1px solid var(--line)"><b>${nm(x.rider_id)}</b>${badge(x.rider_id, 'rider')} <span class="mut">pays ${x.pay_with === 'points' ? x.points + ' pts' : 'cash gas-share'}</span>${detourLine(reqFit(x))}${leaveLine(x.id)}
         <div style="margin-top:6px"><button class="btn" data-acc="${x.id}">Accept</button> <button class="btn ghost" data-dec="${x.id}">Decline</button></div></div>`).join('') : '<p class="mut">None yet. Riders ask you for a seat; you accept here.</p>');
@@ -1219,7 +1245,7 @@
       const btn = st ? `<span class="tag">${esc(st.status === 'requested' ? 'seat requested' : statusText(st.status))}</span>${st.status === 'requested' ? ` <button class="btn ghost" data-can="${st.id}">Cancel</button>` : ''}` : `<button class="btn" data-req="${t.id}" data-rq="${curReq.id}" data-pay="${payWith}" data-pts="${pts}" data-date="${viewR}" data-dmin="${Math.max(0, m.addedDetour).toFixed(1)}" data-dkm="${Math.max(0, m.addedKm || 0).toFixed(1)}">Request &middot; ${price}</button>`;
       list += `<div style="padding:8px 0;border-top:1px solid var(--line)"><b>${nm(t.user_id)}</b>${badge(t.user_id, 'driver')}${scoreTag(t.user_id)}${tagsFor(t.user_id, 'driver')}${t.live ? ' <span class="tag">leaving now</span>' : ''} <span class="mut">leaves ${clk(dr.departMin)}${isFlexFree(t) ? ' (the driver is flexible: ' + clk(t.flex_from) + ' to ' + clk(t.flex_to) + ')' : ''} &middot; picks you up ${clk(m.pickupAt)} &middot; drops ${clk(m.dropAt)} &middot; adds ${Math.round(m.addedDetour)} min for them</span><div style="margin-top:6px">${btn}</div></div>`;
     });
-    html += card('Drivers going your way on ' + esc(RSD.label(viewR)), (list ? '<p class="mut" style="margin:0 0 6px">These prices are estimates. When you ask for a seat, RideShare works out the final extra time and price itself, using live traffic. Your price goes down as more riders join.</p>' : '') + (list || '<p class="mut">No drivers match on this date. Check back soon.</p>'));
+    html += card('Drivers going your way on ' + esc(RSD.label(viewR)), (list ? '<p class="mut hint" style="margin:0 0 6px">These prices are estimates. When you ask for a seat, RideShare works out the final extra time and price itself, using live traffic. Your price goes down as more riders join.</p>' : '') + (list || '<p class="mut">No drivers match on this date. Check back soon.</p>'));
     const sig = routeSig(mapStops) + viewR; if (mapSig.r !== sig) { mapSig.r = sig; window.RS_UI.drawMap('map-lr', mapStops); }
     return html;
   }
@@ -1263,7 +1289,7 @@
     const driverRows = asDriver.length ? asDriver.map((x) => row(x, false)).join('') : '<p class="mut">No upcoming passengers.</p>';
     const past = matches.filter((x) => ['completed', 'cancelled', 'no_show', 'declined'].includes(x.status)).slice(0, 8);
     const pastRows = past.length ? past.map((x) => { const isRider = x.rider_id === user.id; return `<div style="padding:6px 0;border-top:1px solid var(--line)">${when(x)} <span class="tag">${esc(statusText(x.status))}</span><div class="mut">${isRider ? 'Driver' : 'Rider'} ${nm(isRider ? x.driver_id : x.rider_id)} &middot; ${x.pay_with === 'points' ? x.points + ' pts' : 'cash'}${x.refunded ? ' &middot; ' + x.refunded + ' pts returned' : ''}</div></div>`; }).join('') : '<p class="mut">Nothing yet.</p>';
-    const policy = `<p class="mut">Points are held when a driver accepts a rider, and paid to the driver after the ride. Cash rides: no points move.</p>
+    const policy = `<p class="mut hint">Points are held when a driver accepts a rider, and paid to the driver after the ride. Cash rides: no points move.</p>
       <p style="margin:10px 0 2px"><b>If you are the rider</b></p><ul class="mut" style="margin:4px 0 0 18px;padding:0"><li>Cancel more than 2 hours before pickup: you get all your points back.</li><li>Cancel within 2 hours: your first late cancel each month is free. After that, the driver keeps half of the points reserved for this ride.</li><li>You cannot cancel after the pickup time.</li></ul>
       <p style="margin:10px 0 2px"><b>If you are the driver</b></p><ul class="mut" style="margin:4px 0 0 18px;padding:0"><li>If you cancel a pickup, the rider gets all their points back.</li><li>If the rider is not at the pickup spot when you get there, tap Rider isn't here (not before their pickup time). The ride closes as a missed pickup and you keep the points.</li></ul>`;
     // Past trips: my finished trips (route, date, who rode, distance) and the rides I took as a rider
@@ -1306,16 +1332,18 @@
       + '<p class="mut" style="margin-top:8px;font-size:12px"><b>D</b> = you drive (number = riders booked), <b>R</b> = you ride. Tap a day to see it.</p>' + dayBox);
     const segT = (v, label) => '<button type="button" class="btn' + (tripsView === v ? '' : ' ghost') + '" data-tview="' + v + '" style="flex:1;min-width:0">' + label + '</button>';
     const toggle = '<div style="display:flex;gap:8px;margin:0 0 12px">' + segT('driver', 'As a driver') + segT('rider', 'As a rider') + '</div>';
+    const paneSeg = (v, l) => '<button type="button" class="btn' + (tripsPane === v ? '' : ' ghost') + '" data-tpane="' + v + '" style="flex:1;min-width:0">' + l + '</button>';
+    const bar = '<div style="display:flex;gap:8px;margin:0 0 12px">' + paneSeg('cal', 'Calendar') + paneSeg('list', 'List') + '</div>' + (tripsView === 'driver' ? '<p><button class="btn" data-newtrip="1" style="width:100%">+ Post a trip</button></p>' : '<p><button class="btn" data-askride="1" style="width:100%">+ Ask for a ride</button></p>');
     window.__rules = card('Cancellation rules', policy);
     if (tripsView === 'rider') {
-      const comingR = (curReq ? card('Upcoming ride request', mineReq) : '') + (asRider.length ? card('Upcoming rides', fold('f-up-rides', asRider.length + (asRider.length === 1 ? ' ride' : ' rides') + ' &middot; tap to show', riderRows)) : '')
+      const comingR = (curReq ? card('Upcoming ride request', mineReq) : '') + (asRider.length ? card('Upcoming rides', riderRows) : '')
         || card('Upcoming rides', '<p class="mut">Nothing yet. Ask for a ride on <b>Home</b> and your driver will show up here.</p>');
-      return toggle + lostBanner() + calCard + comingR + card('Past rides', rideRows ? fold('f-past-rides', 'Show past rides', rideRows) : '<p class="mut">Nothing yet. Rides you have taken show up here.</p>');
+      return toggle + bar + lostBanner() + (tripsPane === 'cal' ? calCard : comingR) + card('Past rides', rideRows ? fold('f-past-rides', 'Show past rides', rideRows) : '<p class="mut">Nothing yet. Rides you have taken show up here.</p>');
     }
     const askN = asDriver.filter((x) => x.status === 'requested').length;
-    const comingD = (tripList.length ? card(tripList.length > 1 ? 'Upcoming trips' : tripList[0].live ? 'Offering seats now' : 'Upcoming trip', fold('f-up-trips', tripList.length + (tripList.length === 1 ? ' trip' : ' trips') + ' &middot; tap to show', mineTrip)) : '') + (asDriver.length ? card('Upcoming riders', fold('f-up-riders', asDriver.length + (asDriver.length === 1 ? ' rider' : ' riders') + (askN ? ' (' + askN + ' asking)' : '') + ' &middot; tap to show', driverRows)) : '')
+    const comingD = (tripList.length ? card(tripList.length > 1 ? 'Upcoming trips' : tripList[0].live ? 'Offering seats now' : 'Upcoming trip', mineTrip) : '') + (asDriver.length ? card('Upcoming riders', driverRows) : '')
       || card('Upcoming trip', '<p class="mut">Nothing yet. Switch on <b>Offer seats to riders</b> on Home, or post a trip for a set day and time.</p>');
-    return toggle + calCard + comingD + card('Past trips', tripRows ? fold('f-past-trips', 'Show past trips', tripRows) : '<p class="mut">Nothing yet. Finished trips show up here.</p>');
+    return toggle + bar + (tripsPane === 'cal' ? calCard : comingD) + card('Past trips', tripRows ? fold('f-past-trips', 'Show past trips', tripRows) : '<p class="mut">Nothing yet. Finished trips show up here.</p>');
   }
 
   // ---------- settings tab ----------
@@ -1325,7 +1353,7 @@
     const chk = (id, on, text) => '<label style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="' + id + '"' + (on ? ' checked' : '') + '> ' + text + '</label>';
     const optIn = (id, v, max) => '<input type="number" id="' + id + '" min="0" max="' + max + '" step="0.5" placeholder="no limit" value="' + (v == null ? '' : v) + '" style="' + INPUT + '">';
     const num = (id, v, max) => '<input type="number" id="' + id + '" min="0" max="' + max + '" value="' + v + '" style="' + INPUT + '">';
-    return adminCard() + profileCard() + blockedCard() + card('Driver settings', '<p class="mut">Defaults for new trips. Changing them here does not change trips you already posted.</p>'
+    return adminCard() + profileCard() + blockedCard() + card('Driver settings', '<p class="mut hint">Defaults for new trips. Changing them here does not change trips you already posted.</p>'
       + '<label>Extra minutes I accept for my whole trip</label>' + num('ls-detour', x.d_total_detour == null ? x.d_detour : x.d_total_detour, 60)
       + (DKOK ? '<label>Extra km I accept for my whole trip <span class="mut">(optional, empty = no distance limit)</span></label>' + optIn('ls-detourkm', x.d_total_detour_km == null ? x.d_detour_km : x.d_total_detour_km, 400) + '<p class="mut">A request has to fit every limit you set: minutes and kilometres.</p>' : '')
       + '<label>Payment I accept</label>' + sel('ls-accepts', [['either', 'Points or cash'], ['points', 'Points only'], ['cash', 'Cash gas-share only']], x.d_accepts)
@@ -1339,12 +1367,12 @@
       + '<label>My ride style</label>' + sel('ls-rchat', CHAT, x.r_chat)
       + chk('ls-rpets', x.r_pets, 'I travel with a pet')
       + '<div style="margin-top:12px"><button class="btn" id="ls-save-r">Save rider settings</button></div>')
-      + (isTest ? card('Admin and test tools (only you see this)', '<p><b>Test mode: ' + (testMode ? 'ON' : 'OFF') + '</b></p><p class="mut">While test mode is ON and driving mode is running (after Start trip), a made-up rider asks for a seat on your trip about every 2 minutes, so you get alerts while you navigate.</p><p><button class="btn' + (testMode ? ' ghost' : '') + '" id="ts-mode">' + (testMode ? 'Turn test mode OFF' : 'Turn test mode ON') + '</button></p><hr style="border:0;border-top:1px solid var(--line);margin:12px 0"><p class="mut">Or send one test request by hand. Pick a delay if you want to start driving first.</p><label>Send it</label><select id="ts-delay" style="' + INPUT + '"><option value="0">Right now</option><option value="30" selected>In 30 seconds</option><option value="60">In 1 minute</option><option value="120">In 2 minutes</option></select><div style="margin-top:10px"><button class="btn" id="ts-send">Send a test request</button> <button class="btn ghost" id="ts-clear">Remove test requests</button></div><hr style="border:0;border-top:1px solid var(--line);margin:12px 0"><p class="mut">Pretend to drive without moving. First tap <b>Start trip</b> in the Trip plan, then:</p><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn ghost" id="ts-fake-pick">Pretend I am at the next pickup</button><button class="btn ghost" id="ts-fake-drop">Pretend I am at the next drop-off</button><button class="btn ghost" id="ts-fake-off">Use my real GPS again</button></div><p class="mut" style="margin-top:10px">Test the leave-by reminders without a rider (keep Offer a ride now on):</p><button class="btn ghost" id="ts-leave-test">Test the leave-by reminder (due in 2 min)</button>') : '')
+      + (isTest ? card('Admin and test tools (only you see this)', '<p><b>Test mode: ' + (testMode ? 'ON' : 'OFF') + '</b></p><p class="mut hint">While test mode is ON and driving mode is running (after Start trip), a made-up rider asks for a seat on your trip about every 2 minutes, so you get alerts while you navigate.</p><p><button class="btn' + (testMode ? ' ghost' : '') + '" id="ts-mode">' + (testMode ? 'Turn test mode OFF' : 'Turn test mode ON') + '</button></p><hr style="border:0;border-top:1px solid var(--line);margin:12px 0"><p class="mut hint">Or send one test request by hand. Pick a delay if you want to start driving first.</p><label>Send it</label><select id="ts-delay" style="' + INPUT + '"><option value="0">Right now</option><option value="30" selected>In 30 seconds</option><option value="60">In 1 minute</option><option value="120">In 2 minutes</option></select><div style="margin-top:10px"><button class="btn" id="ts-send">Send a test request</button> <button class="btn ghost" id="ts-clear">Remove test requests</button></div><hr style="border:0;border-top:1px solid var(--line);margin:12px 0"><p class="mut">Pretend to drive without moving. First tap <b>Start trip</b> in the Trip plan, then:</p><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn ghost" id="ts-fake-pick">Pretend I am at the next pickup</button><button class="btn ghost" id="ts-fake-drop">Pretend I am at the next drop-off</button><button class="btn ghost" id="ts-fake-off">Use my real GPS again</button></div><p class="mut hint" style="margin-top:10px">Test the leave-by reminders without a rider (keep Offer a ride now on):</p><button class="btn ghost" id="ts-leave-test">Test the leave-by reminder (due in 2 min)</button>') : '')
       + (nativeLoc() ? card('Rider alerts', '<p><b>Status: ' + (dndOn ? 'ON' : 'OFF') + '</b></p><p class="mut">' + (dndOn ? 'Seat requests can alert you even when your phone is on Do Not Disturb or Sleeping mode.' : 'Seat requests are silent when your phone is on Do Not Disturb or Sleeping mode. Tap the button, then switch on <b>Override Do Not Disturb</b> on the screen that opens.') + '</p><p><button class="btn' + (dndOn ? ' ghost' : '') + '" id="dnd-go">' + (dndOn ? 'Open alert settings' : 'Let alerts break through Do Not Disturb') + '</button></p>') : '')
-      + (nativeLoc() ? card('Floating RideShare button', '<p><b>Status: ' + (overlayOn ? 'ON' : 'OFF') + '</b></p><p class="mut">' + (overlayOn ? 'While a ride is under way, a small round RideShare button floats over Google Maps. Tap it to come back to RideShare. You can drag it out of the way.' : 'Shows a small round RideShare button over Google Maps while a ride is under way, so one tap brings you back to RideShare. Tap the button, then switch on <b>Allow display over other apps</b> on the screen that opens.') + '</p><p><button class="btn' + (overlayOn ? ' ghost' : '') + '" id="ov-go">' + (overlayOn ? 'Open settings' : 'Allow the floating button') + '</button> ' + (overlayOn ? '<button class="btn ' + (bubbleHidden ? '' : 'ghost') + '" id="ov-hide">' + (bubbleHidden ? 'Show the floating button again' : 'Hide the floating button') + '</button>' : '') + '</p><p class="mut">You can also press and hold the floating button for a second to make it go away until your next ride.</p>') : '')
-      + (isTest ? card('Layout', '<p class="mut">You are using the new layout. If something feels off, you can switch back at any time.</p><p><button class="btn ghost" data-uimode="classic">Use the old layout</button></p>') : '')
-      + card('Cancel all upcoming', '<p class="mut">Cancels all your upcoming trips, ride requests and booked rides in one go. Anyone booked with you is told and gets their points back. Your history, points and settings stay, and the app goes back to how it looks when you first open it.</p><p><button class="btn ghost" id="sf-go" style="color:var(--bad);border-color:var(--bad)">Cancel all my upcoming trips and rides</button></p>')
-      + card('Good to know', '<p class="mut">Driver and rider settings are separate, so you can be both at the same time. Other people only see your ride style (like "quiet ride") and whether you accept automatically. Nothing else in here is shared.</p>');
+      + (nativeLoc() ? card('Floating RideShare button', '<p><b>Status: ' + (overlayOn ? 'ON' : 'OFF') + '</b></p><p class="mut">' + (overlayOn ? 'While a ride is under way, a small round RideShare button floats over Google Maps. Tap it to come back to RideShare. You can drag it out of the way.' : 'Shows a small round RideShare button over Google Maps while a ride is under way, so one tap brings you back to RideShare. Tap the button, then switch on <b>Allow display over other apps</b> on the screen that opens.') + '</p><p><button class="btn' + (overlayOn ? ' ghost' : '') + '" id="ov-go">' + (overlayOn ? 'Open settings' : 'Allow the floating button') + '</button> ' + (overlayOn ? '<button class="btn ' + (bubbleHidden ? '' : 'ghost') + '" id="ov-hide">' + (bubbleHidden ? 'Show the floating button again' : 'Hide the floating button') + '</button>' : '') + '</p><p class="mut hint">You can also press and hold the floating button for a second to make it go away until your next ride.</p>') : '')
+      + (isTest ? card('Layout', '<p class="mut hint">You are using the new layout. If something feels off, you can switch back at any time.</p><p><button class="btn ghost" data-uimode="classic">Use the old layout</button></p>') : '')
+      + card('Cancel all upcoming', '<p class="mut hint">Cancels all your upcoming trips, ride requests and booked rides in one go. Anyone booked with you is told and gets their points back. Your history, points and settings stay, and the app goes back to how it looks when you first open it.</p><p><button class="btn ghost" id="sf-go" style="color:var(--bad);border-color:var(--bad)">Cancel all my upcoming trips and rides</button></p>')
+      + card('Good to know', '<p class="mut hint">Driver and rider settings are separate, so you can be both at the same time. Other people only see your ride style (like "quiet ride") and whether you accept automatically. Nothing else in here is shared.</p>');
   }
   const saveSettings = () => {
     const g = (id) => $(id), n = (id, max) => Math.max(0, Math.min(max, Math.round(+g(id).value || 0)));
@@ -1358,7 +1386,7 @@
   function profileCard() {
     if (!PCOK || !user) return '';
     const c = cards[user.id] || {}, g = (user.user_metadata && (user.user_metadata.avatar_url || user.user_metadata.picture)) || '';
-    return card('My profile', '<p class="mut">The person you are matched with sees your photo, first name and (if you drive) your car once a seat is accepted, and for 30 days after the ride. Other signed-in users can see only your first name.</p>'
+    return card('My profile', '<p class="mut hint">The person you are matched with sees your photo, first name and (if you drive) your car once a seat is accepted, and for 30 days after the ride. Other signed-in users can see only your first name.</p>'
       + '<div style="display:flex;gap:12px;align-items:center;margin:8px 0">' + avatar(user.id, 72) + '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="pc-pick">' + (c.photo ? 'Change photo' : 'Add a photo') + '</button>' + (g && c.photo_source !== 'google' ? '<button class="btn ghost" id="pc-google">Use my Google photo</button>' : '') + (c.photo ? '<button class="btn ghost" id="pc-clear">Remove</button>' : '') + '</div></div>'
       + '<input type="file" id="pc-file" accept="image/*" style="display:none">'
       + '<label>Car: make and model (only if you drive)</label><input type="text" id="pc-make" maxlength="40" value="' + esc(c.car_make || '') + '" style="' + INPUT + '">'
@@ -1372,16 +1400,16 @@
     return card('Your name and points', `<label>First name shown to others</label><input type="text" id="lv-name" maxlength="30" value="${esc(me.name)}" style="${INPUT}">
       <div style="margin-top:8px"><button class="btn ghost" id="lv-savename">Save name</button></div>
       <div class="stat" style="margin-top:12px"><div><span class="mut">Points balance</span><b>${me.points}</b></div><div><span class="mut">Held for your rides</span><b>${heldAsRider}</b></div><div><span class="mut">Coming to you</span><b>${pendingAsDriver}</b></div><div><span class="mut">Value</span><b>1 pt = $0.10</b></div></div>
-      <p class="mut">Earn points by driving riders who pay in points. Spend them when you ride. Out of points? You can still ride by paying a driver a cash gas-share. Points can't be cashed out or transferred, and they never exceed the real cost of the trip, so nobody profits.</p>`)
-      + card('Your data', '<p class="mut">We store your first name, email, photo and car details, the places and map points you post, your rides, messages, ratings and points. Your live location is shared with your riders only while you drive, and the latest position is deleted when the ride ends. The person you are matched with can see your photo, first name and car during the ride and for 30 days after. <a href="privacy.html">Privacy policy</a> &middot; <a href="terms.html">Terms</a></p><label>To erase your account and all your data, type DELETE</label><input type="text" id="del-confirm" autocomplete="off" style="' + INPUT + '"><div style="margin-top:8px"><button class="btn ghost" id="del-go" disabled>Delete my account</button></div><p class="warn" id="del-msg" role="alert"></p>')
-      + (isTest ? card('Track yourself', '<p class="mut">Walk or drive and watch yourself move on the map, with speed, distance and a trail. Your location stays on this device.</p><a class="btn" href="gps.html" style="display:inline-block;text-decoration:none">Open GPS test</a>') : '')
+      <p class="mut hint" data-once="points">Earn points by driving riders who pay in points. Spend them when you ride. Out of points? You can still ride by paying a driver a cash gas-share. Points can't be cashed out or transferred, and they never exceed the real cost of the trip, so nobody profits.</p>`)
+      + card('Your data', '<p class="mut hint">We store your first name, email, photo and car details, the places and map points you post, your rides, messages, ratings and points. Your live location is shared with your riders only while you drive, and the latest position is deleted when the ride ends. The person you are matched with can see your photo, first name and car during the ride and for 30 days after. <a href="privacy.html">Privacy policy</a> &middot; <a href="terms.html">Terms</a></p><label>To erase your account and all your data, type DELETE</label><input type="text" id="del-confirm" autocomplete="off" style="' + INPUT + '"><div style="margin-top:8px"><button class="btn ghost" id="del-go" disabled>Delete my account</button></div><p class="warn" id="del-msg" role="alert"></p>')
+      + (isTest ? card('Track yourself', '<p class="mut hint">Walk or drive and watch yourself move on the map, with speed, distance and a trail. Your location stays on this device.</p><a class="btn" href="gps.html" style="display:inline-block;text-decoration:none">Open GPS test</a>') : '')
       + card('History', ledger.length ? ledger.map((x) => `<div style="padding:4px 0">${(x.delta > 0 ? '+' : '') + x.delta} pts <span class="mut">${esc(x.reason)}</span></div>`).join('') : '<p class="mut">Nothing yet.</p>');
   }
 
   // ---------- render + wiring ----------
   function render() {
     renderAuth();
-    ['sim-d', 'sim-ld', 'map-card'].forEach((id) => { const e = $(id); if (e) e.style.display = isTest ? '' : 'none'; });
+    ['sim-d', 'sim-ld', 'map-card'].forEach((id) => { const e = $(id); if (e) e.style.display = isTest && DEV ? '' : 'none'; });
     if (!user) { ['ld-top', 'lr-top'].forEach((id) => { $(id).innerHTML = ''; }); ['ld-form', 'ld-lists', 'lr-form', 'lr-lists', 'lu-main', 'lw-main', 'ls-main'].forEach((id) => { $(id).innerHTML = /form|main/.test(id) ? hint : ''; }); return; }
     const sig = JSON.stringify([myTrips, selTripId, myReq, me.points, pending, mySet, isTest, testMode]);
     const typing = document.activeElement && /^(lt|lr|lv|ls|ln|rn)-/.test(document.activeElement.id || '') && document.activeElement.tagName !== 'BUTTON' && !pending;
@@ -1397,6 +1425,7 @@
     const upHtml = guard('upcoming', upcomingMain); $('lu-main').innerHTML = upHtml + (tripsView === 'driver' ? guard('drive log', driveLogCard) : '') + (window.__rules || '');
     applyCar(); syncSharing();
     try { wire(); } catch (e) { console.error('wire', e); showErr('buttons: ' + (e && e.message || e)); }
+    try { tipify(); } catch (e) { console.error('tips', e); }
   }
 
   // Forget everything typed or chosen on screen, so the app looks as it does when first opened. Used by Reset trip and Start fresh.
@@ -1406,7 +1435,7 @@
     selTripId = null; pending = null; viewD = null; viewR = null; calDay = null; calMonth = null; askCancel = null; mapSig = {}; formSig = '';
     [nowSel, LV].forEach((o) => Object.keys(o).forEach((k) => { delete o[k]; }));
     plReset('ln-o', 'ln-d', 'lt-o', 'lt-d', 'lr-p', 'lr-d', 'rn-p', 'rn-d');
-    tripMode = 'now'; rideMode = 'now'; tripsView = 'driver';
+    tripMode = 'now'; rideMode = 'now'; tripsView = 'driver'; offerOpen = false; tripsPane = 'cal';
     try { localStorage.setItem('rs_trip_mode', 'now'); localStorage.removeItem('rs_trip_on'); localStorage.removeItem('rs_ride_mode'); localStorage.removeItem('rs_trips_view'); } catch (e) { /* storage blocked */ }
   }
   async function run(p, ok) { try { const r = await p; if (r.error) throw r.error; if (ok) toast(ok); return true; } catch (e) { fail(e); return false; } finally { formSig = ''; await loadAll(); } }
@@ -1627,8 +1656,12 @@
     on('ov-go', async () => { const n = nativeLoc(); toast('Opening the setting...'); try { await n.openOverlaySettings(); } catch (e) { toast('Could not open the setting. Open Settings > Apps > RideShare App > Display over other apps.'); } });
     on('dnd-go', async () => { const n = nativeLoc(); toast('Opening the alert settings...'); try { await n.openAlertSettings(); } catch (e) { toast('Could not open the settings. Open Settings > Apps > RideShare App > Notifications > Seat requests.'); } });
     each('[data-edit]', (b) => { editing[b.dataset.edit] = true; formSig = ''; render(); const f = $(b.dataset.edit === 'trip' ? 'ld-form' : 'lr-form'); if (f) f.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+    each('[data-offeropen]', () => { offerOpen = true; formSig = ''; render(); });
+    each('[data-offerclose]', () => { offerOpen = false; formSig = ''; render(); });
+    each('[data-tpane]', (b) => { tripsPane = b.dataset.tpane; render(); });
+    each('[data-askride]', () => { const rd = $('rs-riding'), hm2 = $('nb-home'); if (hm2) hm2.click(); if (rd) rd.click(); const r2 = $('t-rider'); if (r2) r2.click(); render(); });
     each('[data-seltrip]', (b) => { selTripId = b.dataset.seltrip; myTrip = myTrips.find((x) => x.id === selTripId) || myTrip; curTrip = myLiveTrip || myTrip; editing.trip = false; editing.newTrip = false; pending = null; viewD = null; mapSig = {}; formSig = ''; render(); });
-    each('[data-newtrip]', () => { if (myTrips.length >= 5) { toast('You can keep up to 5 trips. Reset one first.'); return; } editing.trip = true; editing.newTrip = true; pending = null; formSig = ''; render(); const f = $('ld-form'); if (f) f.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+    each('[data-newtrip]', () => { if (myTrips.length >= 5) { toast('You can keep up to 5 trips. Cancel one first.'); return; } const dv = $('rs-driving'), hm2 = $('nb-home'); if (hm2) hm2.click(); if (dv) dv.click(); const t2 = $('t-driver'); if (t2) t2.click(); editing.trip = true; editing.newTrip = true; pending = null; formSig = ''; render(); const f = $('ld-form'); if (f) f.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
     each('[data-edit-off]', (b) => { editing[b.dataset.editOff] = false; if (b.dataset.editOff === 'trip') editing.newTrip = false; pending = null; formSig = ''; plReset('lt-o', 'lt-d', 'lr-p', 'lr-d'); render(); });
     each('[data-scroll]', (b) => { const e = $(b.dataset.scroll); if (e) e.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
     document.querySelectorAll('#ln-o, #ln-d, #rn-p, #rn-d, #rn-pay').forEach((e) => { e.onchange = () => { nowSel[e.id] = e.value; }; });
