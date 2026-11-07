@@ -787,7 +787,14 @@
     }).join('');
     return card('My trips (' + myTrips.length + ')', rows + '<p style="margin-top:8px"><button class="btn ghost" data-newtrip="1">Post another trip</button></p>');
   }
-  function driverTop() { return tripsList() + driverTopOne(); }
+  // Home: the way out of everything at once (only shown when there is something upcoming)
+  function cancelAllCard() {
+    if (!user) return '';
+    const t0 = todayStr(), any = myTrips.length || myLiveTrip || myReq || myLiveReq || matches.some((x) => (x.status === 'accepted' || x.status === 'requested') && !x.picked_up_at && x.ride_date >= t0 && (x.driver_id === user.id || x.rider_id === user.id));
+    if (!any) return '';
+    return card('Cancel all upcoming', '<p class="mut">Cancels all your upcoming trips, ride requests and booked rides in one go. Anyone booked with you is told and gets their points back. Your history stays.</p><p><button class="btn ghost" data-cancelall="1" style="color:var(--bad);border-color:var(--bad)">Cancel all my upcoming trips and rides</button></p>');
+  }
+  function driverTop() { return tripsList() + driverTopOne() + cancelAllCard(); }
   function driverTopOne() {
     if (!curTrip || !known(curTrip) || curTrip.live) return '';
     if (false) return card('Start here', `<p><b>1.</b> Fill in the form below: where you drive from and to, the date and time.</p><p><b>2.</b> Tap <b>Review trip</b>, then <b>Confirm and post</b>.</p><p><b>3.</b> Riders who ask for a seat will appear on this page for you to accept.</p><p>${goTo('ld-form')}Go to the form</button></p>`);
@@ -813,7 +820,7 @@
     if (!l.length) return '';
     return card('Needs a new driver', '<p>' + (l.length === 1 ? 'Your ride on <b>' + esc(RSD.label(l[0])) + '</b> has no driver.' : 'These days have no driver: <b>' + l.map((d) => esc(RSD.label(d))).join(', ') + '</b>.') + ' Nobody is booked for you without your OK.</p><p>' + l.slice(0, 3).map((d) => '<button class="btn" data-lostgo="' + d + '">Find a driver for ' + esc(RSD.label(d)) + '</button>').join(' ') + '</p>');
   }
-  function riderTop() { return lostBanner() + riderTopOne(); }
+  function riderTop() { return lostBanner() + riderTopOne() + cancelAllCard(); }
   function riderTopOne() {
     if (!curReq || !known(curReq)) return '';
     if (false) return card('Start here', `<p><b>1.</b> Fill in the form below: where you want to be picked up and dropped off, the date and when you are ready.</p><p><b>2.</b> Tap <b>Review request</b>, then <b>Confirm and post</b>.</p><p><b>3.</b> Pick a driver from the list and tap <b>Request</b>.</p><p>${goTo('lr-form')}Go to the form</button></p>`);
@@ -822,7 +829,7 @@
     const acc = mine.find((x) => x.status === 'accepted' || x.status === 'completed'), pend = mine.some((x) => x.status === 'requested');
     const line = acc ? `<b>${esc(STEP_LABEL[stageOf(acc)])}.</b> Tap <b>See my ride</b> for live updates.` : pend ? 'You asked a driver for a seat. Waiting for them to accept. Nothing is confirmed yet.' : 'No driver has been asked yet. Posting your request does not reserve a seat. Pick a driver below and tap <b>Request</b>.';
     return card(acc ? 'Seat confirmed' : pend ? 'Seat requested' : 'Looking for a ride', `<p><b>${esc(disp(curReq, 'pickup'))}</b> to <b>${esc(disp(curReq, 'dropoff'))}</b></p><p class="mut">${esc(RSD.label(curReq.ride_date))}, ready ${clk(curReq.ready_from)} to ${clk(curReq.ready_to)}</p><p>${line}</p>
-      <div class="row2">${goTo('lr-lists')}${acc ? 'See my ride' : 'See drivers'}</button> <button class="btn ghost" data-edit="req">Edit request</button></div>`);
+      <div class="row2">${goTo('lr-lists')}${acc ? 'See my ride' : 'See drivers'}</button> <button class="btn ghost" data-edit="req">Edit request</button> <button class="btn ghost" data-offreq="${curReq.id}">Cancel this request</button></div>`);
   }
 
 
@@ -1582,6 +1589,7 @@
       } finally { freshBusy = false; }
     };
     on('sf-go', startFresh);
+    each('[data-cancelall]', () => startFresh());
     each('[data-reset]', (b) => resetTrip(b.dataset.reset === 'end'));
     each('[data-startnav]', () => startNav());
     on('ov-hide', async () => { const n = nativeLoc(); try { await n.setBubbleHidden({ hidden: !bubbleHidden }); bubbleHidden = !bubbleHidden; formSig = ''; render(); toast(bubbleHidden ? 'The floating button is hidden.' : 'The floating button will show during rides.'); } catch (e) { toast('Update the app to use this'); } });
