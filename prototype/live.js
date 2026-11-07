@@ -93,8 +93,8 @@
   if (nativePlug('App')) {
     nativePlug('App').addListener('appUrlOpen', async (ev) => {
       if (ev && ev.url && ev.url.indexOf('ca.rideshare.app://plan') === 0) {   // the Preview trip alert: open Home on the trip plan
-        await loadAll(); const dv = $('rs-driving'), hm2 = $('nb-home'); if (dv) dv.click(); if (hm2) hm2.click();
-        setTimeout(() => { const p = $('plan-wrap') || $('ld-top'); if (p) p.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 500); return;
+        await loadAll(); openTodayTrip();
+        setTimeout(() => { const p = $('plan-wrap') || $('ld-top'); if (p) p.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 700); return;
       }
       if (ev && ev.url && ev.url.indexOf('ca.rideshare.app://cancel-offer') === 0) {   // the Cancel my offer button on a leave-by reminder
         await loadAll(); const lt = myLiveTrip; const dv = $('rs-driving'); if (dv) dv.click();
@@ -106,8 +106,8 @@
         }
         return;
       }
-      if (ev && ev.url && ev.url.indexOf('ca.rideshare.app://start-trip') === 0) { await loadAll(); setTimeout(() => { if (window.__startNav) window.__startNav(); }, 600); return; }   // "I'm leaving" on a leave-by reminder
-      if (ev && ev.url && ev.url.indexOf('ca.rideshare.app://update-route') === 0) { await loadAll(); setTimeout(() => { if (window.__startNav) window.__startNav(true); }, 600); return; }
+      if (ev && ev.url && ev.url.indexOf('ca.rideshare.app://start-trip') === 0) { await loadAll(); openTodayTrip(); setTimeout(() => { if (window.__startNav) window.__startNav(); }, 1100); return; }   // "I'm leaving" on a leave-by reminder
+      if (ev && ev.url && ev.url.indexOf('ca.rideshare.app://update-route') === 0) { await loadAll(); openTodayTrip(); setTimeout(() => { if (window.__startNav) window.__startNav(true); }, 1100); return; }
       if (!ev || !ev.url || ev.url.indexOf(APP_AUTH) !== 0) return;
       try { if (nativePlug('Browser')) await nativePlug('Browser').close(); } catch (e) { /* tab already closed */ }
       const p = new URLSearchParams(ev.url.split('#')[1] || ev.url.split('?')[1] || '');
@@ -158,6 +158,29 @@
   document.addEventListener('click', (e) => { const b = e.target.closest && e.target.closest('button.tipbtn'); if (b) showTip(b.dataset.tipHtml, b.dataset.once); });
   const fold = (id, summary, html) => '<details data-fold="' + id + '"' + (foldOpen.has(id) ? ' open' : '') + '><summary class="mut" style="cursor:pointer;padding:4px 0">' + summary + '</summary>' + html + '</details>';
   let prevMode = 'cal'; const prevMonthBy = {};   // the days preview on the trip forms: calendar or list
+  // Home is ONE screen: a feed of what is next. Details live on their own page: 'trip' (one day of a trip I drive), 'ride' (my ride), 'post' (post or edit a trip), 'now' (offer a ride now), 'ask' (ask for a ride).
+  let homeView = 'feed', detailTripId = null, detailFrom = 'home';
+  const newUI = () => document.documentElement.getAttribute('data-ui') === 'b';
+  const hv = () => (newUI() ? homeView : 'classic');   // the old layout keeps working as it did
+  const showsDrive = (...vs) => hv() === 'classic' || vs.includes(hv());
+  const syncCur = () => { const sel = detailTripId && [myLiveTrip, ...myTrips].find((x) => x && x.id === detailTripId); curTrip = (hv() === 'trip' && sel) ? sel : (myLiveTrip || myTrip); };
+  // A phone alert opened the app for a trip today: show that trip's page (its plan and stops), so the navigation starts from the right route.
+  function openTodayTrip() { const tt = myLiveTrip || myTrips.find((t) => tripOn(t, todayStr())) || myTrip; if (!tt) return; detailTripId = tt.id; if (!tt.live) { selTripId = tt.id; myTrip = tt; } viewD = todayStr(); detailFrom = 'home'; goHome('trip'); }
+  function goHome(v) { homeView = v; formSig = ''; mapSig = {}; syncCur(); if (window.rsGo) window.rsGo('home'); render(); }
+  function leaveDetails() { const back = detailFrom; homeView = 'feed'; detailTripId = null; editing.trip = false; editing.newTrip = false; editing.req = false; pending = null; offerOpen = false; formSig = ''; mapSig = {}; syncCur(); if (window.rsGo) window.rsGo(back === 'trips' ? 'trips' : 'home'); render(); }
+  window.rsHomeTab = () => (homeView === 'feed' ? 't-home' : (homeView === 'ride' || homeView === 'ask') ? 't-rider' : 't-driver');
+  window.rsHome = { toFeed: () => { homeView = 'feed'; detailTripId = null; editing.trip = false; editing.newTrip = false; editing.req = false; pending = null; offerOpen = false; formSig = ''; mapSig = {}; syncCur(); render(); } };
+  // when what a page was showing is gone (saved, cancelled, finished), go back to the feed
+  function autoBack() {
+    if (!newUI() || homeView === 'feed') return;
+    const was = homeView;
+    if (homeView === 'post' && !editing.trip && !(pending && pending.kind === 'trip')) homeView = 'feed';
+    else if (homeView === 'now' && (myLiveTrip || !offerOpen)) homeView = 'feed';
+    else if (homeView === 'ask' && (myLiveReq || (myReq && !editing.req && !(pending && pending.kind === 'req')))) homeView = 'feed';
+    else if (homeView === 'trip' && !curTrip) homeView = 'feed';
+    else if (homeView === 'ride' && !curReq && !matches.some((x) => user && x.rider_id === user.id && (x.status === 'accepted' || x.status === 'requested'))) homeView = 'feed';
+    if (was !== homeView) { detailTripId = null; formSig = ''; mapSig = {}; syncCur(); if (window.rsView && window.rsView() === 'home' && window.rsGo) window.rsGo('home'); }
+  }
   let freshBusy = false;   // Start fresh is running
   let myChildren = [];   // the days of my repeating trips (with a window) that became their own trip once the first rider was accepted
   let RPOK = null, skipMap = {};   // RPOK: migration 048 (every N weeks, monthly, skip a day) is in place
@@ -568,7 +591,7 @@
       myLiveTrip = (t.data || []).find(stillLive) || null; const nextOf = (x) => (occOf(x, 1)[0] || x.trip_date);
       myChildren = (t.data || []).filter((x) => !x.live && x.series_parent);
       myTrips = (t.data || []).filter((x) => !x.live && !x.series_parent).sort((a, b) => (nextOf(a) + String(10000 + (a.flex_from != null ? a.flex_from : a.depart_min))).localeCompare(nextOf(b) + String(10000 + (b.flex_from != null ? b.flex_from : b.depart_min))));
-      myTrip = myTrips.find((x) => x.id === selTripId) || myTrips[0] || null; selTripId = myTrip ? myTrip.id : null; curTrip = myLiveTrip || myTrip;
+      myTrip = myTrips.find((x) => x.id === selTripId) || myTrips[0] || null; selTripId = myTrip ? myTrip.id : null; syncCur();
       if (!myLiveTrip) autoAlerts = false; else if (!autoAlerts && !driveSession && nativeLoc()) { autoAlerts = true; startAlerts(nativeLoc()); }
       riderAlertsCheck();
       myLiveReq = (r.data || []).find(stillLive) || null; myReq = (r.data || []).find((x) => !x.live) || null; curReq = myLiveReq || myReq;
@@ -686,6 +709,7 @@
     // a scheduled trip: plan the next day that has an accepted rider (today if there is one)
     let d = today;
     if (!curTrip.live) { const days = matches.filter((x) => x.driver_id === user.id && inFam(x.trip_id, curTrip) && x.ride_date >= today && x.status === 'accepted').map((x) => x.ride_date).sort(); if (days.length && !days.includes(today)) d = days[0]; }
+    if (hv() === 'trip' && viewD && !curTrip.live) d = viewD;
     const isToday = d === today;
     const acc = matches.filter((x) => x.driver_id === user.id && inFam(x.trip_id, curTrip) && x.ride_date === d && x.status === 'accepted' && reqById[x.request_id] && known(reqById[x.request_id]));
     if (!acc.length) {
@@ -804,8 +828,9 @@
       const when = left > 0 ? 'in ' + fmtLeft(left) : left === 0 ? 'now' : fmtLeft(Math.abs(left)) + ' ago';
       banner = '<div class="' + (left <= 5 ? 'warn' : '') + '" style="padding:8px 0"><b>' + (left <= 0 ? 'Leave now to reach ' : 'Leave by ' + leaveWhen(ms) + ' (' + when + ') to reach ') + nm(w.rider_id) + '.</b>' + (left <= 0 ? ' <span class="mut">Your leave-by time was ' + leaveWhen(ms) + ' (' + when + ').</span>' : '') + '</div>';
     }
-    const cards = asks.map((x) => { const q = reqById[x.request_id];
-      return '<div style="padding:8px 0;border-top:1px solid var(--line)"><b style="font-size:17px">' + nm(x.rider_id) + '</b>' + badge(x.rider_id, 'rider') + tagsFor(x.rider_id, 'rider') + '<div class="mut">' + esc(disp(q, 'pickup')) + ' to ' + esc(disp(q, 'dropoff')) + ' &middot; ' + (x.pay_with === 'points' ? x.points + ' pts' : 'cash gas-share') + '</div><div class="mut">' + esc(RSD.label(x.ride_date)) + ' &middot; ready ' + clk(q.ready_from) + ' to ' + clk(q.ready_to) + '</div>' + detourLine(reqFit(x)) + leaveLine(x.id) + '<div style="margin-top:8px"><button class="btn" data-acc="' + x.id + '" style="padding:12px 22px;font-size:16px">Accept</button> <button class="btn ghost" data-dec="' + x.id + '">Decline</button></div></div>'; }).join('');
+    const cardArr = asks.map((x) => { const q = reqById[x.request_id];
+      return '<div style="padding:8px 0;border-top:1px solid var(--line)"><b style="font-size:17px">' + nm(x.rider_id) + '</b>' + badge(x.rider_id, 'rider') + tagsFor(x.rider_id, 'rider') + '<div class="mut">' + esc(disp(q, 'pickup')) + ' to ' + esc(disp(q, 'dropoff')) + ' &middot; ' + (x.pay_with === 'points' ? x.points + ' pts' : 'cash gas-share') + '</div><div class="mut">' + esc(RSD.label(x.ride_date)) + ' &middot; ready ' + clk(q.ready_from) + ' to ' + clk(q.ready_to) + '</div>' + detourLine(reqFit(x)) + leaveLine(x.id) + '<div style="margin-top:8px"><button class="btn" data-acc="' + x.id + '" style="padding:12px 22px;font-size:16px">Accept</button> <button class="btn ghost" data-dec="' + x.id + '">Decline</button></div></div>'; });
+    const more = cardArr.length - 2, cards = cardArr.slice(0, 2).join('') + (more > 0 ? fold('f-more-asks', more + ' more request' + (more === 1 ? '' : 's'), cardArr.slice(2).join('')) : '');
     $('req-body').innerHTML = banner + cards;
   }
   // Requests that ended without a seat: kept out of the Home card; shown small at the bottom of the Riders list for 24 hours.
@@ -849,7 +874,56 @@
     if (!any) return '';
     return card('Cancel all upcoming', '<p class="mut hint">Cancels all your upcoming trips, ride requests and booked rides in one go. Anyone booked with you is told and gets their points back. Your history stays.</p><p><button class="btn ghost" data-cancelall="1" style="color:var(--bad);border-color:var(--bad)">Cancel all my upcoming trips and rides</button></p>');
   }
-  function driverTop() { return tripsList() + driverTopOne() + cancelAllCard(); }
+  // The trip page: which day, the route, Start trip, and the ways to change or cancel. The plan, map, riders and requests follow below it.
+  function tripHeader() {
+    const t = curTrip; if (!t || !known(t)) return '';
+    const dates = occOf(t, 7), d = viewD || dates[0] || todayStr(), ft = forDate(t, d), isToday = d === todayStr(), rep = !!(t.repeat_days && t.repeat_days.length) && !t.live, flex = isFlexFree(ft);
+    const when = t.live ? 'Offering seats now' : RSD.label(d) + ' &middot; ' + (flex ? 'leave between ' + clk(ft.flex_from) + ' and ' + clk(ft.flex_to) : 'leave ' + clk(ft.depart_min));
+    const dl0 = RSD.label(d), dlw = /^(Today|Tomorrow)$/.test(dl0) ? dl0.toLowerCase() : dl0;
+    const changes = '<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:8px"><button class="btn ghost" data-edittrip="' + t.id + '">Edit</button>' + (rep && RPOK ? '<button class="btn ghost" data-skipday="' + t.id + '|' + d + '">Skip ' + esc(dlw) + '</button>' : '') + '<button class="btn ghost" data-reset="trip" data-tid="' + t.id + '">' + (rep ? 'Stop repeating trip' : 'Cancel trip') + '</button></div>';
+    return card(when, '<p><b>' + esc(disp(t, 'origin')) + '</b> to <b>' + esc(disp(t, 'dest')) + '</b></p>' + (rep ? '<p class="mut">Repeats ' + esc(RSD.repeatLabel(t.repeat_days, t.repeat_every, t.repeat_nth)) + untilTxt(t.repeat_until) + '</p>' : '') + (flex ? '<p class="mut">Waiting for your first rider to set the time.</p>' : '')
+      + (isToday && !t.live ? '<p><button class="btn" data-startnav="1" style="width:100%;padding:14px;font-size:17px">Start trip</button></p>' : '') + fold('f-trip-change', 'Change or cancel', changes));
+  }
+  // Home: what is next, and what needs me. Never a long list and never a plan: those are on the trip page.
+  function homeFeed() {
+    if (!user) return '';
+    const t0 = todayStr(), items = [];
+    [myLiveTrip, ...myTrips].filter(Boolean).forEach((t) => {
+      (t.live ? [t0] : occOf(t, 14)).forEach((d) => {
+        if (d < t0) return;
+        const ft = forDate(t, d), ms = matches.filter((x) => x.driver_id === user.id && inFam(x.trip_id, t) && x.ride_date === d);
+        items.push({ kind: 'drive', t, d, ft, acc: ms.filter((x) => x.status === 'accepted').length, time: t.live ? t.depart_min : (isFlexFree(ft) ? ft.flex_from : ft.depart_min) });
+      });
+    });
+    matches.filter((x) => x.rider_id === user.id && (x.status === 'accepted' || x.status === 'requested') && x.ride_date >= t0 && !x.dropped_off_at).forEach((x) => {
+      const tr = tripBy(x.trip_id), pm = tr ? pickMin(x, tr) : null; items.push({ kind: 'ride', x, tr, d: x.ride_date, time: pm == null ? 0 : pm });
+    });
+    if (myReq && !myReq.live) occOf(myReq, 14).forEach((d) => { if (d >= t0 && !matches.some((x) => x.request_id === myReq.id && x.ride_date === d && (x.status === 'accepted' || x.status === 'requested'))) items.push({ kind: 'looking', q: myReq, d, time: myReq.ready_from }); });
+    if (myLiveReq) items.push({ kind: 'looking', q: myLiveReq, d: t0, time: 0, live: true });
+    items.sort((a, b) => (a.d < b.d ? -1 : a.d > b.d ? 1 : a.time - b.time));
+    const route = (a, b) => '<b>' + esc(a) + '</b> to <b>' + esc(b) + '</b>';
+    const driveWhen = (it) => it.t.live ? 'Offering seats now' : RSD.label(it.d) + ' &middot; ' + (isFlexFree(it.ft) ? 'leave between ' + clk(it.ft.flex_from) + ' and ' + clk(it.ft.flex_to) : 'leave ' + clk(it.ft.depart_min));
+    const rideWhen = (it) => it.kind === 'ride' ? RSD.label(it.d) + (it.time ? ' &middot; pickup ' + clk(it.time) : '') : (it.live ? 'Looking for a ride now' : RSD.label(it.d) + ' &middot; ready ' + clk(it.q.ready_from));
+    const rideRoute = (it) => { const q = it.kind === 'looking' ? it.q : (myReq && it.x.request_id === myReq.id ? myReq : null); return q ? route(disp(q, 'pickup'), disp(q, 'dropoff')) : (it.tr ? route(disp(it.tr, 'origin'), disp(it.tr, 'dest')) : ''); };
+    let hero = '';
+    if (items.length) {
+      const it = items[0];
+      if (it.kind === 'drive') {
+        hero = card('Next up &middot; Driving', '<p style="font-size:18px"><b>' + driveWhen(it) + '</b></p><p>' + route(disp(it.t, 'origin'), disp(it.t, 'dest')) + '</p><p class="mut">' + (it.acc ? it.acc + (it.acc === 1 ? ' rider confirmed' : ' riders confirmed') : 'No riders yet') + '</p>'
+          + (it.d === t0 && !it.t.live ? '<p><button class="btn" data-starttrip="' + it.t.id + '|' + it.d + '" style="width:100%;padding:14px;font-size:17px">Start trip</button></p>' : '') + '<p><button class="btn ghost" data-opentrip="' + it.t.id + '|' + it.d + '" style="width:100%">View details</button></p>');
+      } else {
+        const st = it.kind === 'ride' ? (it.x.status === 'accepted' ? STEP_LABEL[stageOf(it.x)] : 'Waiting for the driver to accept') : 'Looking for a driver';
+        hero = card('Next up &middot; Riding', '<p style="font-size:18px"><b>' + rideWhen(it) + '</b></p><p>' + rideRoute(it) + '</p><p class="mut">' + (it.kind === 'ride' ? 'Driver ' + esc(nm(it.x.driver_id)) + ' &middot; ' + esc(st) : st) + '</p><p><button class="btn ghost" data-openride="' + it.d + '" style="width:100%">View ride</button></p>');
+      }
+    }
+    const rows = items.slice(1, 4).map((it) => '<button type="button" class="btn ghost" ' + (it.kind === 'drive' ? 'data-opentrip="' + it.t.id + '|' + it.d + '"' : 'data-openride="' + it.d + '"') + ' style="width:100%;text-align:left;margin:4px 0">' + (it.kind === 'drive' ? 'Driving' : 'Riding') + ' &middot; ' + (it.kind === 'drive' ? (it.t.live ? 'now' : RSD.label(it.d) + ' ' + clk(it.time)) : RSD.label(it.d) + (it.time ? ' ' + clk(it.time) : '')) + ' &middot; ' + (it.kind === 'drive' ? esc(disp(it.t, 'origin')) + ' to ' + esc(disp(it.t, 'dest')) : (it.x ? 'with ' + esc(nm(it.x.driver_id)) : 'looking for a driver')) + '</button>').join('');
+    const coming = items.length > 1 ? card('Coming up', rows + '<p><button class="btn ghost" data-gotrips="1" style="width:100%">All trips</button></p>') : (items.length ? '<p><button class="btn ghost" data-gotrips="1" style="width:100%">All trips</button></p>' : '');
+    const empty = items.length ? '' : card('Nothing planned yet', '<p class="mut">No upcoming trips or rides.</p>');
+    const actions = '<div class="row2"><button class="btn" data-askride="1">Ask for a ride</button> <button class="btn ghost" data-newtrip="1">Post a trip</button></div><p><button class="btn ghost" data-offeropen="1" style="width:100%">Offer a ride now</button></p>';
+    return sharingCard() + driveCard() + lostBanner() + hero + empty + coming + actions;
+  }
+  function backBar() { return '<div style="margin:2px 0 10px"><button class="btn ghost" data-homeback="1" style="padding:8px 14px;min-height:0">&lsaquo; ' + (detailFrom === 'trips' ? 'Trips' : 'Home') + '</button></div>'; }
+  function driverTop() { return hv() === 'classic' ? tripsList() + driverTopOne() + cancelAllCard() : hv() === 'trip' ? tripHeader() : ''; }
   function driverTopOne() {
     if (!curTrip || !known(curTrip) || curTrip.live) return '';
     if (false) return card('Start here', `<p><b>1.</b> Fill in the form below: where you drive from and to, the date and time.</p><p><b>2.</b> Tap <b>Review trip</b>, then <b>Confirm and post</b>.</p><p><b>3.</b> Riders who ask for a seat will appear on this page for you to accept.</p><p>${goTo('ld-form')}Go to the form</button></p>`);
@@ -875,7 +949,7 @@
     if (!l.length) return '';
     return card('Needs a new driver', '<p>' + (l.length === 1 ? 'Your ride on <b>' + esc(RSD.label(l[0])) + '</b> has no driver.' : 'These days have no driver: <b>' + l.map((d) => esc(RSD.label(d))).join(', ') + '</b>.') + ' Nobody is booked for you without your OK.</p><p>' + l.slice(0, 3).map((d) => '<button class="btn" data-lostgo="' + d + '">Find a driver for ' + esc(RSD.label(d)) + '</button>').join(' ') + '</p>');
   }
-  function riderTop() { return lostBanner() + riderTopOne() + cancelAllCard(); }
+  function riderTop() { return hv() === 'classic' ? lostBanner() + riderTopOne() + cancelAllCard() : hv() === 'ride' ? lostBanner() + riderTopOne() : ''; }
   function riderTopOne() {
     if (!curReq || !known(curReq)) return '';
     if (false) return card('Start here', `<p><b>1.</b> Fill in the form below: where you want to be picked up and dropped off, the date and when you are ready.</p><p><b>2.</b> Tap <b>Review request</b>, then <b>Confirm and post</b>.</p><p><b>3.</b> Pick a driver from the list and tap <b>Request</b>.</p><p>${goTo('lr-form')}Go to the form</button></p>`);
@@ -978,6 +1052,8 @@
   const minsLeft = (iso) => Math.max(0, Math.round((Date.parse(iso) - Date.now()) / 60000));
   function driverNow() {
     const share = sharingCard() + driveCard();
+    if (hv() === 'trip') return share;
+    if (hv() === 'post' || hv() === 'feed' || hv() === 'ride' || hv() === 'ask') return '';
     if (myLiveTrip) return share + card('Where are you driving?', `<p><b>${esc(disp(myLiveTrip, 'origin'))}</b> to <b>${esc(disp(myLiveTrip, 'dest'))}</b></p><p class="mut" style="margin-top:-6px">Leaving about ${clk(myLiveTrip.depart_min)}</p><div class="swrow"><div><b>Offering seats to riders</b><div class="mut">Riders along your route can ask for a seat until you switch this off.</div></div><label class="sw"><input type="checkbox" checked id="ln-sw-off"><span></span></label></div>`);
     const o = nowSel['ln-o'] || (myTrip && myTrip.origin) || 'Surrey Central', d = nowSel['ln-d'] || (myTrip && myTrip.dest) || 'BCIT / Willingdon (Burnaby)';
     if (!myTrip) {
@@ -997,7 +1073,7 @@
       return share + card('Where are you driving?', placeField('ln-o', 'From', null, 'origin', o) + placeField('ln-d', 'To', null, 'dest', d)
         + (tripMode === 'later' ? '<p class="mut" style="margin:12px 0 0">Plan a trip for later. <button class="btn ghost" data-tmode="now" style="padding:4px 10px">Leave now instead</button></p>' + later : now) + '<p class="warn" id="ln-msg" role="alert"></p>');
     }
-    if (!offerOpen) return share + card('Driving', '<div class="row2"><button class="btn" data-offeropen="1">Offer a ride now</button> <button class="btn ghost" data-newtrip="1">Post a trip</button></div>');
+    if (!offerOpen && hv() === 'classic') return share + card('Driving', '<div class="row2"><button class="btn" data-offeropen="1">Offer a ride now</button> <button class="btn ghost" data-newtrip="1">Post a trip</button></div>');
     return share + card('Offer a ride now', `<p class="mut hint" data-once="offer-now">For a spur-of-the-moment drive: no date or time. Switch it on and riders along your route can ask for a seat. You get a phone alert for each request, even before you leave. It stays on until you switch it off (or after 12 hours). Already posted a trip? Use <b>Start trip</b> instead.</p>
       ${placeField('ln-o', 'From', myTrip, 'origin', o)}
       ${placeField('ln-d', 'To', myTrip, 'dest', d)}
@@ -1005,6 +1081,7 @@
   }
   const rideToggle = () => '<div style="display:flex;gap:8px;margin:0 0 12px">' + [['now', 'Now'], ['later', 'Schedule']].map(([m, l]) => '<button type="button" class="btn' + (rideMode === m ? '' : ' ghost') + '" data-rmode="' + m + '" style="flex:1;min-width:0">' + l + '</button>').join('') + '</div>';
   function riderNow() {
+    { const v = hv(); if (v !== 'classic' && v !== 'ask' && !(v === 'ride' && myLiveReq)) return ''; }
     if (myLiveReq) return card('You are looking for a ride now', `<p><b>${esc(disp(myLiveReq, 'pickup'))}</b> to <b>${esc(disp(myLiveReq, 'dropoff'))}</b></p><p class="mut">Visible to drivers for ${minsLeft(myLiveReq.expires_at)} more minutes.</p><p><button class="btn ghost" data-stoplive="req">Stop</button></p>`);
     if (rideMode === 'later') return '';
     const p = nowSel['rn-p'] || (myReq && myReq.pickup) || 'Whalley (Surrey)', d = nowSel['rn-d'] || (myReq && myReq.dropoff) || 'Brentwood (Burnaby)', pay = nowSel['rn-pay'] || 'points';
@@ -1131,6 +1208,7 @@
 
   // ---------- driver tab ----------
   function driverForm() {
+    if (!showsDrive('post')) return '';
     if (pending && pending.kind === 'trip') {
       const r = pending.row, upd = myTrip && !editing.newTrip;
       return card('Confirm your trip', `<p><b>${esc(disp(r, 'origin'))}</b> to <b>${esc(disp(r, 'dest'))}</b></p><p>${tripWhen(r)}</p>${pending.note ? '<p class="mut">' + esc(pending.note) + '</p>' : ''}
@@ -1197,6 +1275,7 @@
 
   // ---------- rider tab ----------
   function riderForm() {
+    if (!showsDrive('ask')) return '';
     if (pending && pending.kind === 'req') {
       const r = pending.row;
       return card('Confirm your request', `<p><b>${esc(disp(r, 'pickup'))}</b> to <b>${esc(disp(r, 'dropoff'))}</b></p><p>${RSD.label(r.ride_date)}, ready ${clk(r.ready_from)} to ${clk(r.ready_to)}${r.repeat_days.length ? ' &middot; repeats ' + RSD.repeatLabel(r.repeat_days, r.repeat_every, r.repeat_nth) + untilTxt(r.repeat_until) : ' &middot; one time'}</p>
@@ -1260,7 +1339,7 @@
     const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
     const passedT = (t) => !t.live && !(t.repeat_days && t.repeat_days.length) && (t.trip_date < t0 || (t.trip_date === t0 && (isFlexFree(t) ? t.flex_to : t.depart_min) + 60 < nowMin));
     const tripList = [myLiveTrip, ...myTrips].filter(Boolean).filter((t) => !passedT(t));
-    const tripRow = (t) => `<div style="padding:6px 0;border-top:1px solid var(--line)"><b>${esc(disp(t, 'origin'))} to ${esc(disp(t, 'dest'))}</b><div class="mut">${t.live ? 'Offering seats now &middot; started at ' + clk(t.depart_min) : tripWhen(t)}${t.auto_accept ? ' &middot; accepts riders automatically' : ''}</div><div style="margin-top:6px"><button class="btn ghost" data-edittrip="${t.id}">Edit</button> <button class="btn ghost" data-offtrip="${t.id}">Cancel this trip</button></div></div>`;
+    const tripRow = (t) => `<div style="padding:6px 0;border-top:1px solid var(--line)"><b>${esc(disp(t, 'origin'))} to ${esc(disp(t, 'dest'))}</b><div class="mut">${t.live ? 'Offering seats now &middot; started at ' + clk(t.depart_min) : tripWhen(t)}${t.auto_accept ? ' &middot; accepts riders automatically' : ''}</div><div style="margin-top:6px"><button class="btn" data-opentrip="${t.id}|${t.live ? todayStr() : (occOf(t, 1)[0] || t.trip_date)}">Open</button> <button class="btn ghost" data-edittrip="${t.id}">Edit</button> <button class="btn ghost" data-offtrip="${t.id}"${t.repeat_days && t.repeat_days.length && !t.live ? ' data-rep="1"' : ''}>${t.repeat_days && t.repeat_days.length && !t.live ? 'Stop repeating trip' : 'Cancel trip'}</button></div></div>`;
     const mineTrip = tripList.map(tripRow).join('');
     const mineReq = curReq ? `<div style="padding:6px 0"><b>${esc(disp(curReq, 'pickup'))} to ${esc(disp(curReq, 'dropoff'))}</b><div class="mut">${esc(RSD.label(curReq.ride_date))}, ready ${clk(curReq.ready_from)} to ${clk(curReq.ready_to)}${curReq.repeat_days.length ? ' &middot; repeats ' + RSD.repeatLabel(curReq.repeat_days, curReq.repeat_every, curReq.repeat_nth) : ' &middot; one time'}</div><div style="margin-top:6px"><button class="btn ghost" data-go="t-rider">Edit</button> <button class="btn ghost" data-offreq="${curReq.id}">Cancel my request</button></div></div>` : '<p class="mut">No ride requested. Use <b>I need a ride</b>.</p>';
     const live = matches.filter((x) => (x.status === 'requested' || x.status === 'accepted') && x.ride_date >= t0).sort((a, b) => (a.ride_date < b.ride_date ? -1 : 1));
@@ -1324,7 +1403,7 @@
     let dayBox = '';
     if (calDay && calDay.slice(0, 7) === calMonth) {
       const inf = dayInfo(calDay);
-      const dRows = inf.trips.map((t) => '<div style="padding:6px 0;border-top:1px solid var(--line)"><b>' + clk(t.live ? t.depart_min : (isFlexFree(forDate(t, calDay)) ? t.flex_from : forDate(t, calDay).depart_min)) + (isFlexFree(forDate(t, calDay)) ? ' or later' : '') + ' &middot; ' + esc(disp(t, 'origin')) + ' to ' + esc(disp(t, 'dest')) + '</b>' + (inf.dm.filter((x) => inFam(x.trip_id, t)).map((x) => row(x, false)).join('') || '<div class="mut">No riders yet.</div>') + (t.live ? '' : '<div style="margin-top:6px"><button class="btn ghost" data-edittrip="' + t.id + '">Open this trip</button>' + (RPOK && calDay >= t0 && t.repeat_days && t.repeat_days.length ? ' <button class="btn ghost" data-skipday="' + t.id + '|' + calDay + '">Skip this day</button>' : '') + '</div>') + '</div>').join('');
+      const dRows = inf.trips.map((t) => '<div style="padding:6px 0;border-top:1px solid var(--line)"><b>' + clk(t.live ? t.depart_min : (isFlexFree(forDate(t, calDay)) ? t.flex_from : forDate(t, calDay).depart_min)) + (isFlexFree(forDate(t, calDay)) ? ' or later' : '') + ' &middot; ' + esc(disp(t, 'origin')) + ' to ' + esc(disp(t, 'dest')) + '</b>' + (inf.dm.filter((x) => inFam(x.trip_id, t)).map((x) => row(x, false)).join('') || '<div class="mut">No riders yet.</div>') + (t.live ? '' : '<div style="margin-top:6px"><button class="btn" data-opentrip="' + t.id + '|' + calDay + '">Open</button>' + (RPOK && calDay >= t0 && t.repeat_days && t.repeat_days.length ? ' <button class="btn ghost" data-skipday="' + t.id + '|' + calDay + '">Skip ' + esc(/^(Today|Tomorrow)$/.test(RSD.label(calDay)) ? RSD.label(calDay).toLowerCase() : RSD.label(calDay)) + '</button>' : '') + '</div>') + '</div>').join('');
       const rRows = inf.rm.map((x) => row(x, true)).join('');
       const sRows = inf.skipped.map((t) => '<div style="padding:6px 0;border-top:1px solid var(--line)"><b>Skipped</b> &middot; ' + esc(disp(t, 'origin')) + ' to ' + esc(disp(t, 'dest')) + ' <button class="btn ghost" data-unskipday="' + t.id + '|' + calDay + '">Bring this day back</button></div>').join('');
       dayBox = '<div style="margin-top:10px"><b>' + esc(RSD.label(calDay)) + '</b>' + (dRows ? '<div class="mut" style="margin-top:6px">Driving</div>' + dRows : '') + sRows + (rRows ? '<div class="mut" style="margin-top:6px">Riding</div>' + rRows : '') + (!dRows && !rRows && !sRows ? '<p class="mut">Nothing planned this day.</p>' : '') + '</div>';
@@ -1413,17 +1492,20 @@
     renderAuth();
     ['sim-d', 'sim-ld', 'map-card'].forEach((id) => { const e = $(id); if (e) e.style.display = isTest && DEV ? '' : 'none'; });
     if (!user) { ['ld-top', 'lr-top'].forEach((id) => { $(id).innerHTML = ''; }); ['ld-form', 'ld-lists', 'lr-form', 'lr-lists', 'lu-main', 'lw-main', 'ls-main'].forEach((id) => { $(id).innerHTML = /form|main/.test(id) ? hint : ''; }); return; }
-    const sig = JSON.stringify([myTrips, selTripId, myReq, me.points, pending, mySet, isTest, testMode]);
+    autoBack();
+    const sig = JSON.stringify([myTrips, selTripId, myReq, me.points, pending, mySet, isTest, testMode, homeView]);
     const typing = document.activeElement && /^(lt|lr|lv|ls|ln|rn)-/.test(document.activeElement.id || '') && document.activeElement.tagName !== 'BUTTON' && !pending;
     if (!typing && sig !== formSig) { formSig = sig; $('ld-form').innerHTML = guard('trip form', driverForm); $('lr-form').innerHTML = guard('ride form', riderForm); $('lw-main').innerHTML = guard('points', walletMain); $('ls-main').innerHTML = guard('settings', settingsMain); }
     const busyIn = (id) => { const a = document.activeElement; return a && /SELECT|INPUT/.test(a.tagName) && a.closest && a.closest('#' + id); };
     try { syncAutopilot(); } catch (e) { /* ignore */ }
     try { renderRequests(); } catch (e) { console.error('requests', e); }
-    if (!busyIn('ld-top')) try { renderPlan(); } catch (e) { console.error('plan', e); }
-    if (!busyIn('ld-top')) $('ld-top').innerHTML = guard('leave now', driverNow) + guard('driver summary', driverTop);
-    if (!busyIn('lr-top')) $('lr-top').innerHTML = guard('ride now', riderNow) + guard('rider summary', riderTop);
-    $('ld-lists').innerHTML = guard('riders list', driverLists);
-    $('lr-lists').innerHTML = guard('drivers list', riderLists);
+    const dBack = hv() === 'trip' || hv() === 'post' || hv() === 'now' ? backBar() : '', rBack = hv() === 'ride' || hv() === 'ask' ? backBar() : '';
+    if (!busyIn('lh-feed')) $('lh-feed').innerHTML = hv() === 'feed' ? guard('home', homeFeed) : '';
+    if (showsDrive('trip')) { if (!busyIn('ld-top')) try { renderPlan(); } catch (e) { console.error('plan', e); } } else { const pw = $('plan-wrap'); if (pw) pw.classList.add('hide'); }
+    if (!busyIn('ld-top')) $('ld-top').innerHTML = dBack + guard('leave now', driverNow) + guard('driver summary', driverTop);
+    if (!busyIn('lr-top')) $('lr-top').innerHTML = rBack + guard('ride now', riderNow) + guard('rider summary', riderTop);
+    if (showsDrive('trip')) $('ld-lists').innerHTML = guard('riders list', driverLists); else { $('ld-lists').innerHTML = ''; const me1 = $('map-ld'); if (me1) me1.style.display = 'none'; }
+    if (showsDrive('ride')) $('lr-lists').innerHTML = guard('drivers list', riderLists); else { $('lr-lists').innerHTML = ''; const me2 = $('map-lr'); if (me2) me2.style.display = 'none'; }
     const upHtml = guard('upcoming', upcomingMain); $('lu-main').innerHTML = upHtml + (tripsView === 'driver' ? guard('drive log', driveLogCard) : '') + (window.__rules || '');
     applyCar(); syncSharing();
     try { wire(); } catch (e) { console.error('wire', e); showErr('buttons: ' + (e && e.message || e)); }
@@ -1434,7 +1516,7 @@
   function resetClientState() {
     stopShare(true);
     editing.trip = false; editing.req = false; editing.newTrip = false;
-    selTripId = null; pending = null; viewD = null; viewR = null; calDay = null; calMonth = null; askCancel = null; mapSig = {}; formSig = '';
+    homeView = 'feed'; detailTripId = null; selTripId = null; pending = null; viewD = null; viewR = null; calDay = null; calMonth = null; askCancel = null; mapSig = {}; formSig = '';
     [nowSel, LV].forEach((o) => Object.keys(o).forEach((k) => { delete o[k]; }));
     plReset('ln-o', 'ln-d', 'lt-o', 'lt-d', 'lr-p', 'lr-d', 'rn-p', 'rn-d');
     tripMode = 'now'; rideMode = 'now'; tripsView = 'driver'; offerOpen = false; tripsPane = 'cal';
@@ -1584,7 +1666,7 @@
     on('ld-stop', () => window.RS_UI.stopSim('ld'));
     on('lr-watch', () => { if (window.__lrStops) window.RS_UI.startSim('lr', 'map-lr', window.__lrStops, window.__lrDriver, 'rider', window.__lrMe); });
     on('lr-stop', () => window.RS_UI.stopSim('lr'));
-    const each = (sel, fn) => document.querySelectorAll(['#v-ldriver', '#v-lrider', '#v-lupcoming'].map((r) => r + ' ' + sel).join(', ')).forEach((b) => (b.onclick = () => fn(b)));
+    const each = (sel, fn) => document.querySelectorAll(['#v-lhome', '#v-ldriver', '#v-lrider', '#v-lupcoming'].map((r) => r + ' ' + sel).join(', ')).forEach((b) => (b.onclick = () => fn(b)));
     each('[data-report]', (b) => { const p = b.dataset.report.split('|'); reportDialog(p[0], p[1]); });
     each('[data-share]', (b) => shareTrip(b.dataset.share));
     each('[data-meet]', (b) => meetDialog(b.dataset.meet));
@@ -1615,13 +1697,14 @@
     on('ts-fake-off', () => { const nat = nativeLoc(); if (nat && nat.clearFakeLocation) nat.clearFakeLocation().then(() => toast('Using your real GPS again')); });
     each('[data-stopdrive]', () => { stopShare(true); toast('Driving mode is off'); render(); });
     // Reset trip: start over at any time (after a trip, or when something went wrong).
-    const resetTrip = async (end) => {
-      const live = !!myLiveTrip, shown = myTrip, repeating = !!(shown && shown.repeat_days && shown.repeat_days.length);
-      const cancelShown = !!shown && (end ? (!myLiveTrip && !repeating) : true);   // the Reset trip button cancels the trip shown; ending a drive cancels only the trip that was driven (a live one, or a one-time posted one), never another scheduled trip
-      if (!end && !window.confirm('Cancel this trip?\n\nRiders who are not picked up yet are cancelled (their points go back to them). ' + (live ? 'Your Offer a ride now trip is cancelled. ' : '') + (cancelShown ? (repeating ? 'Your repeating trip is cancelled for good, all its days. ' : 'Your posted trip is cancelled. ') : '') + 'Driving mode turns off.\n\nTo cancel all your upcoming trips and rides at once, use Settings > Cancel all upcoming.')) return;
-      const todo = matches.filter((x) => x.driver_id === user.id && ((myLiveTrip && x.trip_id === myLiveTrip.id) || (cancelShown && inFam(x.trip_id, shown))) && (x.status === 'accepted' || x.status === 'requested') && !x.picked_up_at);
+    const resetTrip = async (end, tid) => {
+      const liveT = myLiveTrip && (!tid || tid === myLiveTrip.id) ? myLiveTrip : null, shown = tid ? (myTrips.find((x) => x.id === tid) || null) : myTrip;
+      const live = !!liveT, repeating = !!(shown && shown.repeat_days && shown.repeat_days.length);
+      const cancelShown = !!shown && (end ? (!liveT && !repeating) : true);   // the Reset trip button cancels the trip shown; ending a drive cancels only the trip that was driven (a live one, or a one-time posted one), never another scheduled trip
+      if (!end && !window.confirm((repeating && cancelShown ? 'Stop this repeating trip?' : 'Cancel this trip?') + '\n\nRiders who are not picked up yet are cancelled (their points go back to them). ' + (live ? 'Your Offer a ride now trip is cancelled. ' : '') + (cancelShown ? (repeating ? 'Your repeating trip is cancelled for good, all its days. ' : 'Your posted trip is cancelled. ') : '') + 'Driving mode turns off.\n\nTo cancel all your upcoming trips and rides at once, use Settings > Cancel all upcoming.')) return;
+      const todo = matches.filter((x) => x.driver_id === user.id && ((liveT && x.trip_id === liveT.id) || (cancelShown && inFam(x.trip_id, shown))) && (x.status === 'accepted' || x.status === 'requested') && !x.picked_up_at);
       for (const x of todo) { try { await (x.status === 'requested' ? sb.rpc('respond_match', { p_match: x.id, p_accept: false }) : sb.rpc('cancel_ride', { p_match: x.id })); } catch (e) { /* already finished */ } }
-      if (myLiveTrip) { try { const ce = (await cancelTrip(myLiveTrip.id)).error; if (ce) toast(ce.message); } catch (e) { /* ignore */ } }
+      if (liveT) { try { const ce = (await cancelTrip(liveT.id)).error; if (ce) toast(ce.message); } catch (e) { /* ignore */ } }
       if (cancelShown) { try { const ce = (await cancelTrip(shown.id)).error; if (ce) toast(ce.message); } catch (e) { /* ignore */ } }
       resetClientState();
       toast(end ? 'Trip ended. Thank you for driving!' : 'Trip cancelled. You can post a new one.'); await loadAll();
@@ -1655,18 +1738,23 @@
     };
     on('sf-go', startFresh);
     each('[data-cancelall]', () => startFresh());
-    each('[data-reset]', (b) => resetTrip(b.dataset.reset === 'end'));
+    each('[data-reset]', (b) => resetTrip(b.dataset.reset === 'end', b.dataset.tid || null));
     each('[data-startnav]', () => startNav());
     on('ov-hide', async () => { const n = nativeLoc(); try { await n.setBubbleHidden({ hidden: !bubbleHidden }); bubbleHidden = !bubbleHidden; formSig = ''; render(); toast(bubbleHidden ? 'The floating button is hidden.' : 'The floating button will show during rides.'); } catch (e) { toast('Update the app to use this'); } });
     on('ov-go', async () => { const n = nativeLoc(); toast('Opening the setting...'); try { await n.openOverlaySettings(); } catch (e) { toast('Could not open the setting. Open Settings > Apps > RideShare App > Display over other apps.'); } });
     on('dnd-go', async () => { const n = nativeLoc(); toast('Opening the alert settings...'); try { await n.openAlertSettings(); } catch (e) { toast('Could not open the settings. Open Settings > Apps > RideShare App > Notifications > Seat requests.'); } });
     each('[data-edit]', (b) => { editing[b.dataset.edit] = true; formSig = ''; render(); const f = $(b.dataset.edit === 'trip' ? 'ld-form' : 'lr-form'); if (f) f.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
-    each('[data-offeropen]', () => { offerOpen = true; formSig = ''; render(); });
-    each('[data-offerclose]', () => { offerOpen = false; formSig = ''; render(); });
+    each('[data-offeropen]', () => { offerOpen = true; detailFrom = 'home'; goHome('now'); });
+    each('[data-offerclose]', () => leaveDetails());
+    each('[data-homeback]', () => leaveDetails());
+    each('[data-gotrips]', () => { if (window.rsGo) window.rsGo('trips'); });
+    each('[data-opentrip]', (b) => { const [id, d] = b.dataset.opentrip.split('|'); const mine = myTrips.find((x) => x.id === id); if (mine) { selTripId = id; myTrip = mine; } detailTripId = id; detailFrom = (window.rsView && window.rsView() === 'trips') ? 'trips' : 'home'; viewD = d || null; goHome('trip'); });
+    each('[data-openride]', (b) => { viewR = b.dataset.openride || null; detailFrom = (window.rsView && window.rsView() === 'trips') ? 'trips' : 'home'; goHome('ride'); });
+    each('[data-starttrip]', (b) => { const [id, d] = b.dataset.starttrip.split('|'); const mine = myTrips.find((x) => x.id === id); if (mine) { selTripId = id; myTrip = mine; } detailTripId = id; detailFrom = 'home'; viewD = d || null; goHome('trip'); setTimeout(() => startNav(), 900); });
     each('[data-tpane]', (b) => { tripsPane = b.dataset.tpane; render(); });
-    each('[data-askride]', () => { const rd = $('rs-riding'), hm2 = $('nb-home'); if (hm2) hm2.click(); if (rd) rd.click(); const r2 = $('t-rider'); if (r2) r2.click(); render(); });
+    each('[data-askride]', () => { detailFrom = (window.rsView && window.rsView() === 'trips') ? 'trips' : 'home'; if (myReq && !myLiveReq) editing.req = true; goHome('ask'); });
     each('[data-seltrip]', (b) => { selTripId = b.dataset.seltrip; myTrip = myTrips.find((x) => x.id === selTripId) || myTrip; curTrip = myLiveTrip || myTrip; editing.trip = false; editing.newTrip = false; pending = null; viewD = null; mapSig = {}; formSig = ''; render(); });
-    each('[data-newtrip]', () => { if (myTrips.length >= 5) { toast('You can keep up to 5 trips. Cancel one first.'); return; } const dv = $('rs-driving'), hm2 = $('nb-home'); if (hm2) hm2.click(); if (dv) dv.click(); const t2 = $('t-driver'); if (t2) t2.click(); editing.trip = true; editing.newTrip = true; pending = null; formSig = ''; render(); const f = $('ld-form'); if (f) f.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+    each('[data-newtrip]', () => { if (myTrips.length >= 5) { toast('You can keep up to 5 trips. Cancel one first.'); return; } detailFrom = (window.rsView && window.rsView() === 'trips') ? 'trips' : 'home'; editing.trip = true; editing.newTrip = true; pending = null; goHome('post'); });
     each('[data-edit-off]', (b) => { editing[b.dataset.editOff] = false; if (b.dataset.editOff === 'trip') editing.newTrip = false; pending = null; formSig = ''; plReset('lt-o', 'lt-d', 'lr-p', 'lr-d'); render(); });
     each('[data-scroll]', (b) => { const e = $(b.dataset.scroll); if (e) e.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
     document.querySelectorAll('#ln-o, #ln-d, #rn-p, #rn-d, #rn-pay').forEach((e) => { e.onchange = () => { nowSel[e.id] = e.value; }; });
@@ -1728,7 +1816,7 @@
     each('[data-noshow]', (b) => !window.confirm('Is the rider not at the pickup spot?\n\nThe ride closes as a missed pickup and you keep the points. This goes on the rider\'s record.') ? null : run(sb.rpc('mark_no_show', { p_match: b.dataset.noshow }), 'Closed as a missed pickup. You keep the points.'));
     each('[data-acc]', (b) => run(sb.rpc('respond_match', { p_match: b.dataset.acc, p_accept: true }), 'Accepted'));
     each('[data-dec]', (b) => run(sb.rpc('respond_match', { p_match: b.dataset.dec, p_accept: false }), 'Declined'));
-    each('[data-offtrip]', (b) => !window.confirm('Cancel this trip?\n\nAny rider who is booked is cancelled and gets their points back.') ? null : run(cancelTrip(b.dataset.offtrip), 'Trip cancelled'));
+    each('[data-offtrip]', (b) => !window.confirm((b.dataset.rep ? 'Stop this repeating trip?\n\nAll its remaining dates are cancelled. ' : 'Cancel this trip?\n\n') + 'Any rider who is booked is cancelled and gets their points back.') ? null : run(cancelTrip(b.dataset.offtrip), b.dataset.rep ? 'Repeating trip stopped' : 'Trip cancelled'));
     each('[data-offreq]', (b) => !window.confirm('Cancel this request?\n\nIf a driver has accepted, the cancellation rules apply.') ? null : run(cancelRequest(b.dataset.offreq), 'Request cancelled'));
     each('[data-go]', (b) => $(b.dataset.go).click());
     ['ln', 'lt', 'lr'].forEach((p) => {
@@ -1740,12 +1828,12 @@
       if (p === 'ln') ['rep', 'nth', 'dow', 'end', 'until', 'count'].forEach((k) => { const el = $(p + '-' + k); if (!el) return; const prev = el.onchange; el.onchange = () => { LV[p + '-' + k] = el.value; if (prev) prev(); }; });
     });
     { const au = $('ln-auto'); if (au) au.onchange = () => { LV['ln-auto'] = au.checked ? '1' : '0'; }; }
-    each('[data-skipday]', (b) => { if (!window.confirm('Skip this day?\n\nRiders booked on this day are cancelled and get their points back. The trip carries on the other days.')) return; const [tp, ds] = b.dataset.skipday.split('|'); run(sb.rpc('skip_trip_day', { p_trip: tp, p_date: ds }), 'Day skipped'); });
+    each('[data-skipday]', (b) => { if (!window.confirm('Skip this date?\n\nRiders booked on it are cancelled and get their points back. The trip carries on the other dates.')) return; const [tp, ds] = b.dataset.skipday.split('|'); run(sb.rpc('skip_trip_day', { p_trip: tp, p_date: ds }), 'Day skipped'); });
     each('[data-unskipday]', (b) => { const [tp, ds] = b.dataset.unskipday.split('|'); run(sb.rpc('unskip_trip_day', { p_trip: tp, p_date: ds }), 'The day is back on'); });
-    each('[data-edittrip]', (b) => { selTripId = b.dataset.edittrip; myTrip = myTrips.find((x) => x.id === selTripId) || myTrip; curTrip = myLiveTrip || myTrip; editing.trip = true; editing.newTrip = false; pending = null; viewD = null; mapSig = {}; formSig = ''; $('t-driver').click(); render(); });
+    each('[data-edittrip]', (b) => { selTripId = b.dataset.edittrip; myTrip = myTrips.find((x) => x.id === selTripId) || myTrip; detailTripId = null; detailFrom = (window.rsView && window.rsView() === 'trips') ? 'trips' : 'home'; editing.trip = true; editing.newTrip = false; pending = null; viewD = null; goHome('post'); });
     each('[data-calday]', (b) => { calDay = calDay === b.dataset.calday ? null : b.dataset.calday; render(); });
     each('[data-calmove]', (b) => { const [yy, mm] = calMonth.split('-').map(Number), nd = new Date(yy, mm - 1 + (+b.dataset.calmove), 1); calMonth = nd.getFullYear() + '-' + String(nd.getMonth() + 1).padStart(2, '0'); calDay = null; render(); });
-    each('[data-lostgo]', (b) => { viewR = b.dataset.lostgo; mapSig = {}; $('t-rider').click(); render(); const f = $('lr-lists'); if (f) f.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+    each('[data-lostgo]', (b) => { viewR = b.dataset.lostgo; detailFrom = 'home'; goHome('ride'); });
     each('[data-stopseries]', (b) => { if (!window.confirm('End this regular booking?\n\nThe coming days with this person are cancelled (any points go back) and no new days are booked by themselves. Days already finished stay as they are.')) return; const [tp, rq] = b.dataset.stopseries.split('|'); run(sb.rpc('stop_series', { p_trip: tp, p_request: rq }), 'Regular booking ended'); });
   }
 
