@@ -1080,7 +1080,7 @@
         + '<label>Payment I accept</label><select id="ln-a">' + [['either', 'Points or cash'], ['points', 'Points only'], ['cash', 'Cash gas-share only']].map(([v, l]) => '<option value="' + v + '"' + (v === (LV['ln-a'] || sx.d_accepts) ? ' selected' : '') + '>' + l + '</option>').join('') + '</select></details>'
         + '<div style="margin-top:12px"><button class="btn" id="ln-review" style="width:100%;padding:12px;font-size:16px">Review trip</button></div>';
       const now = '<p class="mut hint" data-once="leave-now" style="margin:12px 0 0">Riders along your route can ask for a seat, and you get a phone alert for each one. You can switch this off any time.</p><div style="margin-top:12px"><button class="btn" id="ln-nav" style="width:100%;padding:14px;font-size:17px">Leave now</button></div><div style="margin-top:8px;text-align:center"><button class="btn ghost" data-tmode="later">Plan a trip for later instead</button></div>';
-      return share + card('Where are you driving?', placeField('ln-o', 'From', null, 'origin', o) + placeField('ln-d', 'To', null, 'dest', d)
+      return share + card('Create a new trip', placeField('ln-o', 'From', null, 'origin', o) + placeField('ln-d', 'To', null, 'dest', d)
         + (tripMode === 'later' ? '<p class="mut" style="margin:12px 0 0">Plan a trip for later. <button class="btn ghost" data-tmode="now" style="padding:4px 10px">Leave now instead</button></p>' + later : now) + '<p class="warn" id="ln-msg" role="alert"></p>');
     }
     if (!offerOpen && hv() === 'classic') return share + card('Driving', '<div class="row2"><button class="btn" data-offeropen="1">Offer a ride now</button> <button class="btn ghost" data-newtrip="1">Post a trip</button></div>');
@@ -1363,7 +1363,22 @@
       const buttons = '<div style="margin:6px 0;display:flex;flex-wrap:wrap;gap:8px"><button class="btn" data-opentrip="' + t.id + '|' + (t.live ? todayStr() : (dates[0] || t.trip_date)) + '">Open</button><button class="btn ghost" data-edittrip="' + t.id + '">Edit</button><button class="btn ghost" data-offtrip="' + t.id + '"' + (rep ? ' data-rep="1"' : '') + '>' + (rep ? 'Stop repeating trip' : 'Cancel trip') + '</button></div>';
       return '<details data-fold="' + id + '"' + (foldOpen.has(id) ? ' open' : '') + ' style="border-top:1px solid var(--line);padding:6px 0"><summary style="cursor:pointer;padding:4px 0"><b>' + esc(disp(t, 'origin')) + ' to ' + esc(disp(t, 'dest')) + '</b><div class="mut">' + sub + (asksAll ? ' &middot; <b>' + asksAll + ' asking</b>' : '') + (t.auto_accept ? ' &middot; accepts automatically' : '') + '</div></summary>' + buttons + (rows ? '<div class="mut" style="margin:8px 0 2px">Dates (tap one to open it)</div>' + rows : '') + '</details>';
     };
-    const mineTrip = tripList.map(tripRow).join('');
+    const dayItems = [];
+    tripList.forEach((t) => {
+      if (t.live) { dayItems.push({ t, d: t0, time: t.depart_min }); return; }
+      occOf(t, 31).forEach((d) => { const ft = forDate(t, d); dayItems.push({ t, d, time: isFlexFree(ft) ? ft.flex_from : ft.depart_min }); });
+    });
+    dayItems.sort((a, b) => (a.d < b.d ? -1 : a.d > b.d ? 1 : a.time - b.time));
+    const dayRow = (it) => {
+      const t = it.t, ft = forDate(t, it.d), ms = matches.filter((x) => x.driver_id === user.id && inFam(x.trip_id, t) && x.ride_date === it.d);
+      const acc = ms.filter((x) => x.status === 'accepted').length, ask = ms.filter((x) => x.status === 'requested' && fitServer[x.id] !== false).length;
+      const when = t.live ? 'Offering seats now' : esc(RSD.label(it.d)) + ' &middot; ' + (isFlexFree(ft) ? clk(ft.flex_from) + ' to ' + clk(ft.flex_to) : clk(ft.depart_min));
+      const tags = (acc ? acc + (acc === 1 ? ' rider' : ' riders') : '') + (ask ? (acc ? ' &middot; ' : '') + '<b>' + ask + ' asking</b>' : '');
+      return '<button type="button" class="btn ghost" data-opentrip="' + t.id + '|' + it.d + '" style="width:100%;text-align:left;margin:3px 0;display:block"><div style="display:flex;justify-content:space-between;gap:8px"><b>' + when + '</b><span class="mut">' + tags + '</span></div><div class="mut" style="font-size:13px;font-weight:400">' + esc(disp(t, 'origin')) + ' to ' + esc(disp(t, 'dest')) + '</div></button>';
+    };
+    const dayRows = dayItems.map(dayRow), SHOW = 10;
+    const mineTrip = dayRows.slice(0, SHOW).join('') + (dayRows.length > SHOW ? fold('f-more-dates', 'Show ' + (dayRows.length - SHOW) + ' more dates', dayRows.slice(SHOW).join('')) : '')
+      + '<div style="margin-top:10px">' + fold('f-manage-trips', 'My trips (' + tripList.length + '): edit or stop', tripList.map(tripRow).join('')) + '</div>';
     const mineReq = curReq ? `<div style="padding:6px 0"><b>${esc(disp(curReq, 'pickup'))} to ${esc(disp(curReq, 'dropoff'))}</b><div class="mut">${esc(RSD.label(curReq.ride_date))}, ready ${clk(curReq.ready_from)} to ${clk(curReq.ready_to)}${curReq.repeat_days.length ? ' &middot; repeats ' + RSD.repeatLabel(curReq.repeat_days, curReq.repeat_every, curReq.repeat_nth) : ' &middot; one time'}</div><div style="margin-top:6px"><button class="btn ghost" data-go="t-rider">Edit</button> <button class="btn ghost" data-offreq="${curReq.id}">Cancel my request</button></div></div>` : '<p class="mut">No ride requested. Use <b>I need a ride</b>.</p>';
     const live = matches.filter((x) => (x.status === 'requested' || x.status === 'accepted') && x.ride_date >= t0).sort((a, b) => (a.ride_date < b.ride_date ? -1 : 1));
     const asRider = live.filter((x) => x.rider_id === user.id), asDriver = live.filter((x) => x.driver_id === user.id && (x.status !== 'requested' || fitsOk(x)));
@@ -1445,7 +1460,7 @@
       return toggle + bar + lostBanner() + (tripsPane === 'cal' ? calCard : comingR) + card('Past rides', rideRows ? fold('f-past-rides', 'Show past rides', rideRows) : '<p class="mut">Nothing yet. Rides you have taken show up here.</p>') + cancelAllCard();
     }
     const askN = asDriver.filter((x) => x.status === 'requested').length;
-    const comingD = (tripList.length ? card(tripList.length > 1 ? 'Upcoming trips' : tripList[0].live ? 'Offering seats now' : 'Upcoming trip', mineTrip) : '') + (asDriver.length ? card('Upcoming riders', driverRows) : '')
+    const comingD = (tripList.length ? card('Upcoming trips', mineTrip) : '') + (asDriver.length ? card('Upcoming riders', driverRows) : '')
       || card('Upcoming trip', '<p class="mut">Nothing yet. Switch on <b>Offer seats to riders</b> on Home, or post a trip for a set day and time.</p>');
     return toggle + bar + (tripsPane === 'cal' ? calCard : comingD) + card('Past trips', tripRows ? fold('f-past-trips', 'Show past trips', tripRows) : '<p class="mut">Nothing yet. Finished trips show up here.</p>') + cancelAllCard();
   }
