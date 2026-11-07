@@ -1419,12 +1419,12 @@
     if (tripsView === 'rider') {
       const comingR = (curReq ? card('Upcoming ride request', mineReq) : '') + (asRider.length ? card('Upcoming rides', riderRows) : '')
         || card('Upcoming rides', '<p class="mut">Nothing yet. Ask for a ride on <b>Home</b> and your driver will show up here.</p>');
-      return toggle + bar + lostBanner() + (tripsPane === 'cal' ? calCard : comingR) + card('Past rides', rideRows ? fold('f-past-rides', 'Show past rides', rideRows) : '<p class="mut">Nothing yet. Rides you have taken show up here.</p>');
+      return toggle + bar + lostBanner() + (tripsPane === 'cal' ? calCard : comingR) + card('Past rides', rideRows ? fold('f-past-rides', 'Show past rides', rideRows) : '<p class="mut">Nothing yet. Rides you have taken show up here.</p>') + cancelAllCard();
     }
     const askN = asDriver.filter((x) => x.status === 'requested').length;
     const comingD = (tripList.length ? card(tripList.length > 1 ? 'Upcoming trips' : tripList[0].live ? 'Offering seats now' : 'Upcoming trip', mineTrip) : '') + (asDriver.length ? card('Upcoming riders', driverRows) : '')
       || card('Upcoming trip', '<p class="mut">Nothing yet. Switch on <b>Offer seats to riders</b> on Home, or post a trip for a set day and time.</p>');
-    return toggle + bar + (tripsPane === 'cal' ? calCard : comingD) + card('Past trips', tripRows ? fold('f-past-trips', 'Show past trips', tripRows) : '<p class="mut">Nothing yet. Finished trips show up here.</p>');
+    return toggle + bar + (tripsPane === 'cal' ? calCard : comingD) + card('Past trips', tripRows ? fold('f-past-trips', 'Show past trips', tripRows) : '<p class="mut">Nothing yet. Finished trips show up here.</p>') + cancelAllCard();
   }
 
   // ---------- settings tab ----------
@@ -1452,7 +1452,6 @@
       + (nativeLoc() ? card('Rider alerts', '<p><b>Status: ' + (dndOn ? 'ON' : 'OFF') + '</b></p><p class="mut">' + (dndOn ? 'Seat requests can alert you even when your phone is on Do Not Disturb or Sleeping mode.' : 'Seat requests are silent when your phone is on Do Not Disturb or Sleeping mode. Tap the button, then switch on <b>Override Do Not Disturb</b> on the screen that opens.') + '</p><p><button class="btn' + (dndOn ? ' ghost' : '') + '" id="dnd-go">' + (dndOn ? 'Open alert settings' : 'Let alerts break through Do Not Disturb') + '</button></p>') : '')
       + (nativeLoc() ? card('Floating RideShare button', '<p><b>Status: ' + (overlayOn ? 'ON' : 'OFF') + '</b></p><p class="mut">' + (overlayOn ? 'While a ride is under way, a small round RideShare button floats over Google Maps. Tap it to come back to RideShare. You can drag it out of the way.' : 'Shows a small round RideShare button over Google Maps while a ride is under way, so one tap brings you back to RideShare. Tap the button, then switch on <b>Allow display over other apps</b> on the screen that opens.') + '</p><p><button class="btn' + (overlayOn ? ' ghost' : '') + '" id="ov-go">' + (overlayOn ? 'Open settings' : 'Allow the floating button') + '</button> ' + (overlayOn ? '<button class="btn ' + (bubbleHidden ? '' : 'ghost') + '" id="ov-hide">' + (bubbleHidden ? 'Show the floating button again' : 'Hide the floating button') + '</button>' : '') + '</p><p class="mut hint">You can also press and hold the floating button for a second to make it go away until your next ride.</p>') : '')
       + (isTest ? card('Layout', '<p class="mut hint">You are using the new layout. If something feels off, you can switch back at any time.</p><p><button class="btn ghost" data-uimode="classic">Use the old layout</button></p>') : '')
-      + card('Cancel all upcoming', '<p class="mut hint">Cancels all your upcoming trips, ride requests and booked rides in one go. Anyone booked with you is told and gets their points back. Your history, points and settings stay, and the app goes back to how it looks when you first open it.</p><p><button class="btn ghost" id="sf-go" style="color:var(--bad);border-color:var(--bad)">Cancel all my upcoming trips and rides</button></p>')
       + card('Good to know', '<p class="mut hint">Driver and rider settings are separate, so you can be both at the same time. Other people only see your ride style (like "quiet ride") and whether you accept automatically. Nothing else in here is shared.</p>');
   }
   const saveSettings = () => {
