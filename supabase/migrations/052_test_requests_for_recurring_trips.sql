@@ -1,13 +1,13 @@
--- Test data: made-up riders ask for a seat on your repeating trips, each on a DIFFERENT date.
--- Takes your newest posted repeating trips (up to 5) and the made-up riders (sample-r-...@example.invalid, up to 5).
--- Rider 1 asks trip 1 on its 1st coming date, rider 2 asks trip 2 on its 2nd coming date, and so on, so every
--- request is for a different day. Each request sits there waiting for you (even if a trip accepts riders
+-- Test data: 3 made-up riders ask for a seat on your repeating trip(s), each request on a DIFFERENT date.
+-- Takes your newest posted repeating trips (up to 5) and the made-up riders (sample-r-...@example.invalid).
+-- Rider 1 asks on one coming date, rider 2 on another, rider 3 on a third (spread over your trips if you have
+-- several, otherwise over the dates of your one repeating trip), so every request is for a different day. Each request sits there waiting for you (even if a trip accepts riders
 -- automatically): you will see the date on each request. Safe to run again (it resets the same riders and requests).
 -- Needs migrations 046 and 048, and the made-up riders from the sample data.
 do $$
 declare
   today date := (now() at time zone 'America/Vancouver')::date;
-  trip_ids uuid[]; t public.trips; r record; i integer := 0; d date; k integer; cnt integer := 0;
+  trip_ids uuid[]; ntrips integer; t public.trips; r record; i integer := 0; d date; k integer; cnt integer := 0; n_req integer := 3;
   q jsonb; orig boolean; f integer; tt integer; lines text := ''; used date[] := '{}';
 begin
   select array_agg(x.id order by x.created_at desc) into trip_ids from (
@@ -16,15 +16,15 @@ begin
        and user_id not in (select id from auth.users where email like 'sample-%@example.invalid')
      order by created_at desc limit 5) x;
   if trip_ids is null then raise exception 'No repeating trip found. Post a repeating trip first.'; end if;
+  ntrips := array_length(trip_ids, 1);
   for r in
     select rq.id as request_id, rq.user_id as rider_id
       from public.ride_requests rq join auth.users u on u.id = rq.user_id
      where u.email like 'sample-r-%@example.invalid' and rq.active
-     order by u.email limit 5
+     order by u.email limit n_req
   loop
     i := i + 1;
-    exit when i > array_length(trip_ids, 1);
-    select * into t from public.trips where id = trip_ids[i];
+    select * into t from public.trips where id = trip_ids[((i - 1) % ntrips) + 1];
     -- a coming date this trip runs, at least i days from now and not used by another request (so every request is for a different day)
     d := null;
     for k in i..30 loop
