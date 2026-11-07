@@ -127,6 +127,10 @@
   let myBlocks = new Set();   // people I chose never to be matched with (migration 029)
   let MSOK = null, msgs = [], myRatings = {}, scores = {}, adminReports = [];   // migration 024 (messages, ratings, admin reports)
   let PCOK = null, cards = {};   // migration 021 (photo and car details shown to a matched driver or rider, Report a problem) is in place
+  const foldOpen = new Set();   // which collapsed lists the person opened (kept across screen refreshes)
+  document.addEventListener('toggle', (e) => { const t = e.target; if (t && t.dataset && t.dataset.fold) { if (t.open) foldOpen.add(t.dataset.fold); else foldOpen.delete(t.dataset.fold); } }, true);
+  const fold = (id, summary, html) => '<details data-fold="' + id + '"' + (foldOpen.has(id) ? ' open' : '') + '><summary class="mut" style="cursor:pointer;padding:4px 0">' + summary + '</summary>' + html + '</details>';
+  let prevMode = 'cal'; const prevMonthBy = {};   // the days preview on the trip forms: calendar or list
   let freshBusy = false;   // Start fresh is running
   let myChildren = [];   // the days of my repeating trips (with a window) that became their own trip once the first rider was accepted
   let RPOK = null, skipMap = {};   // RPOK: migration 048 (every N weeks, monthly, skip a day) is in place
@@ -142,11 +146,34 @@
       <div id="${p}-rep-days"><label>On these days</label>${dayChips(p + '-days', x.repeat_days)}</div>
       <div id="${p}-rep-month"><label>Which day of the month</label><div class="row"><select id="${p}-nth">${['First', 'Second', 'Third', 'Fourth', 'Last'].map((n, i) => '<option value="' + (i + 1) + '"' + (i + 1 === nth ? ' selected' : '') + '>' + n + '</option>').join('')}</select><select id="${p}-dow">${RSD.FULL_DAYS.map((n, i) => '<option value="' + (i + 1) + '"' + (i + 1 === dow ? ' selected' : '') + '>' + n + '</option>').join('')}</select></div></div>
       ${UNOK ? `<div id="${p}-rep-end"><label>Ends</label><select id="${p}-end"><option value="never"${endKind === 'never' ? ' selected' : ''}>Never</option><option value="date"${endKind === 'date' ? ' selected' : ''}>On a date</option><option value="count"${endKind === 'count' ? ' selected' : ''}>After a number of times</option></select>
-        <input type="date" id="${p}-until" min="${todayStr()}" value="${L(p + '-until', x.repeat_until || '')}"><input type="number" id="${p}-count" min="1" max="100" value="${L(p + '-count', 10)}" aria-label="Number of times"></div>` : ''}`;
+        <input type="date" id="${p}-until" min="${todayStr()}" value="${L(p + '-until', x.repeat_until || '')}"><input type="number" id="${p}-count" min="1" max="100" value="${L(p + '-count', 10)}" aria-label="Number of times"></div>` : ''}
+      <div id="${p}-rep-prev" style="margin-top:8px">${fold(p + '-prev', '<span id="' + p + '-prevsum">Preview the days</span>', '<div id="' + p + '-prevbody"></div>')}</div>`;
+  }
+  function miniCal(ym, hits) {
+    const pad2 = (n) => String(n).padStart(2, '0'), [cy, cm] = ym.split('-').map(Number), dim = new Date(cy, cm, 0).getDate(), lead = (new Date(cy, cm - 1, 1).getDay() + 6) % 7;
+    let cells = ''; for (let i = 0; i < lead; i++) cells += '<span></span>';
+    for (let dd = 1; dd <= dim; dd++) { const ds = cy + '-' + pad2(cm) + '-' + pad2(dd), on = hits.has(ds); cells += '<span style="font-size:12px;line-height:28px;border-radius:7px;' + (on ? 'background:var(--acc);color:#fff;font-weight:600' : 'color:var(--mut)') + '">' + dd + '</span>'; }
+    return '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;text-align:center">' + RSD.DAY_NAMES.map((n) => '<span class="mut" style="font-size:10px">' + n + '</span>').join('') + cells + '</div>';
+  }
+  function updatePreview(p) {
+    const box = $(p + '-prevbody'), sum = $(p + '-prevsum'); if (!box) return;
+    const start = ($(p + '-date') || {}).value, rp = repeatRead(p, start);
+    if (!start || rp.err || !rp.days.length) { box.innerHTML = '<p class="mut">' + esc(rp.err || 'Pick a date and how it repeats to see the days.') + '</p>'; if (sum) sum.textContent = 'Preview the days'; return; }
+    const horizon = rp.until || RSD.addDays(start, 180), hits = new Set(), list = [];
+    for (let i = 0; i <= 366; i++) { const d = RSD.addDays(start, i); if (d > horizon) break; if (RSD.occursOn(start, rp.days, d, rp.until, rp.every, rp.nth)) { hits.add(d); list.push(d); } }
+    if (sum) sum.textContent = 'Preview: ' + list.length + (list.length === 1 ? ' day' : ' days') + (rp.until ? ' until ' + RSD.label(rp.until) : ' in the next 6 months');
+    const ym = prevMonthBy[p] || start.slice(0, 7), [cy, cm] = ym.split('-').map(Number), mname = new Date(cy, cm - 1, 1).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+    const seg = (m, l) => '<button type="button" class="btn' + (prevMode === m ? '' : ' ghost') + '" data-pmode="' + m + '" style="padding:4px 12px;min-height:0">' + l + '</button>';
+    const body = prevMode === 'cal'
+      ? '<div style="display:flex;justify-content:space-between;align-items:center;margin:4px 0"><button type="button" class="btn ghost" data-pmove="-1" aria-label="Previous month" style="padding:2px 12px;min-height:0">&lsaquo;</button><b>' + esc(mname) + '</b><button type="button" class="btn ghost" data-pmove="1" aria-label="Next month" style="padding:2px 12px;min-height:0">&rsaquo;</button></div>' + miniCal(ym, hits)
+      : '<div style="max-height:200px;overflow:auto">' + list.slice(0, 100).map((d) => '<div style="padding:3px 0;border-top:1px solid var(--line)">' + esc(RSD.label(d)) + '</div>').join('') + (list.length > 100 ? '<div class="mut">and more&hellip;</div>' : '') + '</div>';
+    box.innerHTML = '<div style="display:flex;gap:6px;margin:6px 0">' + seg('cal', 'Calendar') + seg('list', 'List') + '</div>' + body;
+    box.querySelectorAll('[data-pmode]').forEach((b) => (b.onclick = () => { prevMode = b.dataset.pmode; updatePreview(p); }));
+    box.querySelectorAll('[data-pmove]').forEach((b) => (b.onclick = () => { const nd = new Date(cy, cm - 1 + (+b.dataset.pmove), 1); prevMonthBy[p] = nd.getFullYear() + '-' + String(nd.getMonth() + 1).padStart(2, '0'); updatePreview(p); }));
   }
   function repUi(p) {
     const k = $(p + '-rep') && $(p + '-rep').value, show = (id, on) => { const e = $(id); if (e) e.style.display = on ? '' : 'none'; };
-    show(p + '-rep-days', k === 'weekly' || k === 'biweekly'); show(p + '-rep-month', k === 'monthly'); show(p + '-rep-end', k !== 'none');
+    show(p + '-rep-days', k === 'weekly' || k === 'biweekly'); show(p + '-rep-month', k === 'monthly'); show(p + '-rep-end', k !== 'none'); show(p + '-rep-prev', k !== 'none');
     const ek = $(p + '-end') && $(p + '-end').value; show(p + '-until', ek === 'date'); show(p + '-count', ek === 'count');
   }
   function repeatRead(p, start) {
@@ -786,7 +813,7 @@
       const here = !myLiveTrip && myTrip && t.id === myTrip.id;
       return `<div class="item"><div><b>${esc(disp(t, 'origin'))}</b> to <b>${esc(disp(t, 'dest'))}</b><div class="mut">${tripWhen(t)}${acc ? ' &middot; ' + acc + ' accepted' : ''}${asks ? ' &middot; <b>' + asks + ' asking</b>' : ''}</div></div><div>${here ? '<span class="mut">Showing</span>' : '<button class="btn ghost" data-seltrip="' + t.id + '">Show</button>'}</div></div>`;
     }).join('');
-    return card('My trips (' + myTrips.length + ')', rows + '<p style="margin-top:8px"><button class="btn ghost" data-newtrip="1">Post another trip</button></p>');
+    return card('My trips (' + myTrips.length + ')', fold('f-mytrips', myTrips.length + ' trips &middot; tap to show', rows) + '<p style="margin-top:8px"><button class="btn ghost" data-newtrip="1">Post another trip</button></p>');
   }
   // Home: the way out of everything at once (only shown when there is something upcoming)
   function cancelAllCard() {
@@ -1281,13 +1308,14 @@
     const toggle = '<div style="display:flex;gap:8px;margin:0 0 12px">' + segT('driver', 'As a driver') + segT('rider', 'As a rider') + '</div>';
     window.__rules = card('Cancellation rules', policy);
     if (tripsView === 'rider') {
-      const comingR = (curReq ? card('Upcoming ride request', mineReq) : '') + (asRider.length ? card('Upcoming rides', riderRows) : '')
+      const comingR = (curReq ? card('Upcoming ride request', mineReq) : '') + (asRider.length ? card('Upcoming rides', fold('f-up-rides', asRider.length + (asRider.length === 1 ? ' ride' : ' rides') + ' &middot; tap to show', riderRows)) : '')
         || card('Upcoming rides', '<p class="mut">Nothing yet. Ask for a ride on <b>Home</b> and your driver will show up here.</p>');
-      return toggle + lostBanner() + calCard + comingR + card('Past rides', rideRows || '<p class="mut">Nothing yet. Rides you have taken show up here.</p>');
+      return toggle + lostBanner() + calCard + comingR + card('Past rides', rideRows ? fold('f-past-rides', 'Show past rides', rideRows) : '<p class="mut">Nothing yet. Rides you have taken show up here.</p>');
     }
-    const comingD = (tripList.length ? card(tripList.length > 1 ? 'Upcoming trips' : tripList[0].live ? 'Offering seats now' : 'Upcoming trip', mineTrip) : '') + (asDriver.length ? card('Upcoming riders', driverRows) : '')
+    const askN = asDriver.filter((x) => x.status === 'requested').length;
+    const comingD = (tripList.length ? card(tripList.length > 1 ? 'Upcoming trips' : tripList[0].live ? 'Offering seats now' : 'Upcoming trip', fold('f-up-trips', tripList.length + (tripList.length === 1 ? ' trip' : ' trips') + ' &middot; tap to show', mineTrip)) : '') + (asDriver.length ? card('Upcoming riders', fold('f-up-riders', asDriver.length + (asDriver.length === 1 ? ' rider' : ' riders') + (askN ? ' (' + askN + ' asking)' : '') + ' &middot; tap to show', driverRows)) : '')
       || card('Upcoming trip', '<p class="mut">Nothing yet. Switch on <b>Offer seats to riders</b> on Home, or post a trip for a set day and time.</p>');
-    return toggle + calCard + comingD + card('Past trips', tripRows || '<p class="mut">Nothing yet. Finished trips show up here.</p>');
+    return toggle + calCard + comingD + card('Past trips', tripRows ? fold('f-past-trips', 'Show past trips', tripRows) : '<p class="mut">Nothing yet. Finished trips show up here.</p>');
   }
 
   // ---------- settings tab ----------
@@ -1668,6 +1696,9 @@
     ['ln', 'lt', 'lr'].forEach((p) => {
       const e = $(p + '-rep'); if (!e) return;
       e.onchange = () => repUi(p); if ($(p + '-end')) $(p + '-end').onchange = () => repUi(p); repUi(p);
+      updatePreview(p);
+      ['rep', 'nth', 'dow', 'end', 'until', 'count', 'date'].forEach((k) => { const el = $(p + '-' + k); if (el) el.addEventListener('change', () => updatePreview(p)); });
+      const dc = $(p + '-days'); if (dc) dc.addEventListener('click', () => updatePreview(p));
       if (p === 'ln') ['rep', 'nth', 'dow', 'end', 'until', 'count'].forEach((k) => { const el = $(p + '-' + k); if (!el) return; const prev = el.onchange; el.onchange = () => { LV[p + '-' + k] = el.value; if (prev) prev(); }; });
     });
     { const au = $('ln-auto'); if (au) au.onchange = () => { LV['ln-auto'] = au.checked ? '1' : '0'; }; }
