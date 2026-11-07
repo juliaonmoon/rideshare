@@ -132,12 +132,13 @@
   let PCOK = null, cards = {};   // migration 021 (photo and car details shown to a matched driver or rider, Report a problem) is in place
   const DEV = (() => { try { return localStorage.getItem('rs_dev') === '1'; } catch (e) { return false; } })();   // developer tools (route simulator, test cards) only when switched on
   const store = (k, d) => { try { return localStorage.getItem(k) || d; } catch (e) { return d; } }, keep = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* storage blocked */ } };
-  const loadTf = () => { try { const o = JSON.parse(store('rs_trips_filter', '{}')); return { when: ['upcoming', 'past', 'all'].includes(o.when) ? o.when : 'upcoming', role: ['all', 'drive', 'ride'].includes(o.role) ? o.role : 'all', st: new Set(Array.isArray(o.st) ? o.st : []), view: o.view === 'trip' ? 'trip' : 'date', trip: null }; } catch (e) { return { when: 'upcoming', role: 'all', st: new Set(), view: 'date', trip: null }; } };
+  const loadTf = () => { try { const o = JSON.parse(store('rs_trips_filter', '{}')); return { when: ['upcoming', 'past', 'all'].includes(o.when) ? o.when : 'upcoming', role: ['all', 'drive', 'ride'].includes(o.role) ? o.role : 'all', st: new Set(Array.isArray(o.st) ? o.st : []), view: o.view === 'date' ? 'date' : 'trip', trip: null }; } catch (e) { return { when: 'upcoming', role: 'all', st: new Set(), view: 'trip', trip: null }; } };
   const saveTf = () => keep('rs_trips_filter', JSON.stringify({ when: tf.when, role: tf.role, st: [...tf.st], view: tf.view }));
   let offerOpen = false, tripsPane = store('rs_trips_pane', 'list') === 'cal' ? 'cal' : 'list';   // the Trips tab opens on the List with its filters, and remembers the last choice
   let tf = loadTf();   // Trips > List filters: when (upcoming / past / all), what (driving / riding), and status chips   // Home: the Offer a ride now form is open; Trips tab: 'cal' or 'list'
+  const foldClosed = new Set();   // groups that are open by default and were closed by the person
   const foldOpen = new Set();   // which collapsed lists the person opened (kept across screen refreshes)
-  document.addEventListener('toggle', (e) => { const t = e.target; if (t && t.dataset && t.dataset.fold) { if (t.open) foldOpen.add(t.dataset.fold); else foldOpen.delete(t.dataset.fold); } }, true);
+  document.addEventListener('toggle', (e) => { const t = e.target; if (t && t.dataset && t.dataset.fold) { if (t.dataset.foldopen) { if (t.open) foldClosed.delete(t.dataset.fold); else foldClosed.add(t.dataset.fold); } else if (t.open) foldOpen.add(t.dataset.fold); else foldOpen.delete(t.dataset.fold); } }, true);
   // Long explanations are not shown all the time: a small (i) opens them, and a few guide the person once, the first time they see them.
   const tipsSeen = () => { try { return JSON.parse(localStorage.getItem('rs_tips_seen') || '[]'); } catch (e) { return []; } };
   const AUTO_TIPS = false;   // one-time guide pop-ups are switched off for now; the (i) buttons still open the text
@@ -1480,11 +1481,21 @@
       allItems.push({ role: 'ride', past: false, date: it.d, time: it.time, html: rideItemRow(it), f: { waiting: it.kind === 'looking' || it.x.status === 'requested', confirmed: it.kind === 'ride' && it.x.status === 'accepted', repeating: rep, oneTime: !rep } });
     });
     pastTripItems.concat(pastRideItems).forEach((it) => allItems.push(it));
-    // By trip: one row per trip I drive (a repeating trip is ONE row; open it for its dates, Edit, Stop), instead of one row per date
+    // A trip as a group: the trip itself on top, its dates under it (the first few; the rest one tap away). Close a group to hide its dates.
+    const groupHtml = (t, rep, dates) => {
+      const its = allItems.filter((i) => i.role === 'drive' && !i.past && i.tripId === t.id && (!tf.st.size || [...tf.st].some((k) => i.f[k])));
+      const asksAll = matches.filter((x) => x.driver_id === user.id && inFam(x.trip_id, t) && x.ride_date >= t0 && x.status === 'requested' && fitServer[x.id] !== false).length;
+      const sub = t.live ? 'Offering seats now &middot; started at ' + clk(t.depart_min) : rep ? 'Repeats ' + esc(RSD.repeatLabel(t.repeat_days, t.repeat_every, t.repeat_nth)) + untilTxt(t.repeat_until) : tripWhen(t);
+      const buttons = '<div style="margin:6px 0;display:flex;flex-wrap:wrap;gap:8px"><button class="btn" data-opentrip="' + t.id + '|' + (t.live ? todayStr() : (dates[0] || t.trip_date)) + '">Open</button><button class="btn ghost" data-edittrip="' + t.id + '">Edit</button><button class="btn ghost" data-offtrip="' + t.id + '"' + (rep ? ' data-rep="1"' : '') + '>' + (rep ? 'Stop repeating trip' : 'Cancel trip') + '</button></div>';
+      const rows = its.map((i) => i.html), id = 'g-' + t.id;
+      return '<details data-fold="' + id + '" data-foldopen="1"' + (foldClosed.has(id) ? '' : ' open') + ' style="border-top:2px solid var(--line);padding:8px 0"><summary style="cursor:pointer;padding:4px 0"><b>' + esc(disp(t, 'origin')) + ' to ' + esc(disp(t, 'dest')) + '</b><div class="mut">' + sub + ' &middot; ' + (t.live ? '' : (dates.length + (dates.length === 1 ? ' date' : ' dates'))) + (asksAll ? ' &middot; <b>' + asksAll + ' asking</b>' : '') + (t.auto_accept ? ' &middot; accepts automatically' : '') + '</div></summary>' + buttons
+        + (rows.length ? rows.slice(0, 4).join('') + (rows.length > 4 ? fold('f-gm-' + t.id, 'Show ' + (rows.length - 4) + ' more dates', rows.slice(4).join('')) : '') : '<p class="mut">No dates match the filters.</p>') + '</details>';
+    };
+    // By trip: one group per trip I drive (a repeating trip is ONE row; open it for its dates, Edit, Stop), instead of one row per date
     const seriesItems = tripList.map((t) => {
       const rep = !!(t.repeat_days && t.repeat_days.length) && !t.live, dates = t.live ? [] : occOf(t, 31), fam = matches.filter((x) => x.driver_id === user.id && inFam(x.trip_id, t) && x.ride_date >= t0);
       const asks = fam.filter((x) => x.status === 'requested' && fitServer[x.id] !== false).length, acc = fam.filter((x) => x.status === 'accepted').length, first = dates[0] || t.trip_date;
-      return { role: 'drive', past: false, tripId: t.id, date: first, time: t.depart_min, html: tripRow(t), f: { waiting: asks > 0, confirmed: acc > 0, empty: asks === 0 && acc === 0, repeating: rep, oneTime: !rep, flex: isFlexFree(forDate(t, first)) } };
+      return { role: 'drive', past: false, tripId: t.id, date: first, time: t.depart_min, html: groupHtml(t, rep, dates), f: { waiting: asks > 0, confirmed: acc > 0, empty: asks === 0 && acc === 0, repeating: rep, oneTime: !rep, flex: isFlexFree(forDate(t, first)) } };
     });
     const byTrip = tf.view === 'trip' && tf.role !== 'ride', pool = byTrip ? seriesItems.concat(pastTripItems) : allItems;
     const tripOk = (it) => !tf.trip || it.tripId === tf.trip;
@@ -1498,7 +1509,7 @@
     const filtersOn = tf.when !== 'upcoming' || tf.role !== 'all' || tf.st.size > 0 || !!tf.trip, LIM = 12;
     const shortRep = (t) => { const ds = (t.repeat_days || []).slice().sort((a, b) => a - b); if (t.repeat_nth) return 'monthly'; if (!ds.length) return RSD.label(t.trip_date); if (ds.length === 7) return 'daily'; if (ds.join('') === '12345') return 'weekdays'; return (t.repeat_every > 1 ? 'every ' + t.repeat_every + ' wks ' : '') + ds.map((d) => RSD.DAY_NAMES[d - 1]).join(' '); };
     const tripChips = tripList.length >= 2 && !byTrip ? '<div class="days" style="margin-bottom:6px">' + tripList.map((t) => chip('data-tft', t.id, esc(disp(t, 'dest')) + ' &middot; ' + esc(shortRep(t)), tf.trip === t.id)).join('') + '</div>' : '';
-    const viewBar = tripList.length >= 1 && tf.role !== 'ride' ? '<div class="days" style="margin-bottom:6px">' + chip('data-tfv', 'date', 'By date', tf.view !== 'trip') + chip('data-tfv', 'trip', 'By trip (' + tripList.length + ')', tf.view === 'trip') + '</div>' : '';
+    const viewBar = tripList.length >= 1 && tf.role !== 'ride' ? '<div class="days" style="margin-bottom:6px">' + chip('data-tfv', 'trip', 'Trips and their dates (' + tripList.length + ')', tf.view === 'trip') + chip('data-tfv', 'date', 'All dates together', tf.view !== 'trip') + '</div>' : '';
     const listBody = filtered.length ? filtered.slice(0, LIM).map((i) => i.html).join('') + (filtered.length > LIM ? fold('f-list-more', 'Show ' + (filtered.length - LIM) + ' more', filtered.slice(LIM).map((i) => i.html).join('')) : '') : '<p class="mut">Nothing matches.' + (filtersOn ? ' <button type="button" class="btn ghost" data-tfclear="1" style="padding:4px 10px;min-height:0">Clear filters</button>' : '') + '</p>';
     const filterBar = viewBar + '<div class="days" style="margin-bottom:6px">' + chip('data-tfw', 'upcoming', 'Upcoming (' + nWhen('upcoming') + ')', tf.when === 'upcoming') + chip('data-tfw', 'past', 'Past (' + nWhen('past') + ')', tf.when === 'past') + chip('data-tfw', 'all', 'All', tf.when === 'all') + '</div>'
       + '<div class="days" style="margin-bottom:6px">' + chip('data-tfr', 'all', 'All', tf.role === 'all') + chip('data-tfr', 'drive', 'Driving (' + nRole('drive') + ')', tf.role === 'drive') + chip('data-tfr', 'ride', 'Riding (' + nRole('ride') + ')', tf.role === 'ride') + '</div>'
@@ -1607,7 +1618,7 @@
     homeView = 'feed'; detailTripId = null; selTripId = null; pending = null; viewD = null; viewR = null; calDay = null; calMonth = null; askCancel = null; mapSig = {}; formSig = '';
     [nowSel, LV].forEach((o) => Object.keys(o).forEach((k) => { delete o[k]; }));
     plReset('ln-o', 'ln-d', 'lt-o', 'lt-d', 'lr-p', 'lr-d', 'rn-p', 'rn-d');
-    tripMode = 'now'; rideMode = 'now'; tripsView = 'driver'; offerOpen = false; tripsPane = 'list'; tf = { when: 'upcoming', role: 'all', st: new Set(), view: 'date', trip: null }; saveTf(); keep('rs_trips_pane', 'list');
+    tripMode = 'now'; rideMode = 'now'; tripsView = 'driver'; offerOpen = false; tripsPane = 'list'; tf = { when: 'upcoming', role: 'all', st: new Set(), view: 'trip', trip: null }; saveTf(); keep('rs_trips_pane', 'list');
     try { localStorage.setItem('rs_trip_mode', 'now'); localStorage.removeItem('rs_trip_on'); localStorage.removeItem('rs_ride_mode'); localStorage.removeItem('rs_trips_view'); } catch (e) { /* storage blocked */ }
   }
   async function run(p, ok) { try { const r = await p; if (r.error) throw r.error; if (ok) toast(ok); return true; } catch (e) { fail(e); return false; } finally { formSig = ''; await loadAll(); } }
@@ -1845,7 +1856,7 @@
     each('[data-tfs]', (b) => { const k = b.dataset.tfs; if (tf.st.has(k)) tf.st.delete(k); else tf.st.add(k); saveTf(); render(); });
     each('[data-tfv]', (b) => { tf.view = b.dataset.tfv; tf.trip = null; saveTf(); render(); });
     each('[data-tft]', (b) => { tf.trip = tf.trip === b.dataset.tft ? null : b.dataset.tft; render(); });
-    each('[data-tfclear]', () => { tf = { when: 'upcoming', role: 'all', st: new Set(), view: 'date', trip: null }; saveTf(); render(); });
+    each('[data-tfclear]', () => { tf = { when: 'upcoming', role: 'all', st: new Set(), view: 'trip', trip: null }; saveTf(); render(); });
     each('[data-askride]', () => { const rd = $('rs-riding'); if (rd) rd.click(); });   // the Riding side of Home has the Ask for a ride form open
     each('[data-seltrip]', (b) => { selTripId = b.dataset.seltrip; myTrip = myTrips.find((x) => x.id === selTripId) || myTrip; curTrip = myLiveTrip || myTrip; editing.trip = false; editing.newTrip = false; pending = null; viewD = null; mapSig = {}; formSig = ''; render(); });
     each('[data-newtrip]', () => { if (myTrips.length >= 5) { toast('You can keep up to 5 trips. Cancel one first.'); return; } detailFrom = (window.rsView && window.rsView() === 'trips') ? 'trips' : 'home'; editing.trip = true; editing.newTrip = true; pending = null; goHome('post'); });
