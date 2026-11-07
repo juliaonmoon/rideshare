@@ -17,10 +17,9 @@
   // every = repeat every N weeks (1 = every week). nth = the nth weekday of a month (1 to 4, 5 = the last one), with the weekday in repeatDays[0].
   function occursOn(baseDate, repeatDays, date, until, every, nth) {
     if (!baseDate || !date) return false;
-    if (date === baseDate) return true;
+    if (!Array.isArray(repeatDays) || !repeatDays.length) return date === baseDate;   // a one-time item: its date. A repeating one only runs on the days it repeats on, so its start date counts only if it is one of them.
     if (date < baseDate) return false;
     if (until && date > until) return false;   // a repeating item can have a last day
-    if (!Array.isArray(repeatDays) || !repeatDays.length) return false;
     const dow = isoDow(date);
     if (nth) {
       if (dow !== repeatDays[0]) return false;
