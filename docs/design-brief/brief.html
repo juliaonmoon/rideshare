@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RideShare design brief</title>
+<style>
+  :root{--bg:#f6f7f9;--card:#fff;--ink:#1b2430;--mut:#5d6b7c;--line:#d9dee5;--acc:#0b7a5b;--acc2:#e8f5f0;--bad:#b42318;--warn:#b45309}
+  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,Segoe UI,Roboto,sans-serif;padding:16px}
+  main{max-width:1100px;margin:0 auto} h1{font-size:26px;margin:8px 0} h2{font-size:20px;margin:32px 0 8px} h3{font-size:16px;margin:0 0 6px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin:12px 0}
+  .mut{color:var(--mut)} button.copy{background:var(--acc);color:#fff;border:0;border-radius:8px;padding:10px 16px;font:inherit;cursor:pointer}
+  pre{white-space:pre-wrap;word-wrap:break-word;background:#f0f3f6;border-radius:8px;padding:12px;max-height:340px;overflow:auto;font:13px/1.5 ui-monospace,Consolas,monospace}
+  .shots{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px}
+  .shots figure{margin:0;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px}
+  .shots img{width:100%;border-radius:6px;display:block} .shots figcaption{font-size:13px;margin-top:6px;color:var(--mut)}
+  .wires{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:18px;align-items:start}
+  .phone{width:260px;border:2px solid #28323f;border-radius:22px;padding:10px;background:#fff;margin:0 auto}
+  .phone h4{margin:0 0 8px;font-size:14px;text-align:center}
+  .b{border:1.5px solid #9aa7b6;border-radius:8px;padding:6px 8px;margin:6px 0;font-size:12px;background:#fbfcfd}
+  .b.pri{background:var(--acc);color:#fff;border-color:var(--acc);text-align:center;font-weight:600}
+  .b.sec{border-color:var(--acc);color:var(--acc);text-align:center;font-weight:600}
+  .b.map{background:repeating-linear-gradient(45deg,#e4f1ea,#e4f1ea 8px,#d7eadf 8px,#d7eadf 16px);text-align:center;color:#40604f;padding:26px 6px}
+  .b.bad{border-color:var(--bad);background:#fdf1f0} .b.new{border-color:var(--acc);background:var(--acc2)}
+  .row{display:flex;gap:6px} .row>.b{flex:1} .chips span{display:inline-block;border:1px solid #9aa7b6;border-radius:999px;padding:1px 8px;margin:1px;font-size:11px}
+  .tabs{display:flex;justify-content:space-around;border-top:1.5px solid #9aa7b6;margin-top:8px;padding-top:6px;font-size:11px;color:var(--mut)} .tabs b{color:var(--acc)}
+  .note{font-size:12px;color:var(--bad);margin:2px 0 0} .note.ok{color:var(--acc)}
+  .legend span{display:inline-block;margin-right:14px;font-size:13px}
+  .sw{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:-1px;margin-right:4px}
+</style>
+</head>
+<body>
+<main>
+<h1>RideShare: what belongs on Home and what belongs on Trips?</h1>
+<p class="mut">A design brief for ChatGPT. Step 1: copy the prompt. Step 2: attach the 8 images (the <code>screens</code> folder, in numbered order: 7 phone screenshots, then the wireframe markup).</p>
+
+<h2>1. The prompt</h2>
+<div class="card">
+  <button class="copy" id="cp">Copy the prompt</button> <span class="mut" id="cpmsg"></span>
+  <pre id="prompt">I am building a small phone app and I am not a designer. I am confused about what belongs on the HOME tab and what belongs on the TRIPS tab. Please act as a senior mobile product designer and give me a clear, simple answer with wireframes.
+
+THE APP
+RideShare: a non-profit commuter carpool app for Metro Vancouver, on an Android phone (about 390 px wide). Nobody makes a profit: riders pay a small cost share in points (1 point is about $0.10) or cash. The same person is often BOTH a driver and a rider.
+
+Driver: posts trips (one-time, repeating every day / weekdays / chosen weekdays / every 2 weeks / monthly like "last Thursday", with an end date or "after N times", sometimes a time window like "any time between 6 am and 12 pm, my first rider sets the time"). A driver can also tap "Offer a ride now" for a spur-of-the-moment drive. Up to 5 posted trips; a repeating trip can mean 10+ upcoming days. Riders ask for a seat; the driver accepts (or auto-accepts). Each day of a trip has: a leave time, a route on a Google map with pickup stops, a list of confirmed riders, and seat requests waiting for yes/no. On the day the driver taps "Start trip" (opens Google Maps navigation, tells the riders).
+Rider: asks for a ride now or schedules one (one-time or repeating). Sees the booked driver, pickup time, can cancel. If a driver cancels: "Needs a new driver".
+
+Tabs today: Home | Trips | Points | Me. Home has a switch at top: Driving | Riding. Trips has a switch As a driver | As a rider, and Calendar | List.
+
+WHAT IS ON EACH SCREEN TODAY (see screenshots 1 to 7; image 8 is a wireframe markup of today's screens and of my starting idea)
+Home, Driving: two buttons (Offer a ride now, Post a trip); a "Your trip" card for ONE selected trip (route, repeat info, Start trip, See riders, Edit trip, Cancel this trip); a "Cancel all upcoming" card; a Google map of the route for one chosen date; date chips (Today, Tomorrow, Sun Nov 15...) to switch the day; a trip plan for that day (leave time, stops, cost); Seat requests; Confirmed riders.
+Home, Riding: the "Ask for a ride" form (Now or Schedule), then the rider's current ride.
+Trips: Calendar (D = days I drive, R = days I ride; tap a day) or List (Upcoming trips with Edit/Cancel, Past trips, Your drives), plus + Post a trip.
+Post a trip form: places, Time (Leave / Arrive / Flexible), Repeat, Ends, a collapsed "Preview the days" calendar/list.
+
+MY PROBLEM
+- I expected to stay mostly on Home and see my trips there. But Home shows only ONE trip at a time, while Trips holds "all the trips". I do not know where to look for the PLAN of a trip (map, leave time, stops, riders): Home or Trips?
+- With 10 upcoming trips, where do I see them all? Should Trips be only past trips / history?
+- Some information is in both places: duplicated and confusing.
+- Too much text and too many cards stacked on Home: long and messy.
+
+WHAT I NEED
+1. A clear rule: what is Home for, what is Trips for? (e.g. "Home = what is happening now / next; Trips = everything scheduled plus history". Tell me if that is right or if there is a better split.)
+2. Where does the trip plan live (map, leave time, stops, confirmed riders, seat requests)? Do not duplicate it.
+3. How should it behave with 0 trips, 1 trip, 10+ trips (a repeating trip), and during a ride in progress?
+4. Driver and rider: one shared structure or two? What about someone who is both?
+5. Give 2 or 3 alternative layouts for Home and Trips (driver and rider) as simple text wireframes (boxes top to bottom, 390 px wide). Pick one and explain why in plain words.
+6. Say exactly what to remove, merge or move from the current screens.
+7. A short list of navigation changes (tabs, switches, what a tap on a trip opens).
+
+RULES
+- Simple, minimal text, big thumb-friendly buttons, nothing that needs a manual. No long paragraphs on screen.
+- Calendar is good for seeing many days; lists should stay short or collapsed.
+- The most important thing on Home is probably: what do I do next, and is anything waiting for my answer?
+- Do not suggest many new features. This is about organizing what exists.
+- Explain in plain English, not design jargon.
+
+MY OWN STARTING IDEA (please critique it honestly)
+- Home = "Next up": a hero card for the next trip or ride (date, leave time, route in one line, big Start trip button), a badge for seat requests waiting, the map and plan for that day, and a small "Coming up" strip of the next 3 days. Two buttons: Post a trip, Offer a ride now.
+- Trips = everything: Calendar and List of all upcoming trips, filter Upcoming | Past. Tapping any trip opens a trip page with its plan, map, riders, Edit and Cancel.
+- Riders get the same structure ("Next ride" on Home, all rides on Trips).</pre>
+</div>
+
+<h2>2. Screenshots from the phone (attach in this order)</h2>
+<div class="shots">
+  <figure><img src="screens/01-home-driving-top.jpg" alt=""><figcaption>1. Home, Driving: top (two buttons, "Your trip" card)</figcaption></figure>
+  <figure><img src="screens/02-home-driving-map-date-plan.jpg" alt=""><figcaption>2. Home, Driving: map, date chips, plan of the chosen day</figcaption></figure>
+  <figure><img src="screens/03-home-driving-requests-riders.jpg" alt=""><figcaption>3. Home, Driving: bottom (seat requests, confirmed riders)</figcaption></figure>
+  <figure><img src="screens/04-home-riding.jpg" alt=""><figcaption>4. Home, Riding</figcaption></figure>
+  <figure><img src="screens/05-trips-calendar.jpg" alt=""><figcaption>5. Trips: Calendar</figcaption></figure>
+  <figure><img src="screens/06-trips-list.jpg" alt=""><figcaption>6. Trips: List</figcaption></figure>
+  <figure><img src="screens/07-post-trip-form-repeat-preview.jpg" alt=""><figcaption>7. Post a trip form, Repeat and day preview</figcaption></figure>
+</div>
+
+<h2>3. Markup: how it is today</h2>
+<p class="mut">Red = confusing or duplicated. The same trip information shows in 3 places: the "Your trip" card on Home, the plan on Home, and the list on Trips.</p>
+<div class="wires">
+  <div class="phone"><h4>HOME, Driving (today)</h4>
+    <div class="b sec">Driving | Riding</div>
+    <div class="row"><div class="b pri">Offer a ride now</div><div class="b sec">Post a trip</div></div>
+    <div class="b bad">"Your trip" card (ONE trip only)<br>route, repeat text, Start trip, See riders, Edit, Cancel this trip</div>
+    <div class="note">Only one trip: where are the others?</div>
+    <div class="b">Cancel all upcoming</div>
+    <div class="b map">Google map<br>(for one chosen date)</div>
+    <div class="b bad chips">Date chips: <span>Today</span><span>Tomorrow</span><span>Sun 15</span><span>Sun 22</span>...</div>
+    <div class="b bad">Plan of that day<br>leave time, stops, cost</div>
+    <div class="note">Plan on Home...</div>
+    <div class="b">Seat requests</div>
+    <div class="b">Confirmed riders</div>
+    <div class="tabs"><b>Home</b><span>Trips</span><span>Points</span><span>Me</span></div>
+  </div>
+  <div class="phone"><h4>TRIPS, Driver (today)</h4>
+    <div class="b sec">As a driver | As a rider</div>
+    <div class="b sec">Calendar | List</div>
+    <div class="b pri">+ Post a trip</div>
+    <div class="b bad">Calendar<br>D on days I drive, R on days I ride<br>tap a day: its trip and riders</div>
+    <div class="note">...and trips and riders again here</div>
+    <div class="b bad">(List view) Upcoming trips<br>route, repeat text, Edit, Cancel this trip</div>
+    <div class="b">Past trips (collapsed)</div>
+    <div class="b">Your drives</div>
+    <div class="tabs"><span>Home</span><b>Trips</b><span>Points</span><span>Me</span></div>
+  </div>
+  <div class="phone"><h4>HOME, Riding (today)</h4>
+    <div class="b sec">Driving | Riding</div>
+    <div class="b bad">"Ask for a ride" form (Now | Schedule)<br>pick up, drop off, pay with, Request</div>
+    <div class="note">The form is first, even if I already have a ride booked</div>
+    <div class="b">My ride request / seat confirmed card</div>
+    <div class="b">Drivers going my way (list)</div>
+    <div class="tabs"><b>Home</b><span>Trips</span><span>Points</span><span>Me</span></div>
+  </div>
+</div>
+
+<h2>4. Markup: my starting idea (for ChatGPT to critique)</h2>
+<p class="mut">Green = new or moved. Home answers "what do I do next?". Trips answers "show me everything".</p>
+<div class="wires">
+  <div class="phone"><h4>HOME, Driving (idea)</h4>
+    <div class="b sec">Driving | Riding</div>
+    <div class="b new"><b>Next up: Sun Nov 8</b><br>Leave 7:40 am<br>Surrey to Richmond Centre<br>2 riders confirmed</div>
+    <div class="b pri">Start trip</div>
+    <div class="b new">2 seat requests waiting: Yes / No</div>
+    <div class="b map">Map of that day</div>
+    <div class="b new">Plan: stops and times</div>
+    <div class="b new chips">Coming up: <span>Sun 15</span><span>Sun 22</span><span>Sun 29</span> &rsaquo; All trips</div>
+    <div class="row"><div class="b sec">Post a trip</div><div class="b sec">Offer a ride now</div></div>
+    <div class="tabs"><b>Home</b><span>Trips</span><span>Points</span><span>Me</span></div>
+  </div>
+  <div class="phone"><h4>TRIPS (idea)</h4>
+    <div class="b sec">Driver | Rider</div>
+    <div class="b sec">Upcoming | Past</div>
+    <div class="b sec">Calendar | List</div>
+    <div class="b pri">+ Post a trip</div>
+    <div class="b new">Calendar (D / R days)<br>tap a day: short list of that day</div>
+    <div class="b new">List: one line per trip<br>Sun Nov 8 · 7:40 am · Surrey to Richmond · 2 riders<br>(tap opens the trip page)</div>
+    <div class="tabs"><span>Home</span><b>Trips</b><span>Points</span><span>Me</span></div>
+  </div>
+  <div class="phone"><h4>TRIP PAGE (idea): opened from Trips or "Coming up"</h4>
+    <div class="b new"><b>Sun Nov 8, 7:40 am</b><br>Surrey to Richmond Centre</div>
+    <div class="b map">Map</div>
+    <div class="b new">Plan: stops and times</div>
+    <div class="b new">Confirmed riders</div>
+    <div class="b new">Seat requests: Yes / No</div>
+    <div class="row"><div class="b sec">Edit</div><div class="b sec">Skip this day</div></div>
+    <div class="b sec">Cancel this trip</div>
+  </div>
+</div>
+
+<div class="card legend"><span><i class="sw" style="background:#fdf1f0;border:1px solid #b42318"></i>confusing / duplicated</span><span><i class="sw" style="background:#e8f5f0;border:1px solid #0b7a5b"></i>new or moved</span><span><i class="sw" style="background:#0b7a5b"></i>main button</span></div>
+</main>
+<script>
+  document.getElementById('cp').onclick = async function () {
+    var t = document.getElementById('prompt').innerText;
+    try { await navigator.clipboard.writeText(t); document.getElementById('cpmsg').textContent = 'Copied. Paste it into ChatGPT.'; }
+    catch (e) { var r = document.createRange(); r.selectNodeContents(document.getElementById('prompt')); var s = getSelection(); s.removeAllRanges(); s.addRange(r); document.getElementById('cpmsg').textContent = 'Selected. Press Ctrl+C.'; }
+  };
+</script>
+</body>
+</html>
