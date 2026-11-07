@@ -42,7 +42,7 @@
   const leaveWhen = (ms) => { const iso = new Date(ms).toISOString(), day = new Date(ms).toLocaleDateString('en-CA', { timeZone: 'America/Vancouver' }); return (day === todayStr() ? '' : RSD.label(day) + ' ') + clk(vanMin(iso)); };
   // a trip with a time window has no fixed leave time until the first rider is accepted
   const isFlexFree = (t) => !!t && t.flex_to != null && !t.live && !t.flex_locked;
-  const tripWhen = (t) => isFlexFree(t) ? RSD.label(t.trip_date) + ' any time between ' + clk(t.flex_from) + ' and ' + clk(t.flex_to) + ' &middot; flexible, one time'
+  const tripWhen = (t) => isFlexFree(t) ? (t.repeat_days && t.repeat_days.length ? 'Starts ' + RSD.label(t.trip_date) + ' &middot; repeats ' + RSD.repeatLabel(t.repeat_days, t.repeat_every, t.repeat_nth) + untilTxt(t.repeat_until) + ' &middot; any time between ' + clk(t.flex_from) + ' and ' + clk(t.flex_to) + ' &middot; your first rider each day sets the time' : RSD.label(t.trip_date) + ' any time between ' + clk(t.flex_from) + ' and ' + clk(t.flex_to) + ' &middot; flexible, one time')
     : whenText(t.trip_date, t.depart_min, t.repeat_days, t.repeat_until, t.repeat_every, t.repeat_nth) + (t.flex_to != null && !t.live ? ' &middot; set by your first rider' : '');
   // when a flexible driver would have to leave to reach this rider on time (null: the window does not fit)
   const flexDepart = (t, dr, me, date) => {
@@ -59,7 +59,7 @@
       + '<select id="' + p + '-mode" style="display:none" aria-hidden="true"><option value="leave"' + (cur === 'arrive' ? '' : ' selected') + '>leave</option><option value="arrive"' + (cur === 'arrive' ? ' selected' : '') + '>arrive</option></select>'
       + '<input type="checkbox" id="' + p + '-flex"' + (on ? ' checked' : '') + ' style="display:none" aria-hidden="true">'
       + '<div class="row"><div><label>Date</label>' + dateHtml + '</div><div><label id="' + p + '-t-lbl">' + (on ? 'From' : cur === 'arrive' ? 'Arrive by' : 'Leave at') + '</label><input type="time" id="' + p + '-t" value="' + timeStr + '"></div></div>'
-      + '<div id="' + p + '-flexbox" style="' + (on ? '' : 'display:none') + '"><label id="' + p + '-t2-lbl">To</label><input type="time" id="' + p + '-t2" value="' + hmIn(to != null ? to : Math.min(1439, (from || 450) + 360)) + '"><p class="mut" style="margin:4px 0 0">Riders say when they are ready. The first rider you accept sets your leave time. After that the trip is fixed.</p></div>';
+      + '<div id="' + p + '-flexbox" style="' + (on ? '' : 'display:none') + '"><label id="' + p + '-t2-lbl">To</label><input type="time" id="' + p + '-t2" value="' + hmIn(to != null ? to : Math.min(1439, (from || 450) + 360)) + '"><p class="mut" style="margin:4px 0 0">Riders say when they are ready. The first rider you accept sets your leave time for that day. After that the day is fixed.</p></div>';
   };
   // the point of a place field: the address chosen, else the neighbourhood
   const placePt = (id, area) => (PL[id] && !PL[id].isArea && PL[id].lat != null ? { lat: PL[id].lat, lng: PL[id].lng } : LOC[area]);
@@ -71,7 +71,6 @@
     const toLeave = (arr) => { const first = a && b ? RS.minutes(a, b, arr, dow) : 0, drive = a && b ? RS.minutes(a, b, Math.max(0, arr - first), dow) : 0; return { dep: Math.floor(arr - drive - allow), drive }; };
     const how = (arr, r) => 'Arrive by ' + clk(arr) + ': leave by ' + clk(r.dep) + ' (about ' + fmtMin(r.drive) + ' driving + ' + allow + ' min allowed for pickups).';
     if (flex) {
-      if (row.repeat_days.length) return { err: 'A time range works for one-time trips only. Turn off repeat, or turn off the time range.' };
       const to = hm($(p + '-t2').value || '13:30'); let latest = to, note = '';
       if (arrive) { const r = toLeave(to); latest = r.dep; note = how(to, r); }
       if (latest <= row.depart_min) return { err: arrive ? 'To arrive by then you would have to leave before your earliest time. Pick a later arrival time or an earlier start.' : 'The latest time must be after the earliest time' };
@@ -128,6 +127,7 @@
   let myBlocks = new Set();   // people I chose never to be matched with (migration 029)
   let MSOK = null, msgs = [], myRatings = {}, scores = {}, adminReports = [];   // migration 024 (messages, ratings, admin reports)
   let PCOK = null, cards = {};   // migration 021 (photo and car details shown to a matched driver or rider, Report a problem) is in place
+  let myChildren = [];   // the days of my repeating trips (with a window) that became their own trip once the first rider was accepted
   let RPOK = null, skipMap = {};   // RPOK: migration 048 (every N weeks, monthly, skip a day) is in place
   let UNOK = null;   // migration 047 (repeat until) is in place
   const REP_LABELS = { none: 'Does not repeat', daily: 'Every day', weekdays: 'Every weekday (Mon to Fri)', weekly: 'Every week, on days I choose', biweekly: 'Every 2 weeks, on days I choose', monthly: 'Every month, on a set weekday (e.g. the last Thursday)' };
@@ -398,7 +398,7 @@
   };
   const who = (id, role) => nm(id) + badge(id, role);
   const LATE_MIN = 120;
-  const tripBy = (id) => [...otherTrips, ...extraTrips, ...(myTrip ? [myTrip] : []), ...(myLiveTrip ? [myLiveTrip] : [])].find((t) => t.id === id);
+  const tripBy = (id) => [...otherTrips, ...extraTrips, ...myChildren, ...myTrips, ...(myTrip ? [myTrip] : []), ...(myLiveTrip ? [myLiveTrip] : [])].find((t) => t.id === id);
   // "Leave by 7:48" for a driver who has not set off, "About 9 min" for one who is already driving
   const leaveLine = (id) => {
     const i = leaveInfo[id]; if (!i) return '';
@@ -460,10 +460,13 @@
   const statusText = (s) => ({ requested: 'requested', accepted: 'accepted', completed: 'completed', cancelled: 'cancelled', declined: 'declined', no_show: 'missed pickup' }[s] || s);
 
   const dowOf = (d) => { const x = d && new Date(d + 'T12:00:00'); return x && !isNaN(x) ? x.getDay() : undefined; };
-  const driverObj = (t, date) => ({ dow: dowOf(date || t.trip_date), origin: pt(t, 'origin'), dest: pt(t, 'dest'), departMin: t.depart_min, maxDetour: t.max_detour, maxTotal: t.max_total_detour == null ? null : t.max_total_detour, maxKm: t.max_detour_km == null ? null : +t.max_detour_km, maxTotalKm: t.max_total_detour_km == null ? null : +t.max_total_detour_km, maxPickups: t.max_pickups == null ? null : t.max_pickups, maxWait: t.max_wait, accepts: t.accepts, cpk: Number(t.cost_per_km) || 0.2, name: names[t.user_id] || 'Driver' });
+  const driverObj = (t0, date) => { const t = forDate(t0, date); return ({ dow: dowOf(date || t.trip_date), origin: pt(t, 'origin'), dest: pt(t, 'dest'), departMin: t.depart_min, maxDetour: t.max_detour, maxTotal: t.max_total_detour == null ? null : t.max_total_detour, maxKm: t.max_detour_km == null ? null : +t.max_detour_km, maxTotalKm: t.max_total_detour_km == null ? null : +t.max_total_detour_km, maxPickups: t.max_pickups == null ? null : t.max_pickups, maxWait: t.max_wait, accepts: t.accepts, cpk: Number(t.cost_per_km) || 0.2, name: names[t.user_id] || 'Driver' }); };
   const riderObj = (r) => ({ id: r.id, name: names[r.user_id] || 'Rider', pickup: pt(r, 'pickup'), dropoff: pt(r, 'dropoff'), readyFrom: r.ready_from, readyTo: r.ready_to, pays: r.pays });
   const known = (x) => LOC[x.origin || x.pickup] && LOC[x.dest || x.dropoff];
   const baseOf = (x) => (x.live ? todayStr() : (x.trip_date || x.ride_date));
+  const forDate = (t, d) => (!t || !d || t.series_parent ? t : (myChildren.find((c) => c.series_parent === t.id && c.trip_date === d && c.active !== false) || t));   // the day's own trip, if it has one
+  const inFam = (id, t) => !!t && (id === t.id || myChildren.some((c) => c.id === id && c.series_parent === t.id));
+  const rootId = (id) => { const t = tripBy(id); return (t && t.series_parent) || id; };
   const skipsOf = (id) => skipMap[id] || new Set();   // days the driver skipped on a repeating trip
   const rawOn = (x, d) => RSD.occursOn(baseOf(x), x.repeat_days, d, x.repeat_until, x.repeat_every, x.repeat_nth);
   const occOf = (x, n) => RSD.nextOccurrences(baseOf(x), x.repeat_days, new Date(), n, x.repeat_until, x.repeat_every, x.repeat_nth, x.trip_date ? skipsOf(x.id) : null);
@@ -507,7 +510,8 @@
       const stillLive = (x) => x.live && x.expires_at && Date.parse(x.expires_at) > Date.now();
       ledger = l.data || [];
       myLiveTrip = (t.data || []).find(stillLive) || null; const nextOf = (x) => (occOf(x, 1)[0] || x.trip_date);
-      myTrips = (t.data || []).filter((x) => !x.live).sort((a, b) => (nextOf(a) + String(10000 + (a.flex_from != null ? a.flex_from : a.depart_min))).localeCompare(nextOf(b) + String(10000 + (b.flex_from != null ? b.flex_from : b.depart_min))));
+      myChildren = (t.data || []).filter((x) => !x.live && x.series_parent);
+      myTrips = (t.data || []).filter((x) => !x.live && !x.series_parent).sort((a, b) => (nextOf(a) + String(10000 + (a.flex_from != null ? a.flex_from : a.depart_min))).localeCompare(nextOf(b) + String(10000 + (b.flex_from != null ? b.flex_from : b.depart_min))));
       myTrip = myTrips.find((x) => x.id === selTripId) || myTrips[0] || null; selTripId = myTrip ? myTrip.id : null; curTrip = myLiveTrip || myTrip;
       if (!myLiveTrip) autoAlerts = false; else if (!autoAlerts && !driveSession && nativeLoc()) { autoAlerts = true; startAlerts(nativeLoc()); }
       riderAlertsCheck();
@@ -549,7 +553,14 @@
         await Promise.all(asks.map(async (x) => { const r = await sb.rpc('leave_info', { p_match: x.id }); if (!r.error && r.data && r.data.ok) li[x.id] = r.data; }));
         leaveInfo = li;
       } catch (e) { leaveInfo = {}; /* older database: no leave-by */ }
-      if (RPOK) { try { const sk = await sb.from('trip_skips').select('trip_id,skip_date'); skipMap = {}; (sk.data || []).forEach((r) => { (skipMap[r.trip_id] = skipMap[r.trip_id] || new Set()).add(r.skip_date); }); } catch (e) { skipMap = {}; } }
+      if (RPOK) {
+        try {
+          const ids = [...new Set([...myTrips, ...otherTrips, ...extraTrips].filter((x) => x.repeat_days && x.repeat_days.length).map((x) => x.id))];
+          const sk = ids.length ? await sb.from('trip_skips').select('trip_id,skip_date').in('trip_id', ids.slice(0, 150)) : { data: [] }; skipMap = {};
+          (sk.data || []).forEach((r) => { (skipMap[r.trip_id] = skipMap[r.trip_id] || new Set()).add(r.skip_date); });
+          myChildren.forEach((c) => { if (c.active !== false && skipMap[c.series_parent]) skipMap[c.series_parent].delete(c.trip_date); });   // for me the day is still part of my repeating trip
+        } catch (e) { skipMap = {}; }
+      }
       if (SYOK !== false) { try { const so = await sb.from('series_off').select('trip_id,request_id'); if (so.error) { offSet = new Set(); } else offSet = new Set((so.data || []).map((r) => r.trip_id + '|' + r.request_id)); } catch (e) { offSet = new Set(); } }
       try {
         const mineEx = matches.filter((x) => x.driver_id === uid && x.status === 'accepted' && !x.dropped_off_at && x.ride_date >= todayStr()).slice(0, 8), exo = {};
@@ -618,9 +629,9 @@
     const today = todayStr(), reqById = {}; [...otherReqs, ...extraReqs].forEach((q) => { reqById[q.id] = q; });
     // a scheduled trip: plan the next day that has an accepted rider (today if there is one)
     let d = today;
-    if (!curTrip.live) { const days = matches.filter((x) => x.driver_id === user.id && x.trip_id === curTrip.id && x.ride_date >= today && x.status === 'accepted').map((x) => x.ride_date).sort(); if (days.length && !days.includes(today)) d = days[0]; }
+    if (!curTrip.live) { const days = matches.filter((x) => x.driver_id === user.id && inFam(x.trip_id, curTrip) && x.ride_date >= today && x.status === 'accepted').map((x) => x.ride_date).sort(); if (days.length && !days.includes(today)) d = days[0]; }
     const isToday = d === today;
-    const acc = matches.filter((x) => x.driver_id === user.id && x.trip_id === curTrip.id && x.ride_date === d && x.status === 'accepted' && reqById[x.request_id] && known(reqById[x.request_id]));
+    const acc = matches.filter((x) => x.driver_id === user.id && inFam(x.trip_id, curTrip) && x.ride_date === d && x.status === 'accepted' && reqById[x.request_id] && known(reqById[x.request_id]));
     if (!acc.length) {
       // every rider is dropped off, but the driver is not at the destination yet: keep a final step until they end the trip
       let on = ''; try { on = localStorage.getItem('rs_trip_on') || ''; } catch (e) { /* storage blocked */ }
@@ -707,7 +718,7 @@
       const q = reqById[x.request_id]; if (!q || !known(q)) return null;
       const dr = driverObj(curTrip, x.ride_date);
       if (curTrip.live) dr.departMin = new Date().getHours() * 60 + new Date().getMinutes() + 2;
-      if (isFlexFree(curTrip)) { const dep = flexDepart(curTrip, dr, riderObj(q), x.ride_date); if (dep == null) return { fits: false }; dr.departMin = dep; }   // a flexible trip: the leave time that suits this rider
+      const ctd = forDate(curTrip, x.ride_date); if (isFlexFree(ctd)) { const dep = flexDepart(ctd, dr, riderObj(q), x.ride_date); if (dep == null) return { fits: false }; dr.departMin = dep; }   // a flexible trip: the leave time that suits this rider
       const accObjs = matches.filter((a) => a.driver_id === user.id && a.trip_id === x.trip_id && a.ride_date === x.ride_date && a.status === 'accepted' && reqById[a.request_id] && known(reqById[a.request_id])).map((a) => riderObj(reqById[a.request_id]));
       const res = RS.findMatches(dr, [riderObj(q)], accObjs);
       if (!res.length) return { fits: false };
@@ -768,7 +779,7 @@
   function tripsList() {
     if (myTrips.length < 2 || editing.trip || (pending && pending.kind === 'trip')) return '';
     const rows = myTrips.map((t) => {
-      const nd = occOf(t, 1)[0] || t.trip_date, mine = matches.filter((x) => x.trip_id === t.id && x.ride_date >= todayStr());
+      const nd = occOf(t, 1)[0] || t.trip_date, mine = matches.filter((x) => inFam(x.trip_id, t) && x.ride_date >= todayStr());
       const asks = mine.filter((x) => x.status === 'requested' && fitServer[x.id] !== false).length, acc = mine.filter((x) => x.status === 'accepted').length;
       const here = !myLiveTrip && myTrip && t.id === myTrip.id;
       return `<div class="item"><div><b>${esc(disp(t, 'origin'))}</b> to <b>${esc(disp(t, 'dest'))}</b><div class="mut">${tripWhen(t)}${acc ? ' &middot; ' + acc + ' accepted' : ''}${asks ? ' &middot; <b>' + asks + ' asking</b>' : ''}</div></div><div>${here ? '<span class="mut">Showing</span>' : '<button class="btn ghost" data-seltrip="' + t.id + '">Show</button>'}</div></div>`;
@@ -780,7 +791,7 @@
     if (!curTrip || !known(curTrip) || curTrip.live) return '';
     if (false) return card('Start here', `<p><b>1.</b> Fill in the form below: where you drive from and to, the date and time.</p><p><b>2.</b> Tap <b>Review trip</b>, then <b>Confirm and post</b>.</p><p><b>3.</b> Riders who ask for a seat will appear on this page for you to accept.</p><p>${goTo('ld-form')}Go to the form</button></p>`);
     const dates = occOf(curTrip, 7), d = pickView(viewD, dates);
-    const mine = d ? matches.filter((x) => x.driver_id === user.id && x.trip_id === curTrip.id && x.ride_date === d) : [];
+    const mine = d ? matches.filter((x) => x.driver_id === user.id && inFam(x.trip_id, curTrip) && x.ride_date === d) : [];
     const asks = mine.filter((x) => x.status === 'requested' && fitServer[x.id] !== false).length, acc = mine.filter((x) => x.status === 'accepted').length;
     const isToday = d === todayStr();
     const line = asks ? `<b>${asks} rider${asks > 1 ? 's' : ''} asked for a seat.</b> Tap <b>See riders</b> to accept.` : acc ? `<b>${acc} rider${acc > 1 ? 's' : ''} accepted.</b> ${isToday ? 'Tap <b>Start trip</b> when you set off.' : 'You can start on the day of the trip.'}` : 'No riders yet. They will show up here when they ask for a seat.';
@@ -793,7 +804,7 @@
     return occOf(myReq, 7).filter((ds) => {
       const ms = matches.filter((x) => x.rider_id === user.id && x.request_id === myReq.id && x.ride_date === ds);
       if (!ms.length || ms.some((x) => ['requested', 'accepted', 'completed'].includes(x.status))) return false;
-      return ms.some((x) => x.status === 'cancelled' && (x.cancelled_by !== user.id || offSet.has(x.trip_id + '|' + x.request_id)));
+      return ms.some((x) => x.status === 'cancelled' && (x.cancelled_by !== user.id || offSet.has(rootId(x.trip_id) + '|' + x.request_id)));
     });
   }
   function lostBanner() {
@@ -1089,7 +1100,7 @@
     const dr = driverObj(curTrip, viewD), reqById = {}; [...otherReqs, ...extraReqs].forEach((q) => { reqById[q.id] = q; });
     const dateCard = card('Date', dateChips('ld-dates', dates, viewD) + `<p class="mut" style="margin-top:8px">${tripWhen(curTrip)}</p>`);
     if (!viewD) return dateCard;
-    const mine = matches.filter((x) => x.driver_id === user.id && x.trip_id === curTrip.id && x.ride_date === viewD);
+    const mine = matches.filter((x) => x.driver_id === user.id && inFam(x.trip_id, curTrip) && x.ride_date === viewD);
     const inc = mine.filter((x) => x.status === 'requested' && fitServer[x.id] !== false);
     const acc = mine.filter((x) => x.status === 'accepted' && reqById[x.request_id] && known(reqById[x.request_id]));
     const accObjs = acc.map((x) => riderObj(reqById[x.request_id]));
@@ -1190,7 +1201,7 @@
     const live = matches.filter((x) => (x.status === 'requested' || x.status === 'accepted') && x.ride_date >= t0).sort((a, b) => (a.ride_date < b.ride_date ? -1 : 1));
     const asRider = live.filter((x) => x.rider_id === user.id), asDriver = live.filter((x) => x.driver_id === user.id && (x.status !== 'requested' || fitsOk(x)));
     const when = (x) => { const t = tripBy(x.trip_id); const pm = pickMin(x, t); return esc(RSD.label(x.ride_date)) + (pm != null ? ' at ' + clk(pm) : ''); };
-    const isRegular = (x) => { const tt = tripById[x.trip_id], qq = reqById[x.request_id]; return x.status === 'accepted' && !!tt && !!qq && !!(tt.repeat_days && tt.repeat_days.length) && !!(qq.repeat_days && qq.repeat_days.length) && !offSet.has(x.trip_id + '|' + x.request_id); };
+    const isRegular = (x) => { const t0 = tripById[x.trip_id], tt = t0 && t0.series_parent ? (tripById[t0.series_parent] || t0) : t0, qq = reqById[x.request_id]; return x.status === 'accepted' && !!tt && !!qq && !!(tt.repeat_days && tt.repeat_days.length) && !!(qq.repeat_days && qq.repeat_days.length) && !offSet.has(rootId(x.trip_id) + '|' + x.request_id); };
     const row = (x, isRider) => {
       const other = isRider ? x.driver_id : x.rider_id, pay = x.pay_with === 'points' ? x.points + ' pts' : 'cash gas-share';
       let actions = '';
@@ -1248,7 +1259,7 @@
     let dayBox = '';
     if (calDay && calDay.slice(0, 7) === calMonth) {
       const inf = dayInfo(calDay);
-      const dRows = inf.trips.map((t) => '<div style="padding:6px 0;border-top:1px solid var(--line)"><b>' + clk(t.live ? t.depart_min : (isFlexFree(t) ? t.flex_from : t.depart_min)) + (isFlexFree(t) ? ' or later' : '') + ' &middot; ' + esc(disp(t, 'origin')) + ' to ' + esc(disp(t, 'dest')) + '</b>' + (inf.dm.filter((x) => x.trip_id === t.id).map((x) => row(x, false)).join('') || '<div class="mut">No riders yet.</div>') + (t.live ? '' : '<div style="margin-top:6px"><button class="btn ghost" data-edittrip="' + t.id + '">Open this trip</button>' + (RPOK && calDay >= t0 && t.repeat_days && t.repeat_days.length ? ' <button class="btn ghost" data-skipday="' + t.id + '|' + calDay + '">Skip this day</button>' : '') + '</div>') + '</div>').join('');
+      const dRows = inf.trips.map((t) => '<div style="padding:6px 0;border-top:1px solid var(--line)"><b>' + clk(t.live ? t.depart_min : (isFlexFree(forDate(t, calDay)) ? t.flex_from : forDate(t, calDay).depart_min)) + (isFlexFree(forDate(t, calDay)) ? ' or later' : '') + ' &middot; ' + esc(disp(t, 'origin')) + ' to ' + esc(disp(t, 'dest')) + '</b>' + (inf.dm.filter((x) => inFam(x.trip_id, t)).map((x) => row(x, false)).join('') || '<div class="mut">No riders yet.</div>') + (t.live ? '' : '<div style="margin-top:6px"><button class="btn ghost" data-edittrip="' + t.id + '">Open this trip</button>' + (RPOK && calDay >= t0 && t.repeat_days && t.repeat_days.length ? ' <button class="btn ghost" data-skipday="' + t.id + '|' + calDay + '">Skip this day</button>' : '') + '</div>') + '</div>').join('');
       const rRows = inf.rm.map((x) => row(x, true)).join('');
       const sRows = inf.skipped.map((t) => '<div style="padding:6px 0;border-top:1px solid var(--line)"><b>Skipped</b> &middot; ' + esc(disp(t, 'origin')) + ' to ' + esc(disp(t, 'dest')) + ' <button class="btn ghost" data-unskipday="' + t.id + '|' + calDay + '">Bring this day back</button></div>').join('');
       dayBox = '<div style="margin-top:10px"><b>' + esc(RSD.label(calDay)) + '</b>' + (dRows ? '<div class="mut" style="margin-top:6px">Driving</div>' + dRows : '') + sRows + (rRows ? '<div class="mut" style="margin-top:6px">Riding</div>' + rRows : '') + (!dRows && !rRows && !sRows ? '<p class="mut">Nothing planned this day.</p>' : '') + '</div>';
@@ -1463,7 +1474,7 @@
       if (stops.length < 2) { toast('Nothing to navigate yet'); return; }
       const pt = (x) => x.loc.lat + ',' + x.loc.lng, mid = stops.slice(1, -1).map(pt);
       const url = 'https://www.google.com/maps/dir/?api=1&travelmode=driving' + (routeOnly ? '' : '&dir_action=navigate') + '&destination=' + pt(stops[stops.length - 1]) + (mid.length ? '&waypoints=' + encodeURIComponent(mid.join('|')) : '');
-      const accNow = window.__ldAcc || matches.filter((x) => x.driver_id === user.id && (!curTrip || x.trip_id === curTrip.id) && x.ride_date === todayStr() && x.status === 'accepted');
+      const accNow = window.__ldAcc || matches.filter((x) => x.driver_id === user.id && (!curTrip || inFam(x.trip_id, curTrip)) && x.ride_date === todayStr() && x.status === 'accepted');
       const todo = routeOnly ? [] : accNow.filter((x) => stageOf(x) === 'accepted' && stepsOpen(x));
       const nat = nativeLoc();
       if (!nat) {
