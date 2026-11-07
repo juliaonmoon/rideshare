@@ -127,6 +127,7 @@
   let myBlocks = new Set();   // people I chose never to be matched with (migration 029)
   let MSOK = null, msgs = [], myRatings = {}, scores = {}, adminReports = [];   // migration 024 (messages, ratings, admin reports)
   let PCOK = null, cards = {};   // migration 021 (photo and car details shown to a matched driver or rider, Report a problem) is in place
+  let freshBusy = false;   // Start fresh is running
   let myChildren = [];   // the days of my repeating trips (with a window) that became their own trip once the first rider was accepted
   let RPOK = null, skipMap = {};   // RPOK: migration 048 (every N weeks, monthly, skip a day) is in place
   let UNOK = null;   // migration 047 (repeat until) is in place
@@ -1305,6 +1306,7 @@
       + (nativeLoc() ? card('Rider alerts', '<p><b>Status: ' + (dndOn ? 'ON' : 'OFF') + '</b></p><p class="mut">' + (dndOn ? 'Seat requests can alert you even when your phone is on Do Not Disturb or Sleeping mode.' : 'Seat requests are silent when your phone is on Do Not Disturb or Sleeping mode. Tap the button, then switch on <b>Override Do Not Disturb</b> on the screen that opens.') + '</p><p><button class="btn' + (dndOn ? ' ghost' : '') + '" id="dnd-go">' + (dndOn ? 'Open alert settings' : 'Let alerts break through Do Not Disturb') + '</button></p>') : '')
       + (nativeLoc() ? card('Floating RideShare button', '<p><b>Status: ' + (overlayOn ? 'ON' : 'OFF') + '</b></p><p class="mut">' + (overlayOn ? 'While a ride is under way, a small round RideShare button floats over Google Maps. Tap it to come back to RideShare. You can drag it out of the way.' : 'Shows a small round RideShare button over Google Maps while a ride is under way, so one tap brings you back to RideShare. Tap the button, then switch on <b>Allow display over other apps</b> on the screen that opens.') + '</p><p><button class="btn' + (overlayOn ? ' ghost' : '') + '" id="ov-go">' + (overlayOn ? 'Open settings' : 'Allow the floating button') + '</button> ' + (overlayOn ? '<button class="btn ' + (bubbleHidden ? '' : 'ghost') + '" id="ov-hide">' + (bubbleHidden ? 'Show the floating button again' : 'Hide the floating button') + '</button>' : '') + '</p><p class="mut">You can also press and hold the floating button for a second to make it go away until your next ride.</p>') : '')
       + (isTest ? card('Layout', '<p class="mut">You are using the new layout. If something feels off, you can switch back at any time.</p><p><button class="btn ghost" data-uimode="classic">Use the old layout</button></p>') : '')
+      + card('Start fresh', '<p class="mut">Cancels everything coming up: your trips, ride requests and booked rides. Anyone booked with you is told and gets their points back. Your history, points and settings stay, and the app goes back to how it looks when you first open it.</p><p><button class="btn ghost" id="sf-go" style="color:var(--bad);border-color:var(--bad)">Cancel everything coming up</button></p>')
       + card('Good to know', '<p class="mut">Driver and rider settings are separate, so you can be both at the same time. Other people only see your ride style (like "quiet ride") and whether you accept automatically. Nothing else in here is shared.</p>');
   }
   const saveSettings = () => {
@@ -1360,6 +1362,16 @@
     try { wire(); } catch (e) { console.error('wire', e); showErr('buttons: ' + (e && e.message || e)); }
   }
 
+  // Forget everything typed or chosen on screen, so the app looks as it does when first opened. Used by Reset trip and Start fresh.
+  function resetClientState() {
+    stopShare(true);
+    editing.trip = false; editing.req = false; editing.newTrip = false;
+    selTripId = null; pending = null; viewD = null; viewR = null; calDay = null; calMonth = null; askCancel = null; mapSig = {}; formSig = '';
+    [nowSel, LV].forEach((o) => Object.keys(o).forEach((k) => { delete o[k]; }));
+    plReset('ln-o', 'ln-d', 'lt-o', 'lt-d', 'lr-p', 'lr-d', 'rn-p', 'rn-d');
+    tripMode = 'now'; rideMode = 'now'; tripsView = 'driver';
+    try { localStorage.setItem('rs_trip_mode', 'now'); localStorage.removeItem('rs_trip_on'); localStorage.removeItem('rs_ride_mode'); localStorage.removeItem('rs_trips_view'); } catch (e) { /* storage blocked */ }
+  }
   async function run(p, ok) { try { const r = await p; if (r.error) throw r.error; if (ok) toast(ok); return true; } catch (e) { fail(e); return false; } finally { formSig = ''; await loadAll(); } }
 
   function wire() {
@@ -1532,20 +1544,44 @@
     each('[data-stopdrive]', () => { stopShare(true); toast('Driving mode is off'); render(); });
     // Reset trip: start over at any time (after a trip, or when something went wrong).
     const resetTrip = async (end) => {
-      const live = !!myLiveTrip, oneTime = !!myTrip && !(myTrip.repeat_days && myTrip.repeat_days.length);   // a repeating trip stays; a one-time trip is cancelled
-      if (!end && !window.confirm('Reset this trip?\n\nRiders who are not picked up yet are cancelled (their points go back to them). ' + (live ? 'Your Offer a ride now trip is cancelled. ' : '') + (oneTime ? 'Your posted trip is cancelled. ' : myTrip ? 'Your repeating trip stays. ' : '') + 'Driving mode turns off and the form starts fresh.')) return;
-      const mineIds = new Set([myLiveTrip && myLiveTrip.id, myTrip && myTrip.id].filter(Boolean));   // only the trip(s) being reset, never another scheduled trip
-      const todo = matches.filter((x) => x.driver_id === user.id && mineIds.has(x.trip_id) && (x.status === 'accepted' || x.status === 'requested') && !x.picked_up_at);
+      const live = !!myLiveTrip, shown = myTrip, repeating = !!(shown && shown.repeat_days && shown.repeat_days.length);
+      const cancelShown = !!shown && (end ? (!myLiveTrip && !repeating) : true);   // the Reset trip button cancels the trip shown; ending a drive cancels only the trip that was driven (a live one, or a one-time posted one), never another scheduled trip
+      if (!end && !window.confirm('Reset this trip?\n\nRiders who are not picked up yet are cancelled (their points go back to them). ' + (live ? 'Your Offer a ride now trip is cancelled. ' : '') + (cancelShown ? (repeating ? 'Your repeating trip is cancelled for good, all its days. ' : 'Your posted trip is cancelled. ') : '') + 'Driving mode turns off and the form starts fresh.\n\nTo cancel everything you have coming up at once, use Settings > Start fresh.')) return;
+      const todo = matches.filter((x) => x.driver_id === user.id && ((myLiveTrip && x.trip_id === myLiveTrip.id) || (cancelShown && inFam(x.trip_id, shown))) && (x.status === 'accepted' || x.status === 'requested') && !x.picked_up_at);
       for (const x of todo) { try { await (x.status === 'requested' ? sb.rpc('respond_match', { p_match: x.id, p_accept: false }) : sb.rpc('cancel_ride', { p_match: x.id })); } catch (e) { /* already finished */ } }
       if (myLiveTrip) { try { const ce = (await cancelTrip(myLiveTrip.id)).error; if (ce) toast(ce.message); } catch (e) { /* ignore */ } }
-      if (oneTime) { try { const ce = (await cancelTrip(myTrip.id)).error; if (ce) toast(ce.message); } catch (e) { /* ignore */ } }
-      stopShare(true); editing.trip = false; editing.newTrip = false; selTripId = null; pending = null; viewD = null; mapSig = {}; formSig = '';
-      // back to how the app starts: forget the places and times typed into the driver forms
-      [nowSel, LV].forEach((o) => Object.keys(o).forEach((k) => { delete o[k]; })); plReset('ln-o', 'ln-d', 'lt-o', 'lt-d'); tripMode = 'now';
-      try { localStorage.setItem('rs_trip_mode', 'now'); } catch (e) { /* storage blocked */ }
-      try { localStorage.removeItem('rs_trip_on'); } catch (e) { /* storage blocked */ }
+      if (cancelShown) { try { const ce = (await cancelTrip(shown.id)).error; if (ce) toast(ce.message); } catch (e) { /* ignore */ } }
+      resetClientState();
       toast(end ? 'Trip ended. Thank you for driving!' : 'Trip reset. You can start a new one.'); await loadAll();
     };
+    // Start fresh: cancel everything coming up (trips, requests, booked rides) in one step, keep the history, and look like a first open.
+    const startFresh = async () => {
+      if (freshBusy) return;
+      const t0 = todayStr(), nTrips = myTrips.length + (myLiveTrip ? 1 : 0), nReqs = (myReq ? 1 : 0) + (myLiveReq ? 1 : 0);
+      if (matches.some((x) => (x.driver_id === user.id || x.rider_id === user.id) && x.status === 'accepted' && x.picked_up_at && !x.dropped_off_at)) { toast('A ride is under way. Finish it first, then start fresh.'); return; }
+      const up = matches.filter((x) => (x.status === 'accepted' || x.status === 'requested') && !x.picked_up_at && x.ride_date >= t0 && (x.driver_id === user.id || x.rider_id === user.id));
+      const booked = up.filter((x) => x.status === 'accepted').length, plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
+      if (!nTrips && !nReqs && !up.length) { resetClientState(); toast('Nothing is coming up. The app is already fresh.'); formSig = ''; render(); return; }
+      const bits = []; if (nTrips) bits.push(plural(nTrips, 'trip')); if (nReqs) bits.push(plural(nReqs, 'ride request')); if (booked) bits.push(plural(booked, 'booked ride'));
+      if (!window.confirm('Cancel everything coming up?\n\nThis cancels ' + (bits.join(', ') || 'your waiting requests') + '. People booked with you are told, and everyone gets their points back. If you booked a ride as a rider and it is less than 2 hours to pickup, the usual late-cancel rule applies.\n\nYour history, points and settings stay. The app goes back to how it looks when you first open it. This cannot be undone.')) return;
+      freshBusy = true; const btn = $('sf-go'); if (btn) btn.disabled = true;
+      try {
+        let r = await sb.rpc('reset_my_upcoming');
+        if (r.error && /reset_my_upcoming/i.test(r.error.message) && /does not exist|schema cache|could not find/i.test(r.error.message)) {   // the database step is not run yet: cancel one by one
+          let failed = 0, firstErr = null;
+          for (const t of [myLiveTrip, ...myTrips, ...myChildren].filter(Boolean)) { const e = (await cancelTrip(t.id)).error; if (e) { failed++; firstErr = firstErr || e.message; } }
+          for (const q of [myLiveReq, myReq].filter(Boolean)) { const e = (await cancelRequest(q.id)).error; if (e) { failed++; firstErr = firstErr || e.message; } }
+          r = { data: { failed, first_error: firstErr }, error: null };
+        }
+        if (r.error) { toast(r.error.message); return; }
+        const dd = r.data || {};
+        if (dd.failed) { toast('Most things are cancelled, but ' + dd.failed + ' could not be: ' + (dd.first_error || 'see Upcoming')); formSig = ''; await loadAll(); return; }   // something is still on: leave the screens as they are
+        resetClientState();
+        toast('Everything coming up is cancelled. You have a fresh start.');
+        await loadAll();
+      } finally { freshBusy = false; }
+    };
+    on('sf-go', startFresh);
     each('[data-reset]', (b) => resetTrip(b.dataset.reset === 'end'));
     each('[data-startnav]', () => startNav());
     on('ov-hide', async () => { const n = nativeLoc(); try { await n.setBubbleHidden({ hidden: !bubbleHidden }); bubbleHidden = !bubbleHidden; formSig = ''; render(); toast(bubbleHidden ? 'The floating button is hidden.' : 'The floating button will show during rides.'); } catch (e) { toast('Update the app to use this'); } });

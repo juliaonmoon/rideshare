@@ -38,6 +38,7 @@ Open https://supabase.com/dashboard/project/iivhfapvkseeomxtsrxf/sql/new, paste 
 | `supabase/migrations/047_repeat_until.sql` | "Repeat until" last day for repeating trips and requests (needs 046) | **To run** |
 | `supabase/migrations/048_repeat_patterns_and_skip_day.sql` | Every N weeks, monthly (e.g. the last Thursday), end after N times, skip any single day of a repeating trip (needs 046, 047) | **To run** |
 | `supabase/migrations/049_repeating_trip_with_time_window.sql` | A repeating trip can have a time window; the first rider each day sets that day's leave time (needs 042, 046, 048) | **To run** |
+| `supabase/migrations/050_start_fresh.sql` | "Start fresh" in Settings: cancel everything coming up in one step, keep history (needs 025, 044) | **To run** |
 
 How to copy a file to the clipboard: ask Claude, or open the file on GitHub, click "Copy raw file", then paste it into the SQL editor.
 
