@@ -131,8 +131,11 @@
   let MSOK = null, msgs = [], myRatings = {}, scores = {}, adminReports = [];   // migration 024 (messages, ratings, admin reports)
   let PCOK = null, cards = {};   // migration 021 (photo and car details shown to a matched driver or rider, Report a problem) is in place
   const DEV = (() => { try { return localStorage.getItem('rs_dev') === '1'; } catch (e) { return false; } })();   // developer tools (route simulator, test cards) only when switched on
-  let offerOpen = false, tripsPane = 'cal';
-  let tf = { when: 'upcoming', role: 'all', st: new Set() };   // Trips > List filters: when (upcoming / past / all), what (driving / riding), and status chips   // Home: the Offer a ride now form is open; Trips tab: 'cal' or 'list'
+  const store = (k, d) => { try { return localStorage.getItem(k) || d; } catch (e) { return d; } }, keep = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* storage blocked */ } };
+  const loadTf = () => { try { const o = JSON.parse(store('rs_trips_filter', '{}')); return { when: ['upcoming', 'past', 'all'].includes(o.when) ? o.when : 'upcoming', role: ['all', 'drive', 'ride'].includes(o.role) ? o.role : 'all', st: new Set(Array.isArray(o.st) ? o.st : []) }; } catch (e) { return { when: 'upcoming', role: 'all', st: new Set() }; } };
+  const saveTf = () => keep('rs_trips_filter', JSON.stringify({ when: tf.when, role: tf.role, st: [...tf.st] }));
+  let offerOpen = false, tripsPane = store('rs_trips_pane', 'list') === 'cal' ? 'cal' : 'list';   // the Trips tab opens on the List with its filters, and remembers the last choice
+  let tf = loadTf();   // Trips > List filters: when (upcoming / past / all), what (driving / riding), and status chips   // Home: the Offer a ride now form is open; Trips tab: 'cal' or 'list'
   const foldOpen = new Set();   // which collapsed lists the person opened (kept across screen refreshes)
   document.addEventListener('toggle', (e) => { const t = e.target; if (t && t.dataset && t.dataset.fold) { if (t.open) foldOpen.add(t.dataset.fold); else foldOpen.delete(t.dataset.fold); } }, true);
   // Long explanations are not shown all the time: a small (i) opens them, and a few guide the person once, the first time they see them.
@@ -1592,7 +1595,7 @@
     homeView = 'feed'; detailTripId = null; selTripId = null; pending = null; viewD = null; viewR = null; calDay = null; calMonth = null; askCancel = null; mapSig = {}; formSig = '';
     [nowSel, LV].forEach((o) => Object.keys(o).forEach((k) => { delete o[k]; }));
     plReset('ln-o', 'ln-d', 'lt-o', 'lt-d', 'lr-p', 'lr-d', 'rn-p', 'rn-d');
-    tripMode = 'now'; rideMode = 'now'; tripsView = 'driver'; offerOpen = false; tripsPane = 'cal'; tf = { when: 'upcoming', role: 'all', st: new Set() };
+    tripMode = 'now'; rideMode = 'now'; tripsView = 'driver'; offerOpen = false; tripsPane = 'list'; tf = { when: 'upcoming', role: 'all', st: new Set() }; saveTf(); keep('rs_trips_pane', 'list');
     try { localStorage.setItem('rs_trip_mode', 'now'); localStorage.removeItem('rs_trip_on'); localStorage.removeItem('rs_ride_mode'); localStorage.removeItem('rs_trips_view'); } catch (e) { /* storage blocked */ }
   }
   async function run(p, ok) { try { const r = await p; if (r.error) throw r.error; if (ok) toast(ok); return true; } catch (e) { fail(e); return false; } finally { formSig = ''; await loadAll(); } }
@@ -1824,11 +1827,11 @@
     each('[data-opentrip]', (b) => { const [id, d] = b.dataset.opentrip.split('|'); const mine = myTrips.find((x) => x.id === id); if (mine) { selTripId = id; myTrip = mine; } detailTripId = id; detailFrom = (window.rsView && window.rsView() === 'trips') ? 'trips' : 'home'; viewD = d || null; goHome('trip'); });
     each('[data-openride]', (b) => { viewR = b.dataset.openride || null; detailFrom = (window.rsView && window.rsView() === 'trips') ? 'trips' : 'home'; goHome('ride'); });
     each('[data-starttrip]', (b) => { const [id, d] = b.dataset.starttrip.split('|'); const mine = myTrips.find((x) => x.id === id); if (mine) { selTripId = id; myTrip = mine; } detailTripId = id; detailFrom = 'home'; viewD = d || null; goHome('trip'); setTimeout(() => startNav(), 900); });
-    each('[data-tpane]', (b) => { tripsPane = b.dataset.tpane; render(); });
-    each('[data-tfw]', (b) => { tf.when = b.dataset.tfw; tf.st = new Set(); render(); });
-    each('[data-tfr]', (b) => { tf.role = b.dataset.tfr; tf.st = new Set(); render(); });
-    each('[data-tfs]', (b) => { const k = b.dataset.tfs; if (tf.st.has(k)) tf.st.delete(k); else tf.st.add(k); render(); });
-    each('[data-tfclear]', () => { tf = { when: 'upcoming', role: 'all', st: new Set() }; render(); });
+    each('[data-tpane]', (b) => { tripsPane = b.dataset.tpane; keep('rs_trips_pane', tripsPane); render(); });
+    each('[data-tfw]', (b) => { tf.when = b.dataset.tfw; tf.st = new Set(); saveTf(); render(); });
+    each('[data-tfr]', (b) => { tf.role = b.dataset.tfr; tf.st = new Set(); saveTf(); render(); });
+    each('[data-tfs]', (b) => { const k = b.dataset.tfs; if (tf.st.has(k)) tf.st.delete(k); else tf.st.add(k); saveTf(); render(); });
+    each('[data-tfclear]', () => { tf = { when: 'upcoming', role: 'all', st: new Set() }; saveTf(); render(); });
     each('[data-askride]', () => { const rd = $('rs-riding'); if (rd) rd.click(); });   // the Riding side of Home has the Ask for a ride form open
     each('[data-seltrip]', (b) => { selTripId = b.dataset.seltrip; myTrip = myTrips.find((x) => x.id === selTripId) || myTrip; curTrip = myLiveTrip || myTrip; editing.trip = false; editing.newTrip = false; pending = null; viewD = null; mapSig = {}; formSig = ''; render(); });
     each('[data-newtrip]', () => { if (myTrips.length >= 5) { toast('You can keep up to 5 trips. Cancel one first.'); return; } detailFrom = (window.rsView && window.rsView() === 'trips') ? 'trips' : 'home'; editing.trip = true; editing.newTrip = true; pending = null; goHome('post'); });
