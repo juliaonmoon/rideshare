@@ -1,6 +1,17 @@
-# Prompt to paste into ChatGPT
+# Design question for ChatGPT: what belongs on Home and what belongs on Trips?
 
-(Attach the 8 images from the `screens` folder, in order: 7 phone screenshots, then 08 = wireframe markup of today's screens and my starting idea. Then paste everything below the line.)
+BEFORE YOU ANSWER, open and look at these local files on my computer (they are in a folder called screens). Files 01 to 07 are screenshots from my phone. File 08 is a wireframe markup of today's screens and of my starting idea.
+
+C:\Users\jules\rideshare_repo\docs\design-brief\screens\01-home-driving-top.jpg
+C:\Users\jules\rideshare_repo\docs\design-brief\screens\02-home-driving-map-date-plan.jpg
+C:\Users\jules\rideshare_repo\docs\design-brief\screens\03-home-driving-requests-riders.jpg
+C:\Users\jules\rideshare_repo\docs\design-brief\screens\04-home-riding.jpg
+C:\Users\jules\rideshare_repo\docs\design-brief\screens\05-trips-calendar.jpg
+C:\Users\jules\rideshare_repo\docs\design-brief\screens\06-trips-list.jpg
+C:\Users\jules\rideshare_repo\docs\design-brief\screens\07-post-trip-form-repeat-preview.jpg
+C:\Users\jules\rideshare_repo\docs\design-brief\screens\08-markup-today-and-idea.png
+
+If you cannot open files, tell me which ones failed and answer from the text below.
 
 ---
 
