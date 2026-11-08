@@ -1,4 +1,4 @@
-# Things only Jules can do (running list)
+﻿# Things only Jules can do (running list)
 
 Kept up to date by Claude. Newest status is at the top of each section. Nothing in this file is a secret: never paste passwords, tokens or keys into it.
 
@@ -43,8 +43,9 @@ Open https://supabase.com/dashboard/project/iivhfapvkseeomxtsrxf/sql/new, paste 
 | `supabase/migrations/052_test_requests_for_recurring_trips.sql` | Test data: made-up riders ask for a seat on your repeating trips, each on a different date (needs 046, 048 and the sample data) | **To run** |
 | `supabase/migrations/053_edit_rules_requests_and_cancel_notices.sql` | A trip with a confirmed rider on any date cannot be changed; waiting requests are re-checked when a trip changes; notices when a confirmed ride is cancelled (needs 044, 048, 049) | **To run** |
 | `supabase/migrations/054_change_one_date_of_a_repeating_trip.sql` | Change just ONE date of a repeating trip (like a calendar app's "this occurrence only"); put it back (needs 048, 049, 053) | **To run** |
-| `supabase/migrations/055_no_double_booking.sql` | A driver cannot have two trips that overlap on the same day (new trip, edit, change one date); the second one is refused (needs 048, 049) | **To run** |
-| `supabase/migrations/056_more_places_canada_and_usa.sql` | More places (rest of BC, Washington, Oregon) so searches like Bellevue Square are accepted | **To run** |
+| `supabase/migrations/055_no_double_booking.sql` | A driver cannot have two trips that overlap on the same day (new trip, edit, change one date); the second one is refused (needs 048, 049) | Done |
+| `supabase/migrations/056_more_places_canada_and_usa.sql` | More places (rest of BC, Washington, Oregon) so searches like Bellevue Square are accepted | Not needed (the app does not use it) |
+| `supabase/migrations/057_double_booking_past_midnight.sql` | The double-booking rule also catches trips that run past midnight (needs 055) | **To run** |
 
 How to copy a file to the clipboard: ask Claude, or open the file on GitHub, click "Copy raw file", then paste it into the SQL editor.
 
