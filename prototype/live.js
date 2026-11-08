@@ -1538,9 +1538,19 @@
     const tripChips = tripList.length >= 2 && !byTrip ? '<div class="days" style="margin-bottom:6px">' + tripList.map((t) => chip('data-tft', t.id, esc(disp(t, 'dest')) + ' &middot; ' + esc(shortRep(t)), tf.trip === t.id)).join('') + '</div>' : '';
     const viewBar = tripList.length >= 1 && tf.role !== 'ride' ? '<div class="days" style="margin-bottom:6px">' + chip('data-tfv', 'trip', 'Trips and their dates (' + tripList.length + ')', tf.view === 'trip') + chip('data-tfv', 'date', 'All dates together', tf.view !== 'trip') + '</div>' : '';
     const listBody = filtered.length ? filtered.slice(0, LIM).map((i) => i.html).join('') + (filtered.length > LIM ? fold('f-list-more', 'Show ' + (filtered.length - LIM) + ' more', filtered.slice(LIM).map((i) => i.html).join('')) : '') : '<p class="mut">Nothing matches.' + (filtersOn ? ' <button type="button" class="btn ghost" data-tfclear="1" style="padding:4px 10px;min-height:0">Clear filters</button>' : '') + '</p>';
-    const filterBar = viewBar + paxBar + '<div class="days" style="margin-bottom:6px">' + chip('data-tfw', 'upcoming', 'Upcoming (' + nWhen('upcoming') + ')', tf.when === 'upcoming') + chip('data-tfw', 'past', 'Past (' + nWhen('past') + ')', tf.when === 'past') + chip('data-tfw', 'all', 'All', tf.when === 'all') + '</div>'
-      + '<div class="days" style="margin-bottom:6px">' + chip('data-tfr', 'all', 'All', tf.role === 'all') + chip('data-tfr', 'drive', 'Driving (' + nRole('drive') + ')', tf.role === 'drive') + chip('data-tfr', 'ride', 'Riding (' + nRole('ride') + ')', tf.role === 'ride') + '</div>'
-      + tripChips + (statChips ? '<div class="days" style="margin-bottom:6px">' + statChips + '</div>' : '') + (filtersOn && filtered.length ? '<div style="margin-bottom:4px"><button type="button" class="btn ghost" data-tfclear="1" style="padding:4px 10px;min-height:0">Clear filters</button></div>' : '');
+    // Simple filters: one row of three buttons (when), and everything else in dropdowns inside one "Filters" fold.
+    const sel = (key, label, opts, cur) => '<div><div class="mut" style="font-size:12px;margin-bottom:2px">' + label + '</div><select data-tfsel="' + key + '" style="' + INPUT + ';padding:6px">' + opts.map(([v, l]) => '<option value="' + esc(v) + '"' + (String(v) === String(cur) ? ' selected' : '') + '>' + l + '</option>').join('') + '</select></div>';
+    const nOn = (tf.role !== 'all' ? 1 : 0) + (tf.pax !== 'all' ? 1 : 0) + (tf.st.size ? 1 : 0) + (tf.trip ? 1 : 0) + (tf.view === 'date' && tripList.length ? 1 : 0);
+    const stOpts = [['', 'Any']].concat(STAT.map(([k, l]) => [k, l + ' (' + base.filter((it) => it.f[k]).length + ')']).filter(([k]) => base.some((it) => it.f[k]) || tf.st.has(k)));
+    const drops = [
+      tf.role === 'ride' ? '' : sel('pax', 'Passengers', [['all', 'Any'], ['with', 'With passengers (' + paxPool.filter((it) => hasPax(it)).length + ')'], ['without', 'No passengers (' + paxPool.filter((it) => !hasPax(it)).length + ')']], tf.pax),
+      sel('role', 'Showing', [['all', 'Driving and riding'], ['drive', 'Driving (' + nRole('drive') + ')'], ['ride', 'Riding (' + nRole('ride') + ')']], tf.role),
+      stOpts.length > 1 ? sel('st', 'Status', stOpts, [...tf.st][0] || '') : '',
+      tripList.length >= 1 && tf.role !== 'ride' ? sel('view', 'Layout', [['trip', 'Each trip with its dates'], ['date', 'All dates in one list']], tf.view === 'trip' ? 'trip' : 'date') : '',
+      tripList.length >= 2 && !byTrip ? sel('trip', 'Trip', [['', 'All trips']].concat(tripList.map((t) => [t.id, disp(t, 'dest') + ' \u00b7 ' + shortRep(t)])), tf.trip || '') : '',
+    ].filter(Boolean).join('');
+    const filterBar = '<div class="days" style="margin-bottom:6px">' + chip('data-tfw', 'upcoming', 'Upcoming (' + nWhen('upcoming') + ')', tf.when === 'upcoming') + chip('data-tfw', 'past', 'Past (' + nWhen('past') + ')', tf.when === 'past') + chip('data-tfw', 'all', 'All', tf.when === 'all') + '</div>'
+      + fold('f-filters', 'Filters' + (nOn ? ' (' + nOn + ' on)' : ''), '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">' + drops + '</div>' + (filtersOn ? '<div style="margin-top:8px"><button type="button" class="btn ghost" data-tfclear="1" style="padding:4px 10px;min-height:0">Clear filters</button></div>' : ''));
     const listPaneHtml = paneSegBar() + lostBanner() + card('Trips', filterBar + listBody) + (tripList.length && !byTrip ? card('Manage my trips', fold('f-manage-trips', 'My trips (' + tripList.length + '): edit or stop', tripList.map(tripRow).join(''))) : '') + cancelAllCard();
     window.__rules = card('Cancellation rules', policy);
     if (tripsPane === 'list') return listPaneHtml;
@@ -1894,6 +1904,7 @@
     each('[data-tpane]', (b) => { tripsPane = b.dataset.tpane; keep('rs_trips_pane', tripsPane); render(); });
     each('[data-tfw]', (b) => { tf.when = b.dataset.tfw; tf.st = new Set(); saveTf(); render(); });
     each('[data-tfr]', (b) => { tf.role = b.dataset.tfr; tf.st = new Set(); saveTf(); render(); });
+    each('[data-tfsel]', (el) => { el.onchange = () => { const k = el.dataset.tfsel, v = el.value; if (k === 'role') { tf.role = v; tf.st = new Set(); } else if (k === 'pax') tf.pax = v; else if (k === 'view') { tf.view = v; tf.trip = null; } else if (k === 'st') tf.st = v ? new Set([v]) : new Set(); else if (k === 'trip') tf.trip = v || null; saveTf(); render(); }; });
     each('[data-tfp]', (b) => { tf.pax = b.dataset.tfp; saveTf(); render(); });
     each('[data-tfs]', (b) => { const k = b.dataset.tfs; if (tf.st.has(k)) tf.st.delete(k); else tf.st.add(k); saveTf(); render(); });
     each('[data-tfv]', (b) => { tf.view = b.dataset.tfv; tf.trip = null; saveTf(); render(); });
