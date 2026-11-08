@@ -1688,9 +1688,7 @@
       if (needProfile('drive')) return;
       const row = pending.row, upd = myTrip && !editing.newTrip;
       if (!upd && myTrips.length >= 5) { toast('You can keep up to 5 trips. Cancel one first.'); return; }
-      const tripB = upd ? myTrip : null, waitingOf = () => (tripB ? matches.filter((x) => x.driver_id === user.id && inFam(x.trip_id, tripB) && x.status === 'requested').length : 0), waitB = waitingOf();
       const ok = await run(upd ? sb.from('trips').update(row).eq('id', myTrip.id) : sb.from('trips').insert(row).select('id').single().then((r) => { if (!r.error && r.data) selTripId = r.data.id; return r; }), 'Trip saved');
-      if (ok && upd && waitB) { const gone = waitB - waitingOf(); if (gone > 0) toast(gone + ' waiting request' + (gone === 1 ? ' no longer fits' : 's no longer fit') + ' the changed trip and ' + (gone === 1 ? 'was' : 'were') + ' removed'); }
       if (ok) { editing.trip = false; editing.newTrip = false; plReset('lt-o', 'lt-d', 'ln-o', 'ln-d'); Object.keys(LV).forEach((k) => delete LV[k]); pending = null; viewD = null; mapSig = {}; formSig = ''; render(); }
     });
     on('lr-review', () => {
