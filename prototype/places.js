@@ -40,8 +40,9 @@
 
   // The street address at a point (for Use my location). First choice: Google's address lookup (Geocoding), the same one Google Maps uses when you drop a pin.
   // If that is not switched on for the key yet, fall back to the closest place Google knows within 150 m.
-  let geoDown = false;
+  let geoDown = false, lastGeo = null;   // lastGeo: the town and province/state found by the last address lookup
   function geocode(lat, lng) {
+    lastGeo = null;
     return new Promise((resolve) => {
       try {
         if (geoDown || !(window.google && google.maps && google.maps.Geocoder)) return resolve('');
@@ -52,6 +53,8 @@
           // built from the address parts, so a missing street number shows as "Near 128 St, Surrey" instead of a cut-off "St, Surrey"
           const comp = (t) => { const c = (best.address_components || []).find((x) => x.types.includes(t)); return c ? c.long_name : ''; };
           const num = comp('street_number'), road = comp('route'), city = comp('locality') || comp('sublocality') || comp('neighborhood');
+          const reg = (best.address_components || []).find((x) => x.types.includes('administrative_area_level_1'));
+          lastGeo = { city: comp('neighborhood') || comp('sublocality') || comp('locality') || comp('postal_town'), region: reg ? reg.short_name : '' };
           if (road) return resolve((num ? num + ' ' + road : 'Near ' + road) + (city ? ', ' + city : ''));
           resolve(best.formatted_address.split(',').slice(0, 2).join(',').trim());
         });
@@ -74,5 +77,5 @@
     } catch (e) { return ''; }
   }
 
-  window.RS_PLACES = { suggest, details, where, available: () => !down && !!KEY(), markDown: () => { down = true; }, exactAddress: () => !geoDown };
+  window.RS_PLACES = { suggest, details, where, lastGeo: () => lastGeo, available: () => !down && !!KEY(), markDown: () => { down = true; }, exactAddress: () => !geoDown };
 })();
