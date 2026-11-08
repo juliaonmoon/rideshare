@@ -34,7 +34,7 @@
     if (!r.ok) throw new Error('Could not load that place');
     const j = await r.json();
     const comp = (t) => { const c = (j.addressComponents || []).find((x) => (x.types || []).includes(t)); return c || null; };
-    const cityC = comp('locality') || comp('postal_town') || comp('sublocality') || comp('administrative_area_level_3') || comp('administrative_area_level_2'), regC = comp('administrative_area_level_1');
+    const cityC = comp('neighborhood') || comp('sublocality_level_1') || comp('sublocality') || comp('locality') || comp('postal_town') || comp('administrative_area_level_3') || comp('administrative_area_level_2'), regC = comp('administrative_area_level_1');
     return { lat: j.location.latitude, lng: j.location.longitude, name: '', city: cityC ? cityC.longText : '', region: regC ? (regC.shortText || '') : '' };
   }
 
