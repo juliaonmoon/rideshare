@@ -174,10 +174,10 @@
   // A phone alert opened the app for a trip today: show that trip's page (its plan and stops), so the navigation starts from the right route.
   function openTodayTrip() { const tt = myLiveTrip || myTrips.find((t) => tripOn(t, todayStr())) || myTrip; if (!tt) return; detailTripId = tt.id; if (!tt.live) { selTripId = tt.id; myTrip = tt; } viewD = todayStr(); detailFrom = 'home'; goHome('trip'); }
   function goHome(v) { homeView = v; formSig = ''; mapSig = {}; syncCur(); if (window.rsGo) window.rsGo('home'); render(); }
-  function leaveDetails() { const back = detailFrom; homeView = 'feed'; detailTripId = null; editing.trip = false; editing.newTrip = false; editing.req = false; pending = null; offerOpen = false; formSig = ''; mapSig = {}; syncCur(); if (window.rsGo) window.rsGo(back === 'trips' ? 'trips' : 'home'); render(); }
+  function leaveDetails() { const back = detailFrom; homeView = 'feed'; detailTripId = null; editing.trip = false; editing.newTrip = false; editing.dayOnly = null; editing.req = false; pending = null; offerOpen = false; formSig = ''; mapSig = {}; syncCur(); if (window.rsGo) window.rsGo(back === 'trips' ? 'trips' : 'home'); render(); }
   window.rsHomeTab = () => (homeView === 'feed' ? (window.rsRole && window.rsRole() === 'riding' ? 't-rider' : 't-driver') : (homeView === 'ride' || homeView === 'ask') ? 't-rider' : 't-driver');
   window.rsHomeDetail = () => homeView !== 'feed';   // a trip page, not the Home screen: the Driving | Riding switch is hidden
-  window.rsHome = { toFeed: () => { homeView = 'feed'; detailTripId = null; editing.trip = false; editing.newTrip = false; editing.req = false; pending = null; offerOpen = false; formSig = ''; mapSig = {}; syncCur(); render(); } };
+  window.rsHome = { toFeed: () => { homeView = 'feed'; detailTripId = null; editing.trip = false; editing.newTrip = false; editing.dayOnly = null; editing.req = false; pending = null; offerOpen = false; formSig = ''; mapSig = {}; syncCur(); render(); } };
   // when what a page was showing is gone (saved, cancelled, finished), go back to the feed
   function autoBack() {
     if (!newUI() || homeView === 'feed') return;
@@ -189,6 +189,7 @@
     else if (homeView === 'ride' && !curReq && !matches.some((x) => user && x.rider_id === user.id && (x.status === 'accepted' || x.status === 'requested'))) homeView = 'feed';
     if (was !== homeView) { detailTripId = null; formSig = ''; mapSig = {}; syncCur(); if (window.rsView && window.rsView() === 'home' && window.rsGo) window.rsGo('home'); }
   }
+  let CDOK = null;   // migration 054 (change one date) is in place
   let notices = [], NTOK = null;   // unread notices (a confirmed ride was cancelled); NTOK: migration 053 is in place
   let freshBusy = false;   // Start fresh is running
   let myChildren = [];   // the days of my repeating trips (with a window) that became their own trip once the first rider was accepted
@@ -273,7 +274,7 @@
     if (v !== dndOn || o !== overlayOn || hid !== bubbleHidden) { dndOn = v; overlayOn = o; bubbleHidden = hid; formSig = ''; if (typeof render === 'function' && user) render(); }
   }
   document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshDnd(); });
-  const editing = { trip: false, req: false, newTrip: false };   // newTrip: the form is posting an additional trip, not editing the one shown   // the full form stays hidden behind the summary card until Edit is tapped
+  const editing = { trip: false, req: false, newTrip: false, dayOnly: null };   // dayOnly: {id, d} = changing ONE date of a repeating trip   // newTrip: the form is posting an additional trip, not editing the one shown   // the full form stays hidden behind the summary card until Edit is tapped
   let pending = null, viewD = null, viewR = null, askCancel = null, rel = {}, mySet = null, styles = {}, isTest = false, testMode = false, drives = [];
   // Personal settings: defaults for new trips and requests (every trip can still be changed before posting).
   const SD = { d_detour_km: null, d_total_detour_km: null, d_detour: 10, d_total_detour: 15, d_wait: 0, d_accepts: 'either', d_seats: 1, d_auto_accept: false, d_chat: 'some', d_pets: true, r_pays: 'points', r_chat: 'some', r_pets: false };
@@ -642,6 +643,7 @@
         await Promise.all(asks.map(async (x) => { const r = await sb.rpc('leave_info', { p_match: x.id }); if (!r.error && r.data && r.data.ok) li[x.id] = r.data; }));
         leaveInfo = li;
       } catch (e) { leaveInfo = {}; /* older database: no leave-by */ }
+      if (CDOK === null) CDOK = !(await sb.from('trips').select('changed_day').limit(1)).error;
       if (NTOK !== false) { try { const nr = await sb.from('notices').select('id,kind,title,body,created_at').is('read_at', null).order('created_at', { ascending: false }).limit(10); if (nr.error) { NTOK = false; notices = []; } else { NTOK = true; notices = nr.data || []; } } catch (e) { notices = []; } }
       if (RPOK) {
         try {
@@ -896,9 +898,12 @@
     const dates = occOf(t, 7), d = viewD || dates[0] || todayStr(), ft = forDate(t, d), isToday = d === todayStr(), rep = !!(t.repeat_days && t.repeat_days.length) && !t.live, flex = isFlexFree(ft);
     const when = t.live ? 'Offering seats now' : RSD.label(d) + ' &middot; ' + (flex ? 'leave between ' + clk(ft.flex_from) + ' and ' + clk(ft.flex_to) : 'leave ' + clk(ft.depart_min));
     const dl0 = RSD.label(d), dlw = /^(Today|Tomorrow)$/.test(dl0) ? dl0.toLowerCase() : dl0;
-    const changes = '<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:8px"><button class="btn ghost" data-edittrip="' + t.id + '">Edit</button>' + (rep && RPOK ? '<button class="btn ghost" data-skipday="' + t.id + '|' + d + '">Skip ' + esc(dlw) + '</button>' : '') + '<button class="btn ghost" data-reset="trip" data-tid="' + t.id + '">' + (rep ? 'Stop repeating trip' : 'Cancel trip') + '</button></div>';
+    const confOnDate = matches.some((x) => x.driver_id === user.id && inFam(x.trip_id, t) && x.ride_date === d && x.status === 'accepted' && !x.dropped_off_at);
+    const dayBtns = (rep || ft.changed_day) && CDOK && !confOnDate ? '<button class="btn ghost" data-editday="' + t.id + '|' + d + '">Change this date</button>' : '';
+    const backBtn = ft.changed_day && CDOK && !confOnDate ? '<button class="btn ghost" data-restoreday="' + ft.id + '">Put back to the repeating trip</button>' : '';
+    const changes = '<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:8px"><button class="btn ghost" data-edittrip="' + t.id + '">Edit</button>' + dayBtns + backBtn + (rep && RPOK ? '<button class="btn ghost" data-skipday="' + t.id + '|' + d + '">Skip ' + esc(dlw) + '</button>' : '') + '<button class="btn ghost" data-reset="trip" data-tid="' + t.id + '">' + (rep ? 'Stop repeating trip' : 'Cancel trip') + '</button></div>';
     return card(when, '<p><b>' + esc(disp(t, 'origin')) + '</b> to <b>' + esc(disp(t, 'dest')) + '</b></p>' + (rep ? '<p class="mut">Repeats ' + esc(RSD.repeatLabel(t.repeat_days, t.repeat_every, t.repeat_nth)) + untilTxt(t.repeat_until) + '</p>' : '') + (flex ? '<p class="mut">Waiting for your first rider to set the time.</p>' : '')
-      + (isToday && !t.live ? '<p><button class="btn" data-startnav="1" style="width:100%;padding:14px;font-size:17px">Start trip</button></p>' : '') + fold('f-trip-change', 'Change or cancel', (confirmedDates(t) ? '<p class="mut">Riders are confirmed on ' + confirmedDates(t) + (confirmedDates(t) === 1 ? ' date' : ' dates') + ', so this trip can no longer be changed. To change it, cancel it (the riders are told and get their points back) and create a new one.</p>' : '') + changes));
+      + (isToday && !t.live ? '<p><button class="btn" data-startnav="1" style="width:100%;padding:14px;font-size:17px">Start trip</button></p>' : '') + fold('f-trip-change', 'Change or cancel', (confirmedDates(t) ? '<p class="mut">Riders are confirmed on ' + confirmedDates(t) + (confirmedDates(t) === 1 ? ' date' : ' dates') + ', so the whole repeating trip can no longer be changed.' + (CDOK ? ' You can still change a single date that has no confirmed rider (Change this date).' : '') + ' To change all of it, cancel the trip (the riders are told and get their points back) and create a new one.</p>' : '') + (confOnDate ? '<p class="mut">A rider is confirmed on this date, so this date cannot be changed. Cancel it (Skip) first.</p>' : '') + changes));
   }
   // Home: the next trip (Driving) or the next ride (Riding), only when there is one. Details are one tap away.
   function homeItems() {
@@ -1243,12 +1248,13 @@
     if (myTrip && !editing.trip) return '';
     if (!myTrip && !myLiveTrip && !editing.trip) return '';
     if (myLiveTrip && !myTrip && !editing.trip) return card('Plan ahead', '<p class="mut">Want to drive on a set day and time? Post a scheduled trip.</p><p><button class="btn ghost" data-edit="trip">Post a scheduled trip</button></p>');
-    const mt = editing.newTrip ? null : myTrip;
+    const dayD = editing.dayOnly ? editing.dayOnly.d : null;
+    const mt = dayD ? forDate(myTrip, dayD) : editing.newTrip ? null : myTrip;
     const t = mt || { origin: 'Surrey Central', dest: 'BCIT / Willingdon (Burnaby)', depart_min: 450, max_detour: S_().d_detour, max_total_detour: S_().d_total_detour, max_pickups: Math.min(4, S_().d_seats), max_wait: S_().d_wait, accepts: S_().d_accepts, trip_date: todayStr(), repeat_days: [] };
-    const date = defaultDate(t.trip_date, t.depart_min);
-    return card(mt ? 'My trip' : 'Post a trip', `${placeField('lt-o', 'From', mt, 'origin', t.origin)}${placeField('lt-d', 'To', mt, 'dest', t.dest)}
-      ${whenBox('lt', `<input type="date" id="lt-date" min="${todayStr()}" max="${maxDate()}" value="${date}">`, hmIn(t.flex_to != null && !t.flex_locked ? t.flex_from : t.depart_min), t.flex_to != null && !t.flex_locked, t.flex_from, t.flex_to, 'leave', !!t.flex_locked)}
-      ${repeatBox('lt', t)}
+    const date = dayD || defaultDate(t.trip_date, t.depart_min);
+    return card(dayD ? 'Change ' + RSD.label(dayD) + ' only' : mt ? 'My trip' : 'Post a trip', `${placeField('lt-o', 'From', mt, 'origin', t.origin)}${placeField('lt-d', 'To', mt, 'dest', t.dest)}
+      ${whenBox('lt', dayD ? `<input type="date" id="lt-date" value="${date}" disabled>` : `<input type="date" id="lt-date" min="${todayStr()}" max="${maxDate()}" value="${date}">`, hmIn(t.flex_to != null && !t.flex_locked ? t.flex_from : t.depart_min), t.flex_to != null && !t.flex_locked, t.flex_from, t.flex_to, 'leave', !!t.flex_locked)}
+      ${dayD ? '' : repeatBox('lt', t)}
       <label>Most riders I will take</label><select id="lt-pk">${[1, 2, 3, 4].map((n) => '<option value="' + n + '"' + (n === (t.max_pickups || 1) ? ' selected' : '') + '>' + (n === 1 ? 'Just 1 rider' : 'Up to ' + n) + '</option>').join('')}</select>
       <label>Extra minutes I accept for my whole trip</label><input type="number" id="lt-dt" min="0" max="60" value="${t.max_detour}">
       ${DKOK ? `<label>Extra km I accept for my whole trip <span class="mut">(optional)</span></label><input type="number" id="lt-dk" min="0" max="200" step="0.5" placeholder="no limit" value="${t.max_detour_km == null ? '' : t.max_detour_km}">` : ''}
@@ -1389,7 +1395,7 @@
       const t = it.t, ft = forDate(t, it.d), { acc, ask } = dayStat(it);
       const when = t.live ? 'Offering seats now' : esc(RSD.label(it.d)) + ' &middot; ' + (isFlexFree(ft) ? clk(ft.flex_from) + ' to ' + clk(ft.flex_to) : clk(ft.depart_min));
       const tags = (acc ? acc + (acc === 1 ? ' rider' : ' riders') : '') + (ask ? (acc ? ' &middot; ' : '') + '<b>' + ask + ' asking</b>' : '');
-      return '<button type="button" class="btn ghost" data-opentrip="' + t.id + '|' + it.d + '" style="width:100%;text-align:left;margin:3px 0;display:block"><div style="display:flex;justify-content:space-between;gap:8px"><b><span class="tag">Driving</span> ' + when + '</b><span class="mut">' + tags + '</span></div><div class="mut" style="font-size:13px;font-weight:400">' + esc(disp(t, 'origin')) + ' to ' + esc(disp(t, 'dest')) + '</div></button>';
+      return '<button type="button" class="btn ghost" data-opentrip="' + t.id + '|' + it.d + '" style="width:100%;text-align:left;margin:3px 0;display:block"><div style="display:flex;justify-content:space-between;gap:8px"><b><span class="tag">Driving</span> ' + (ft.changed_day ? '<span class="tag">changed</span> ' : '') + when + '</b><span class="mut">' + tags + '</span></div><div class="mut" style="font-size:13px;font-weight:400">' + esc(disp(ft, 'origin')) + ' to ' + esc(disp(ft, 'dest')) + '</div></button>';
     };
     const dayRows = dayItems.map(dayRow), SHOW = 10;
     const mineTrip = dayRows.slice(0, SHOW).join('') + (dayRows.length > SHOW ? fold('f-more-dates', 'Show ' + (dayRows.length - SHOW) + ' more dates', dayRows.slice(SHOW).join('')) : '')
@@ -1623,7 +1629,7 @@
   // Forget everything typed or chosen on screen, so the app looks as it does when first opened. Used by Reset trip and Start fresh.
   function resetClientState() {
     stopShare(true);
-    editing.trip = false; editing.req = false; editing.newTrip = false;
+    editing.trip = false; editing.req = false; editing.newTrip = false; editing.dayOnly = null;
     homeView = 'feed'; detailTripId = null; selTripId = null; pending = null; viewD = null; viewR = null; calDay = null; calMonth = null; askCancel = null; mapSig = {}; formSig = '';
     [nowSel, LV].forEach((o) => Object.keys(o).forEach((k) => { delete o[k]; }));
     plReset('ln-o', 'ln-d', 'lt-o', 'lt-d', 'lr-p', 'lr-d', 'rn-p', 'rn-d');
@@ -1686,6 +1692,14 @@
     on('lt-back', () => { pending = null; formSig = ''; render(); });
     on('lt-confirm', async () => {
       if (needProfile('drive')) return;
+      if (editing.dayOnly) {
+        const dd = editing.dayOnly, r = pending.row, keys = ['origin', 'dest', 'origin_lat', 'origin_lng', 'dest_lat', 'dest_lng', 'depart_min', 'max_detour', 'max_total_detour', 'max_detour_km', 'max_total_detour_km', 'max_pickups', 'accepts', 'auto_accept'], ch = {};
+        keys.forEach((k) => { if (r[k] !== undefined) ch[k] = r[k]; });
+        ch.flex_from = r.flex_from == null ? null : r.flex_from; ch.flex_to = r.flex_to == null ? null : r.flex_to;
+        const okd = await run(sb.rpc('edit_trip_day', { p_trip: dd.id, p_date: dd.d, p_changes: ch }), RSD.label(dd.d) + ' changed. The other dates are not affected.');
+        if (okd) { editing.trip = false; editing.newTrip = false; editing.dayOnly = null; plReset('lt-o', 'lt-d', 'ln-o', 'ln-d'); Object.keys(LV).forEach((k) => delete LV[k]); pending = null; viewD = null; mapSig = {}; formSig = ''; render(); }
+        return;
+      }
       const row = pending.row, upd = myTrip && !editing.newTrip;
       if (!upd && myTrips.length >= 5) { toast('You can keep up to 5 trips. Cancel one first.'); return; }
       const ok = await run(upd ? sb.from('trips').update(row).eq('id', myTrip.id) : sb.from('trips').insert(row).select('id').single().then((r) => { if (!r.error && r.data) selTripId = r.data.id; return r; }), 'Trip saved');
@@ -1852,6 +1866,12 @@
     on('ov-go', async () => { const n = nativeLoc(); toast('Opening the setting...'); try { await n.openOverlaySettings(); } catch (e) { toast('Could not open the setting. Open Settings > Apps > RideShare App > Display over other apps.'); } });
     on('dnd-go', async () => { const n = nativeLoc(); toast('Opening the alert settings...'); try { await n.openAlertSettings(); } catch (e) { toast('Could not open the settings. Open Settings > Apps > RideShare App > Notifications > Seat requests.'); } });
     each('[data-edit]', (b) => { editing[b.dataset.edit] = true; formSig = ''; render(); const f = $(b.dataset.edit === 'trip' ? 'ld-form' : 'lr-form'); if (f) f.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+    each('[data-editday]', (b) => {
+      const [id, d] = b.dataset.editday.split('|'), t0 = myTrips.find((x) => x.id === id) || myTrips.find((x) => myChildren.some((c) => c.id === id && c.series_parent === x.id));
+      if (!t0) return;
+      selTripId = t0.id; myTrip = t0; detailTripId = null; detailFrom = (window.rsView && window.rsView() === 'trips') ? 'trips' : 'home'; editing.trip = true; editing.newTrip = false; editing.dayOnly = { id: t0.id, d }; pending = null; viewD = d; goHome('post');
+    });
+    each('[data-restoreday]', (b) => { if (!window.confirm('Put this date back to the repeating trip?\n\nThe changes for this date are dropped.')) return; run(sb.rpc('restore_trip_day', { p_child: b.dataset.restoreday }), 'Put back to the repeating trip'); });
     each('[data-offeropen]', () => { offerOpen = true; detailFrom = 'home'; goHome('now'); });
     each('[data-offerclose]', () => leaveDetails());
     each('[data-homeback]', () => leaveDetails());
@@ -1870,7 +1890,7 @@
     each('[data-askride]', () => { const rd = $('rs-riding'); if (rd) rd.click(); });   // the Riding side of Home has the Ask for a ride form open
     each('[data-seltrip]', (b) => { selTripId = b.dataset.seltrip; myTrip = myTrips.find((x) => x.id === selTripId) || myTrip; curTrip = myLiveTrip || myTrip; editing.trip = false; editing.newTrip = false; pending = null; viewD = null; mapSig = {}; formSig = ''; render(); });
     each('[data-newtrip]', () => { if (myTrips.length >= 5) { toast('You can keep up to 5 trips. Cancel one first.'); return; } detailFrom = (window.rsView && window.rsView() === 'trips') ? 'trips' : 'home'; editing.trip = true; editing.newTrip = true; pending = null; goHome('post'); });
-    each('[data-edit-off]', (b) => { editing[b.dataset.editOff] = false; if (b.dataset.editOff === 'trip') editing.newTrip = false; pending = null; formSig = ''; plReset('lt-o', 'lt-d', 'lr-p', 'lr-d'); render(); });
+    each('[data-edit-off]', (b) => { editing[b.dataset.editOff] = false; if (b.dataset.editOff === 'trip') { editing.newTrip = false; editing.dayOnly = null; } pending = null; formSig = ''; plReset('lt-o', 'lt-d', 'lr-p', 'lr-d'); render(); });
     each('[data-scroll]', (b) => { const e = $(b.dataset.scroll); if (e) e.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
     document.querySelectorAll('#ln-o, #ln-d, #rn-p, #rn-d, #rn-pay').forEach((e) => { e.onchange = () => { nowSel[e.id] = e.value; }; });
     wirePlaces();
@@ -1947,7 +1967,7 @@
     each('[data-unskipday]', (b) => { const [tp, ds] = b.dataset.unskipday.split('|'); run(sb.rpc('unskip_trip_day', { p_trip: tp, p_date: ds }), 'The day is back on'); });
     each('[data-edittrip]', (b) => {
       const tt = [...myTrips, myLiveTrip].find((x) => x && x.id === b.dataset.edittrip), nc = tt ? confirmedDates(tt) : 0;
-      if (nc) { window.alert('Riders are confirmed on ' + nc + (nc === 1 ? ' date' : ' dates') + ' of this trip, so it can no longer be changed.\n\nTo change it: cancel the trip (the riders are told and get their points back), then create a new one.'); return; }
+      if (nc) { window.alert('Riders are confirmed on ' + nc + (nc === 1 ? ' date' : ' dates') + ' of this trip, so it can no longer be changed.\n\nYou can still change one date that has no confirmed rider: open that date and tap Change this date. To change all of it: cancel the trip (the riders are told and get their points back), then create a new one.'); return; }
       selTripId = b.dataset.edittrip; myTrip = myTrips.find((x) => x.id === selTripId) || myTrip; detailTripId = null; detailFrom = (window.rsView && window.rsView() === 'trips') ? 'trips' : 'home'; editing.trip = true; editing.newTrip = false; pending = null; viewD = null; goHome('post');
     });
     each('[data-calday]', (b) => { calDay = calDay === b.dataset.calday ? null : b.dataset.calday; render(); });
