@@ -132,6 +132,7 @@
   let PCOK = null, cards = {};   // migration 021 (photo and car details shown to a matched driver or rider, Report a problem) is in place
   const DEV = (() => { try { return localStorage.getItem('rs_dev') === '1'; } catch (e) { return false; } })();   // developer tools (route simulator, test cards) only when switched on
   const store = (k, d) => { try { return localStorage.getItem(k) || d; } catch (e) { return d; } }, keep = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* storage blocked */ } };
+  const STATUS = [['waiting', 'Waiting for an answer'], ['completed', 'Completed'], ['cancelled', 'Cancelled']], TYPE = [['repeating', 'Repeating'], ['oneTime', 'One-time']];   // Trips filters
   const loadTf = () => { try { const o = JSON.parse(store('rs_trips_filter', '{}')); return { when: ['upcoming', 'past', 'all'].includes(o.when) ? o.when : 'upcoming', role: ['all', 'drive', 'ride'].includes(o.role) ? o.role : 'all', st: new Set((Array.isArray(o.st) ? o.st : []).filter((k) => ['waiting', 'completed', 'cancelled', 'repeating', 'oneTime'].includes(k))), view: 'trip', pax: ['with', 'without'].includes(o.pax) ? o.pax : 'all', trip: null }; } catch (e) { return { when: 'upcoming', role: 'all', st: new Set(), view: 'trip', pax: 'all', trip: null }; } };
   const saveTf = () => keep('rs_trips_filter', JSON.stringify({ when: tf.when, role: tf.role, st: [...tf.st], view: tf.view, pax: tf.pax }));
   let offerOpen = false, tripsPane = store('rs_trips_pane', 'list') === 'cal' ? 'cal' : 'list';   // the Trips tab opens on the List with its filters, and remembers the last choice
@@ -1507,7 +1508,6 @@
     });
     pastTripItems.concat(pastRideItems).forEach((it) => allItems.push(it));
     // A trip as a group: the trip itself on top, its dates under it (the first few; the rest one tap away). Close a group to hide its dates.
-    const STATUS = [['waiting', 'Waiting for an answer'], ['completed', 'Completed'], ['cancelled', 'Cancelled']], TYPE = [['repeating', 'Repeating'], ['oneTime', 'One-time']];
     // each dropdown narrows the list; picking one from Status AND one from Type needs both to match
     const stOk = (it) => [STATUS, TYPE].every((g) => { const on = g.filter(([k]) => tf.st.has(k)); return !on.length || on.some(([k]) => it.f[k]); });
     const hasPax = (it) => !!(it.f.confirmed || it.f.completed), paxOk = (it) => tf.pax === 'all' || (tf.pax === 'with') === hasPax(it);
@@ -1546,7 +1546,7 @@ const grpOpts = (G) => [['', 'Any']].concat(G.map(([k, l]) => [k, l + ' (' + bas
     const stOpts = grpOpts(STATUS), tyOpts = grpOpts(TYPE), curOf = (G) => { const f = G.find(([k]) => tf.st.has(k)); return f ? f[0] : ''; };
     const drops = [
       tf.role === 'ride' ? '' : sel('pax', 'Passengers', [['all', 'Any'], ['with', 'With passengers (' + paxPool.filter((it) => hasPax(it)).length + ')'], ['without', 'No passengers (' + paxPool.filter((it) => !hasPax(it)).length + ')']], tf.pax),
-      sel('role', 'Showing', [['all', 'Driving and riding'], ['drive', 'Driving (' + nRole('drive') + ')'], ['ride', 'Riding (' + nRole('ride') + ')']], tf.role),
+      sel('role', 'Showing', [['all', 'Both'], ['drive', 'Driving (' + nRole('drive') + ')'], ['ride', 'Riding (' + nRole('ride') + ')']], tf.role),
       stOpts.length > 1 ? sel('st', 'Status', stOpts, curOf(STATUS)) : '',
       tyOpts.length > 2 ? sel('type', 'Type', tyOpts, curOf(TYPE)) : '',
       tripList.length >= 2 && !byTrip ? sel('trip', 'Trip', [['', 'All trips']].concat(tripList.map((t) => [t.id, disp(t, 'dest') + ' \u00b7 ' + shortRep(t)])), tf.trip || '') : '',
