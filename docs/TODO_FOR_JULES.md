@@ -42,6 +42,7 @@ Open https://supabase.com/dashboard/project/iivhfapvkseeomxtsrxf/sql/new, paste 
 | `supabase/migrations/051_start_date_must_match.sql` | A repeating trip or request only runs on its repeat days; the start date counts only if it is one of them (needs 048) | **To run** |
 | `supabase/migrations/052_test_requests_for_recurring_trips.sql` | Test data: made-up riders ask for a seat on your repeating trips, each on a different date (needs 046, 048 and the sample data) | **To run** |
 | `supabase/migrations/053_edit_rules_requests_and_cancel_notices.sql` | A trip with a confirmed rider on any date cannot be changed; waiting requests are re-checked when a trip changes; notices when a confirmed ride is cancelled (needs 044, 048, 049) | **To run** |
+| `supabase/migrations/054_change_one_date_of_a_repeating_trip.sql` | Change just ONE date of a repeating trip (like a calendar app's "this occurrence only"); put it back (needs 048, 049, 053) | **To run** |
 
 How to copy a file to the clipboard: ask Claude, or open the file on GitHub, click "Copy raw file", then paste it into the SQL editor.
 
