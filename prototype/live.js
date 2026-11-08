@@ -1037,7 +1037,7 @@
     document.querySelectorAll('[data-pf]').forEach((box) => {
       const id = box.dataset.pf, q = $(id + '-q'), sug = $(id + '-sug'), sel = $(id), note = $(id + '-note');
       let seq = 0, tm = null, list = [];
-      const setP = (p) => { PL[id] = p; sel.value = p.area; nowSel[id] = p.area; q.value = p.label; note.textContent = p.isArea ? '' : 'Neighbourhood: ' + p.area + (p.acc ? ' \u00b7 GPS accurate to about ' + p.acc + ' m' + (p.acc > 50 ? ' (weak signal: step outside or by a window and try again)' : '') : ''); sug.innerHTML = ''; };
+      const setP = (p) => { PL[id] = p; sel.value = p.area; nowSel[id] = p.area; q.value = p.label; note.textContent = p.isArea ? '' : (p.addr ? 'Exact spot: ' + p.addr + ' \u00b7 ' : '') + 'Neighbourhood: ' + p.area + (p.acc ? ' \u00b7 GPS accurate to about ' + p.acc + ' m' + (p.acc > 50 ? ' (weak signal: step outside or by a window and try again)' : '') : ''); sug.innerHTML = ''; };
       // Near a known neighbourhood (Metro Vancouver): use it. Anywhere else in Canada or the USA: name the place after its town or city.
       const covered = (lat, lng, city) => {
         const n = nearestArea(lat, lng); if (n.km <= 15) return n;
@@ -1055,7 +1055,7 @@
           sug.innerHTML = r.length ? r.map((s, i) => '<button type="button" data-i="' + i + '">' + esc(s.main) + '<span>' + esc(s.sub) + '</span></button>').join('') : '';
           sug.querySelectorAll('button').forEach((b) => (b.onclick = async () => {
             const s = list[+b.dataset.i]; note.textContent = 'Finding that place...';
-            try { const d = await window.RS_PLACES.details(s.id), n = covered(d.lat, d.lng, d.city ? d.city + (d.region ? ' (' + d.region + ')' : '') : ''); if (n) setP({ label: s.main, full: s.main + (s.sub ? ', ' + s.sub : ''), lat: d.lat, lng: d.lng, area: n.a }); }
+            try { const d = await window.RS_PLACES.details(s.id), n = covered(d.lat, d.lng, d.city ? d.city + (d.region ? ' (' + d.region + ')' : '') : ''); if (n) setP({ label: s.main, full: s.main + (s.sub ? ', ' + s.sub : ''), addr: d.addr, lat: d.lat, lng: d.lng, area: n.a }); }
             catch (e) { note.textContent = 'Could not load that place. Try again.'; }
           }));
         }, 250);
