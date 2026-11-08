@@ -3,7 +3,7 @@
 (function () {
   const KEY = () => (window.RS_CONFIG && window.RS_CONFIG.googleMapsKey) || '';
   const BASE = 'https://places.googleapis.com/v1/';
-  // Search is biased to Metro Vancouver and the Fraser Valley, but BC-wide results still appear.
+  // Search is biased to Metro Vancouver and the Fraser Valley, but results from all of Canada and the USA still appear.
   const BIAS = { circle: { center: { latitude: 49.17, longitude: -122.85 }, radius: 50000 } };
   let down = false, token = newToken();
   function newToken() { return (self.crypto && crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random()).replace(/[^a-zA-Z0-9-]/g, ''); }
@@ -15,7 +15,7 @@
       r = await fetch(BASE + 'places:autocomplete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Goog-Api-Key': KEY() },
-        body: JSON.stringify({ input: q, sessionToken: token, includedRegionCodes: ['ca'], locationBias: BIAS }),
+        body: JSON.stringify({ input: q, sessionToken: token, includedRegionCodes: ['ca', 'us'], locationBias: BIAS }),
       });
     } catch (e) { return []; }                       // offline: try again on the next keystroke
     if (r.status === 403) { down = true; return []; }   // the key is not allowed to use address search yet
