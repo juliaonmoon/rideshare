@@ -1507,6 +1507,9 @@
     });
     pastTripItems.concat(pastRideItems).forEach((it) => allItems.push(it));
     // A trip as a group: the trip itself on top, its dates under it (the first few; the rest one tap away). Close a group to hide its dates.
+    const STATUS = [['waiting', 'Waiting for an answer'], ['completed', 'Completed'], ['cancelled', 'Cancelled']], TYPE = [['repeating', 'Repeating'], ['oneTime', 'One-time']];
+    // each dropdown narrows the list; picking one from Status AND one from Type needs both to match
+    const stOk = (it) => [STATUS, TYPE].every((g) => { const on = g.filter(([k]) => tf.st.has(k)); return !on.length || on.some(([k]) => it.f[k]); });
     const hasPax = (it) => !!(it.f.confirmed || it.f.completed), paxOk = (it) => tf.pax === 'all' || (tf.pax === 'with') === hasPax(it);
     const groupHtml = (t, rep, dates) => {
       const its = allItems.filter((i) => i.role === 'drive' && !i.past && i.tripId === t.id && paxOk(i) && stOk(i));
@@ -1526,9 +1529,6 @@
     const byTrip = tf.view === 'trip' && tf.role !== 'ride', pool = byTrip ? seriesItems.concat(pastTripItems) : allItems;
     const tripOk = (it) => !tf.trip || it.tripId === tf.trip;
     const whenOk = (it) => tf.when === 'all' || (tf.when === 'past') === it.past, roleOk = (it) => tf.role === 'all' || tf.role === it.role;
-    const STATUS = [['waiting', 'Waiting for an answer'], ['completed', 'Completed'], ['cancelled', 'Cancelled']], TYPE = [['repeating', 'Repeating'], ['oneTime', 'One-time']];
-    // each dropdown narrows the list; picking one from Status AND one from Type needs both to match
-    const stOk = (it) => [STATUS, TYPE].every((g) => { const on = g.filter(([k]) => tf.st.has(k)); return !on.length || on.some(([k]) => it.f[k]); });
     const chip = (attr, val, label, on) => '<button type="button" ' + attr + '="' + val + '" class="' + (on ? 'on' : '') + '">' + label + '</button>';
     const nWhen = (w) => pool.filter((it) => roleOk(it) && tripOk(it) && (w === 'all' || (w === 'past') === it.past)).length, nRole = (r) => pool.filter((it) => whenOk(it) && tripOk(it) && (r === 'all' || it.role === r)).length;
     const base = pool.filter((it) => whenOk(it) && roleOk(it) && tripOk(it) && paxOk(it)), paxPool = pool.filter((it) => whenOk(it) && roleOk(it) && tripOk(it));
