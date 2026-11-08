@@ -132,7 +132,7 @@
   let PCOK = null, cards = {};   // migration 021 (photo and car details shown to a matched driver or rider, Report a problem) is in place
   const DEV = (() => { try { return localStorage.getItem('rs_dev') === '1'; } catch (e) { return false; } })();   // developer tools (route simulator, test cards) only when switched on
   const store = (k, d) => { try { return localStorage.getItem(k) || d; } catch (e) { return d; } }, keep = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* storage blocked */ } };
-  const loadTf = () => { try { const o = JSON.parse(store('rs_trips_filter', '{}')); return { when: ['upcoming', 'past', 'all'].includes(o.when) ? o.when : 'upcoming', role: ['all', 'drive', 'ride'].includes(o.role) ? o.role : 'all', st: new Set(Array.isArray(o.st) ? o.st : []), view: o.view === 'date' ? 'date' : 'trip', pax: ['with', 'without'].includes(o.pax) ? o.pax : 'all', trip: null }; } catch (e) { return { when: 'upcoming', role: 'all', st: new Set(), view: 'trip', pax: 'all', trip: null }; } };
+  const loadTf = () => { try { const o = JSON.parse(store('rs_trips_filter', '{}')); return { when: ['upcoming', 'past', 'all'].includes(o.when) ? o.when : 'upcoming', role: ['all', 'drive', 'ride'].includes(o.role) ? o.role : 'all', st: new Set((Array.isArray(o.st) ? o.st : []).filter((k) => ['waiting', 'completed', 'cancelled', 'repeating', 'oneTime'].includes(k))), view: o.view === 'date' ? 'date' : 'trip', pax: ['with', 'without'].includes(o.pax) ? o.pax : 'all', trip: null }; } catch (e) { return { when: 'upcoming', role: 'all', st: new Set(), view: 'trip', pax: 'all', trip: null }; } };
   const saveTf = () => keep('rs_trips_filter', JSON.stringify({ when: tf.when, role: tf.role, st: [...tf.st], view: tf.view, pax: tf.pax }));
   let offerOpen = false, tripsPane = store('rs_trips_pane', 'list') === 'cal' ? 'cal' : 'list';   // the Trips tab opens on the List with its filters, and remembers the last choice
   let tf = loadTf();   // Trips > List filters: when (upcoming / past / all), what (driving / riding), and status chips   // Home: the Offer a ride now form is open; Trips tab: 'cal' or 'list'
@@ -1509,7 +1509,7 @@
     // A trip as a group: the trip itself on top, its dates under it (the first few; the rest one tap away). Close a group to hide its dates.
     const hasPax = (it) => !!(it.f.confirmed || it.f.completed), paxOk = (it) => tf.pax === 'all' || (tf.pax === 'with') === hasPax(it);
     const groupHtml = (t, rep, dates) => {
-      const its = allItems.filter((i) => i.role === 'drive' && !i.past && i.tripId === t.id && paxOk(i) && (!tf.st.size || [...tf.st].some((k) => i.f[k])));
+      const its = allItems.filter((i) => i.role === 'drive' && !i.past && i.tripId === t.id && paxOk(i) && stOk(i));
       const asksAll = matches.filter((x) => x.driver_id === user.id && inFam(x.trip_id, t) && x.ride_date >= t0 && x.status === 'requested' && fitServer[x.id] !== false).length;
       const sub = t.live ? 'Offering seats now &middot; started at ' + clk(t.depart_min) : rep ? 'Repeats ' + esc(RSD.repeatLabel(t.repeat_days, t.repeat_every, t.repeat_nth)) + untilTxt(t.repeat_until) : tripWhen(t);
       const buttons = '<div style="margin:6px 0;display:flex;flex-wrap:wrap;gap:8px"><button class="btn" data-opentrip="' + t.id + '|' + (t.live ? todayStr() : (dates[0] || t.trip_date)) + '">Open</button><button class="btn ghost" data-edittrip="' + t.id + '">Edit</button><button class="btn ghost" data-offtrip="' + t.id + '"' + (rep ? ' data-rep="1"' : '') + '>' + (rep ? 'Stop repeating trip' : 'Cancel trip') + '</button></div>';
@@ -1526,13 +1526,14 @@
     const byTrip = tf.view === 'trip' && tf.role !== 'ride', pool = byTrip ? seriesItems.concat(pastTripItems) : allItems;
     const tripOk = (it) => !tf.trip || it.tripId === tf.trip;
     const whenOk = (it) => tf.when === 'all' || (tf.when === 'past') === it.past, roleOk = (it) => tf.role === 'all' || tf.role === it.role;
-    const STAT = [['waiting', 'Waiting'], ['confirmed', 'With passengers'], ['empty', 'No riders yet'], ['repeating', 'Repeating'], ['oneTime', 'One-time'], ['flex', 'Flexible time'], ['completed', 'Completed'], ['cancelled', 'Cancelled or empty']];
+    const STATUS = [['waiting', 'Waiting for an answer'], ['completed', 'Completed'], ['cancelled', 'Cancelled']], TYPE = [['repeating', 'Repeating'], ['oneTime', 'One-time']];
+    // each dropdown narrows the list; picking one from Status AND one from Type needs both to match
+    const stOk = (it) => [STATUS, TYPE].every((g) => { const on = g.filter(([k]) => tf.st.has(k)); return !on.length || on.some(([k]) => it.f[k]); });
     const chip = (attr, val, label, on) => '<button type="button" ' + attr + '="' + val + '" class="' + (on ? 'on' : '') + '">' + label + '</button>';
     const nWhen = (w) => pool.filter((it) => roleOk(it) && tripOk(it) && (w === 'all' || (w === 'past') === it.past)).length, nRole = (r) => pool.filter((it) => whenOk(it) && tripOk(it) && (r === 'all' || it.role === r)).length;
     const base = pool.filter((it) => whenOk(it) && roleOk(it) && tripOk(it) && paxOk(it)), paxPool = pool.filter((it) => whenOk(it) && roleOk(it) && tripOk(it));
     const paxBar = tf.role === 'ride' ? '' : '<div class="days" style="margin-bottom:6px">' + chip('data-tfp', 'all', 'All', tf.pax === 'all') + chip('data-tfp', 'with', 'With passengers (' + paxPool.filter((it) => hasPax(it)).length + ')', tf.pax === 'with') + chip('data-tfp', 'without', 'No passengers (' + paxPool.filter((it) => !hasPax(it)).length + ')', tf.pax === 'without') + '</div>';
-    const statChips = STAT.map(([k, l]) => ({ k, l, n: base.filter((it) => it.f[k]).length })).filter((c) => c.n > 0 || tf.st.has(c.k) || (c.k === 'waiting' || c.k === 'confirmed') && tf.role !== 'ride').map((c) => chip('data-tfs', c.k, c.l + ' (' + c.n + ')', tf.st.has(c.k))).join('');
-    const filtered = base.filter((it) => !tf.st.size || [...tf.st].some((k) => it.f[k])).sort((a, b) => (a.past !== b.past ? (a.past ? 1 : -1) : a.past ? (a.date < b.date ? 1 : a.date > b.date ? -1 : 0) : (a.date < b.date ? -1 : a.date > b.date ? 1 : a.time - b.time)));
+    const filtered = base.filter((it) => stOk(it)).sort((a, b) => (a.past !== b.past ? (a.past ? 1 : -1) : a.past ? (a.date < b.date ? 1 : a.date > b.date ? -1 : 0) : (a.date < b.date ? -1 : a.date > b.date ? 1 : a.time - b.time)));
     const filtersOn = tf.when !== 'upcoming' || tf.role !== 'all' || tf.st.size > 0 || tf.pax !== 'all' || !!tf.trip, LIM = 12;
     const shortRep = (t) => { const ds = (t.repeat_days || []).slice().sort((a, b) => a - b); if (t.repeat_nth) return 'monthly'; if (!ds.length) return RSD.label(t.trip_date); if (ds.length === 7) return 'daily'; if (ds.join('') === '12345') return 'weekdays'; return (t.repeat_every > 1 ? 'every ' + t.repeat_every + ' wks ' : '') + ds.map((d) => RSD.DAY_NAMES[d - 1]).join(' '); };
     const tripChips = tripList.length >= 2 && !byTrip ? '<div class="days" style="margin-bottom:6px">' + tripList.map((t) => chip('data-tft', t.id, esc(disp(t, 'dest')) + ' &middot; ' + esc(shortRep(t)), tf.trip === t.id)).join('') + '</div>' : '';
@@ -1540,12 +1541,14 @@
     const listBody = filtered.length ? filtered.slice(0, LIM).map((i) => i.html).join('') + (filtered.length > LIM ? fold('f-list-more', 'Show ' + (filtered.length - LIM) + ' more', filtered.slice(LIM).map((i) => i.html).join('')) : '') : '<p class="mut">Nothing matches.' + (filtersOn ? ' <button type="button" class="btn ghost" data-tfclear="1" style="padding:4px 10px;min-height:0">Clear filters</button>' : '') + '</p>';
     // Simple filters: one row of three buttons (when), and everything else in dropdowns inside one "Filters" fold.
     const sel = (key, label, opts, cur) => '<div><div class="mut" style="font-size:12px;margin-bottom:2px">' + label + '</div><select data-tfsel="' + key + '" style="' + INPUT + ';padding:6px">' + opts.map(([v, l]) => '<option value="' + esc(v) + '"' + (String(v) === String(cur) ? ' selected' : '') + '>' + l + '</option>').join('') + '</select></div>';
-    const nOn = (tf.role !== 'all' ? 1 : 0) + (tf.pax !== 'all' ? 1 : 0) + (tf.st.size ? 1 : 0) + (tf.trip ? 1 : 0) + (tf.view === 'date' && tripList.length ? 1 : 0);
-    const stOpts = [['', 'Any']].concat(STAT.map(([k, l]) => [k, l + ' (' + base.filter((it) => it.f[k]).length + ')']).filter(([k]) => base.some((it) => it.f[k]) || tf.st.has(k)));
+    const nOn = (tf.role !== 'all' ? 1 : 0) + (tf.pax !== 'all' ? 1 : 0) + tf.st.size + (tf.trip ? 1 : 0) + (tf.view === 'date' && tripList.length ? 1 : 0);
+const grpOpts = (G) => [['', 'Any']].concat(G.map(([k, l]) => [k, l + ' (' + base.filter((it) => it.f[k]).length + ')']).filter(([k]) => base.some((it) => it.f[k]) || tf.st.has(k)));
+    const stOpts = grpOpts(STATUS), tyOpts = grpOpts(TYPE), curOf = (G) => { const f = G.find(([k]) => tf.st.has(k)); return f ? f[0] : ''; };
     const drops = [
       tf.role === 'ride' ? '' : sel('pax', 'Passengers', [['all', 'Any'], ['with', 'With passengers (' + paxPool.filter((it) => hasPax(it)).length + ')'], ['without', 'No passengers (' + paxPool.filter((it) => !hasPax(it)).length + ')']], tf.pax),
       sel('role', 'Showing', [['all', 'Driving and riding'], ['drive', 'Driving (' + nRole('drive') + ')'], ['ride', 'Riding (' + nRole('ride') + ')']], tf.role),
-      stOpts.length > 1 ? sel('st', 'Status', stOpts, [...tf.st][0] || '') : '',
+      stOpts.length > 1 ? sel('st', 'Status', stOpts, curOf(STATUS)) : '',
+      tyOpts.length > 2 ? sel('type', 'Type', tyOpts, curOf(TYPE)) : '',
       tripList.length >= 1 && tf.role !== 'ride' ? sel('view', 'Layout', [['trip', 'Each trip with its dates'], ['date', 'All dates in one list']], tf.view === 'trip' ? 'trip' : 'date') : '',
       tripList.length >= 2 && !byTrip ? sel('trip', 'Trip', [['', 'All trips']].concat(tripList.map((t) => [t.id, disp(t, 'dest') + ' \u00b7 ' + shortRep(t)])), tf.trip || '') : '',
     ].filter(Boolean).join('');
@@ -1904,7 +1907,7 @@
     each('[data-tpane]', (b) => { tripsPane = b.dataset.tpane; keep('rs_trips_pane', tripsPane); render(); });
     each('[data-tfw]', (b) => { tf.when = b.dataset.tfw; tf.st = new Set(); saveTf(); render(); });
     each('[data-tfr]', (b) => { tf.role = b.dataset.tfr; tf.st = new Set(); saveTf(); render(); });
-    each('[data-tfsel]', (el) => { el.onchange = () => { const k = el.dataset.tfsel, v = el.value; if (k === 'role') { tf.role = v; tf.st = new Set(); } else if (k === 'pax') tf.pax = v; else if (k === 'view') { tf.view = v; tf.trip = null; } else if (k === 'st') tf.st = v ? new Set([v]) : new Set(); else if (k === 'trip') tf.trip = v || null; saveTf(); render(); }; });
+    each('[data-tfsel]', (el) => { el.onchange = () => { const k = el.dataset.tfsel, v = el.value; if (k === 'role') { tf.role = v; tf.st = new Set(); } else if (k === 'pax') tf.pax = v; else if (k === 'view') { tf.view = v; tf.trip = null; } else if (k === 'st' || k === 'type') { (k === 'st' ? STATUS : TYPE).forEach(([x]) => tf.st.delete(x)); if (v) tf.st.add(v); } else if (k === 'trip') tf.trip = v || null; saveTf(); render(); }; });
     each('[data-tfp]', (b) => { tf.pax = b.dataset.tfp; saveTf(); render(); });
     each('[data-tfs]', (b) => { const k = b.dataset.tfs; if (tf.st.has(k)) tf.st.delete(k); else tf.st.add(k); saveTf(); render(); });
     each('[data-tfv]', (b) => { tf.view = b.dataset.tfv; tf.trip = null; saveTf(); render(); });
