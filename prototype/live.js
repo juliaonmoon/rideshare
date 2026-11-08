@@ -1038,7 +1038,7 @@
     document.querySelectorAll('[data-pf]').forEach((box) => {
       const id = box.dataset.pf, q = $(id + '-q'), sug = $(id + '-sug'), sel = $(id), note = $(id + '-note');
       let seq = 0, tm = null, list = [];
-      const setP = (p) => { PL[id] = p; sel.value = p.area; nowSel[id] = p.area; q.value = p.label; note.textContent = p.isArea ? '' : (p.addr ? 'Exact spot: ' + p.addr + ' \u00b7 ' : '') + 'Neighbourhood: ' + p.area + (p.acc ? ' \u00b7 GPS accurate to about ' + p.acc + ' m' + (p.acc > 50 ? ' (weak signal: step outside or by a window and try again)' : '') : ''); sug.innerHTML = ''; };
+      const setP = (p) => { PL[id] = p; if (![...sel.options].some((o) => o.value === p.area)) sel.add(new Option(p.area, p.area)); sel.value = p.area; nowSel[id] = p.area; q.value = p.label; note.textContent = p.isArea ? '' : (p.addr ? 'Exact spot: ' + p.addr + ' \u00b7 ' : '') + 'Neighbourhood: ' + p.area + (p.acc ? ' \u00b7 GPS accurate to about ' + p.acc + ' m' + (p.acc > 50 ? ' (weak signal: step outside or by a window and try again)' : '') : ''); sug.innerHTML = ''; };
       // Near a known neighbourhood (Metro Vancouver): use it. Anywhere else in Canada or the USA: name the place after its town or city.
       const covered = (lat, lng, city) => {
         const n = nearestArea(lat, lng); if (n.km <= 15) return n;
@@ -1071,7 +1071,8 @@
           if (!best) { note.textContent = 'Could not find your location'; return; }
           note.textContent = 'Finding the address...';
           const addr = await window.RS_PLACES.where(best.latitude, best.longitude), acc = Math.round(best.accuracy);
-          const n = covered(best.latitude, best.longitude, (addr.split(',')[1] || '').trim()); if (!n) return;
+          const g = window.RS_PLACES.lastGeo(), city = g && g.city ? g.city + (g.region ? ' (' + g.region + ')' : '') : (addr.split(',')[1] || '').trim();
+          const n = covered(best.latitude, best.longitude, city); if (!n) return;
           setP({ label: addr || 'My location', full: addr || '', lat: best.latitude, lng: best.longitude, area: n.a, acc });
         };
         watchId = navigator.geolocation.watchPosition((pos) => {
@@ -1088,7 +1089,7 @@
 
   // ---------- Leave now (driver) and I need a ride now (rider) ----------
   // A town or city outside the built-in list: remember it by name so it can be shown in the pickers and on saved trips.
-  function registerArea(name, lat, lng) { if (!name || LOC[name]) return; LOC[name] = { lat, lng }; areas.push(name); document.querySelectorAll('select[id="ln-o"], select[id="ln-d"], select[id="rn-p"], select[id="rn-d"]').forEach((sl) => { if (![...sl.options].some((o) => o.value === name)) sl.add(new Option(name, name)); }); }
+  function registerArea(name, lat, lng) { if (!name || LOC[name]) return; LOC[name] = { lat, lng }; areas.push(name); document.querySelectorAll('[data-pf] select').forEach((sl) => { if (![...sl.options].some((o) => o.value === name)) sl.add(new Option(name, name)); }); }
   const nearestArea = (lat, lng) => areas.map((a) => ({ a, km: RS.haversineKm({ lat, lng }, LOC[a]) })).sort((x, y) => x.km - y.km)[0];
   const minsLeft = (iso) => Math.max(0, Math.round((Date.parse(iso) - Date.now()) / 60000));
   function driverNow() {
@@ -1510,7 +1511,9 @@
     // A trip as a group: the trip itself on top, its dates under it (the first few; the rest one tap away). Close a group to hide its dates.
     // each dropdown narrows the list; picking one from Status AND one from Type needs both to match
     const stOk = (it) => [STATUS, TYPE].every((g) => { const on = g.filter(([k]) => tf.st.has(k)); return !on.length || on.some(([k]) => it.f[k]); });
-    const hasPax = (it) => !!(it.f.confirmed || it.f.completed), paxOk = (it) => tf.pax === 'all' || (tf.pax === 'with') === hasPax(it);
+    // Passengers only applies to trips I drive. A trip with several dates counts as "no passengers" while at least one of its dates is free.
+    const hasPax = (it) => !!(it.f.confirmed || it.f.completed), noPax = (it) => it.dateItems ? it.dateItems.some((d) => !hasPax(d)) : !hasPax(it);
+    const paxOn = tf.role !== 'ride' && tf.pax !== 'all', paxOk = (it) => !paxOn || (tf.pax === 'with' ? hasPax(it) : noPax(it));
     const groupHtml = (t, rep, dates) => {
       const its = allItems.filter((i) => i.role === 'drive' && !i.past && i.tripId === t.id && paxOk(i) && stOk(i));
       const asksAll = matches.filter((x) => x.driver_id === user.id && inFam(x.trip_id, t) && x.ride_date >= t0 && x.status === 'requested' && fitServer[x.id] !== false).length;
@@ -1524,7 +1527,7 @@
     const seriesItems = tripList.map((t) => {
       const rep = !!(t.repeat_days && t.repeat_days.length) && !t.live, dates = t.live ? [] : occOf(t, 31), fam = matches.filter((x) => x.driver_id === user.id && inFam(x.trip_id, t) && x.ride_date >= t0);
       const asks = fam.filter((x) => x.status === 'requested' && fitServer[x.id] !== false).length, acc = fam.filter((x) => x.status === 'accepted').length, first = dates[0] || t.trip_date;
-      return { role: 'drive', past: false, tripId: t.id, date: first, time: t.depart_min, html: groupHtml(t, rep, dates), f: { waiting: asks > 0, confirmed: acc > 0, empty: asks === 0 && acc === 0, repeating: rep, oneTime: !rep, flex: isFlexFree(forDate(t, first)) } };
+      return { role: 'drive', past: false, tripId: t.id, date: first, time: t.depart_min, html: groupHtml(t, rep, dates), dateItems: allItems.filter((i) => i.role === 'drive' && !i.past && i.tripId === t.id), f: { waiting: asks > 0, confirmed: acc > 0, empty: asks === 0 && acc === 0, repeating: rep, oneTime: !rep, flex: isFlexFree(forDate(t, first)) } };
     });
     const byTrip = tf.view === 'trip' && tf.role !== 'ride', pool = byTrip ? seriesItems.concat(pastTripItems) : allItems;
     const tripOk = (it) => !tf.trip || it.tripId === tf.trip;
@@ -1534,22 +1537,22 @@
     const base = pool.filter((it) => whenOk(it) && roleOk(it) && tripOk(it) && paxOk(it)), paxPool = pool.filter((it) => whenOk(it) && roleOk(it) && tripOk(it));
     const paxBar = tf.role === 'ride' ? '' : '<div class="days" style="margin-bottom:6px">' + chip('data-tfp', 'all', 'All', tf.pax === 'all') + chip('data-tfp', 'with', 'With passengers (' + paxPool.filter((it) => hasPax(it)).length + ')', tf.pax === 'with') + chip('data-tfp', 'without', 'No passengers (' + paxPool.filter((it) => !hasPax(it)).length + ')', tf.pax === 'without') + '</div>';
     const filtered = base.filter((it) => stOk(it)).sort((a, b) => (a.past !== b.past ? (a.past ? 1 : -1) : a.past ? (a.date < b.date ? 1 : a.date > b.date ? -1 : 0) : (a.date < b.date ? -1 : a.date > b.date ? 1 : a.time - b.time)));
-    const filtersOn = tf.when !== 'upcoming' || tf.role !== 'all' || tf.st.size > 0 || tf.pax !== 'all' || !!tf.trip, LIM = 12;
+    const filtersOn = tf.when !== 'upcoming' || tf.role !== 'all' || tf.st.size > 0 || paxOn || !!tf.trip, LIM = 12;
     const shortRep = (t) => { const ds = (t.repeat_days || []).slice().sort((a, b) => a - b); if (t.repeat_nth) return 'monthly'; if (!ds.length) return RSD.label(t.trip_date); if (ds.length === 7) return 'daily'; if (ds.join('') === '12345') return 'weekdays'; return (t.repeat_every > 1 ? 'every ' + t.repeat_every + ' wks ' : '') + ds.map((d) => RSD.DAY_NAMES[d - 1]).join(' '); };
     const tripChips = tripList.length >= 2 && !byTrip ? '<div class="days" style="margin-bottom:6px">' + tripList.map((t) => chip('data-tft', t.id, esc(disp(t, 'dest')) + ' &middot; ' + esc(shortRep(t)), tf.trip === t.id)).join('') + '</div>' : '';
     const viewBar = tripList.length >= 1 && tf.role !== 'ride' ? '<div class="days" style="margin-bottom:6px">' + chip('data-tfv', 'trip', 'Trips and their dates (' + tripList.length + ')', tf.view === 'trip') + chip('data-tfv', 'date', 'All dates together', tf.view !== 'trip') + '</div>' : '';
     const listBody = filtered.length ? filtered.slice(0, LIM).map((i) => i.html).join('') + (filtered.length > LIM ? fold('f-list-more', 'Show ' + (filtered.length - LIM) + ' more', filtered.slice(LIM).map((i) => i.html).join('')) : '') : '<p class="mut">Nothing matches.' + (filtersOn ? ' <button type="button" class="btn ghost" data-tfclear="1" style="padding:4px 10px;min-height:0">Clear filters</button>' : '') + '</p>';
     // Simple filters: one row of three buttons (when), and everything else in dropdowns inside one "Filters" fold.
     const sel = (key, label, opts, cur) => '<div><div class="mut" style="font-size:12px;margin-bottom:2px">' + label + '</div><select data-tfsel="' + key + '" style="' + INPUT + ';padding:6px">' + opts.map(([v, l]) => '<option value="' + esc(v) + '"' + (String(v) === String(cur) ? ' selected' : '') + '>' + l + '</option>').join('') + '</select></div>';
-    const nOn = (tf.role !== 'all' ? 1 : 0) + (tf.pax !== 'all' ? 1 : 0) + tf.st.size + (tf.trip ? 1 : 0);
+    const nOn = (tf.role !== 'all' ? 1 : 0) + (paxOn ? 1 : 0) + tf.st.size + (tf.trip ? 1 : 0);
 const grpOpts = (G) => [['', 'Any']].concat(G.map(([k, l]) => [k, l + ' (' + base.filter((it) => it.f[k]).length + ')']));   // always list every choice, with its count
     const stOpts = grpOpts(STATUS), tyOpts = grpOpts(TYPE), curOf = (G) => { const f = G.find(([k]) => tf.st.has(k)); return f ? f[0] : ''; };
     const drops = [
-      tf.role === 'ride' ? '' : sel('pax', 'Passengers', [['all', 'Any'], ['with', 'With passengers (' + paxPool.filter((it) => hasPax(it)).length + ')'], ['without', 'No passengers (' + paxPool.filter((it) => !hasPax(it)).length + ')']], tf.pax),
+      tf.role === 'ride' ? '' : sel('pax', 'Passengers', [['all', 'Any'], ['with', 'With passengers (' + paxPool.filter((it) => hasPax(it)).length + ')'], ['without', 'No passengers (' + paxPool.filter((it) => noPax(it)).length + ')']], tf.pax),
       sel('role', 'Showing', [['all', 'Both'], ['drive', 'Driving (' + nRole('drive') + ')'], ['ride', 'Riding (' + nRole('ride') + ')']], tf.role),
       stOpts.length > 1 ? sel('st', 'Status', stOpts, curOf(STATUS)) : '',
       tyOpts.length > 2 ? sel('type', 'Type', tyOpts, curOf(TYPE)) : '',
-      tripList.length >= 2 && !byTrip ? sel('trip', 'Trip', [['', 'All trips']].concat(tripList.map((t) => [t.id, disp(t, 'dest') + ' \u00b7 ' + shortRep(t)])), tf.trip || '') : '',
+      tripList.length >= 2 && !byTrip ? sel('trip', 'Trip', [['', 'All trips']].concat(tripList.map((t) => [t.id, esc(disp(t, 'dest')) + ' \u00b7 ' + shortRep(t)])), tf.trip || '') : '',
     ].filter(Boolean).join('');
     const filterBar = '<div class="days" style="margin-bottom:6px">' + chip('data-tfw', 'upcoming', 'Upcoming (' + nWhen('upcoming') + ')', tf.when === 'upcoming') + chip('data-tfw', 'past', 'Past (' + nWhen('past') + ')', tf.when === 'past') + chip('data-tfw', 'all', 'All', tf.when === 'all') + '</div>'
       + fold('f-filters', 'Filters' + (nOn ? ' (' + nOn + ' on)' : ''), '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">' + drops + '</div>' + (filtersOn ? '<div style="margin-top:8px"><button type="button" class="btn ghost" data-tfclear="1" style="padding:4px 10px;min-height:0">Clear filters</button></div>' : ''));
