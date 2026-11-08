@@ -613,6 +613,8 @@
         rIds.length ? sb.from('ride_requests').select('*').in('id', rIds) : { data: [] },
       ]);
       extraTrips = et.data || []; extraReqs = er.data || [];
+      // places outside the built-in list that are already on saved trips and requests
+      [t.data, r.data, ot.data, orq.data, et.data, er.data].forEach((rows) => (rows || []).forEach((x) => [['origin', 'origin'], ['dest', 'dest'], ['pickup', 'pickup'], ['dropoff', 'dropoff']].forEach(([k, p]) => { if (x[k] && x[p + '_lat'] != null && x[p + '_lng'] != null) registerArea(x[k], +x[p + '_lat'], +x[p + '_lng']); })));
       const ids = new Set([uid, ...otherTrips.map((x) => x.user_id), ...otherReqs.map((x) => x.user_id), ...extraTrips.map((x) => x.user_id), ...extraReqs.map((x) => x.user_id), ...matches.flatMap((x) => [x.driver_id, x.rider_id])]);
       const n = await sb.from('profiles').select('id,display_name').in('id', [...ids]);
       (n.data || []).forEach((x) => { names[x.id] = x.display_name; });
@@ -1036,7 +1038,13 @@
       const id = box.dataset.pf, q = $(id + '-q'), sug = $(id + '-sug'), sel = $(id), note = $(id + '-note');
       let seq = 0, tm = null, list = [];
       const setP = (p) => { PL[id] = p; sel.value = p.area; nowSel[id] = p.area; q.value = p.label; note.textContent = p.isArea ? '' : 'Neighbourhood: ' + p.area + (p.acc ? ' \u00b7 GPS accurate to about ' + p.acc + ' m' + (p.acc > 50 ? ' (weak signal: step outside or by a window and try again)' : '') : ''); sug.innerHTML = ''; };
-      const covered = (lat, lng) => { const n = nearestArea(lat, lng); if (n.km > 40) { note.textContent = 'That is outside the area we cover for now.'; return null; } return n; };
+      // Near a known neighbourhood (Metro Vancouver): use it. Anywhere else in Canada or the USA: name the place after its town or city.
+      const covered = (lat, lng, city) => {
+        const n = nearestArea(lat, lng); if (n.km <= 15) return n;
+        if (city) { registerArea(city, lat, lng); return { a: city, km: 0 }; }
+        if (n.km <= 40) return n;
+        note.textContent = 'Could not tell which town that is. Try another spot nearby.'; return null;
+      };
       q.oninput = () => {
         PL[id] = null; note.textContent = ''; clearTimeout(tm);
         const v = q.value.trim(); if (v.length < 3) { sug.innerHTML = ''; return; }
@@ -1047,7 +1055,7 @@
           sug.innerHTML = r.length ? r.map((s, i) => '<button type="button" data-i="' + i + '">' + esc(s.main) + '<span>' + esc(s.sub) + '</span></button>').join('') : '';
           sug.querySelectorAll('button').forEach((b) => (b.onclick = async () => {
             const s = list[+b.dataset.i]; note.textContent = 'Finding that place...';
-            try { const d = await window.RS_PLACES.details(s.id), n = covered(d.lat, d.lng); if (n) setP({ label: s.main, full: s.main + (s.sub ? ', ' + s.sub : ''), lat: d.lat, lng: d.lng, area: n.a }); }
+            try { const d = await window.RS_PLACES.details(s.id), n = covered(d.lat, d.lng, d.city ? d.city + (d.region ? ' (' + d.region + ')' : '') : ''); if (n) setP({ label: s.main, full: s.main + (s.sub ? ', ' + s.sub : ''), lat: d.lat, lng: d.lng, area: n.a }); }
             catch (e) { note.textContent = 'Could not load that place. Try again.'; }
           }));
         }, 250);
@@ -1060,9 +1068,9 @@
         const finish = async () => {
           if (done) return; done = true; navigator.geolocation.clearWatch(watchId); clearTimeout(timer);
           if (!best) { note.textContent = 'Could not find your location'; return; }
-          const n = covered(best.latitude, best.longitude); if (!n) return;
           note.textContent = 'Finding the address...';
           const addr = await window.RS_PLACES.where(best.latitude, best.longitude), acc = Math.round(best.accuracy);
+          const n = covered(best.latitude, best.longitude, (addr.split(',')[1] || '').trim()); if (!n) return;
           setP({ label: addr || 'My location', full: addr || '', lat: best.latitude, lng: best.longitude, area: n.a, acc });
         };
         watchId = navigator.geolocation.watchPosition((pos) => {
@@ -1078,6 +1086,8 @@
   }
 
   // ---------- Leave now (driver) and I need a ride now (rider) ----------
+  // A town or city outside the built-in list: remember it by name so it can be shown in the pickers and on saved trips.
+  function registerArea(name, lat, lng) { if (!name || LOC[name]) return; LOC[name] = { lat, lng }; areas.push(name); document.querySelectorAll('select[id="ln-o"], select[id="ln-d"], select[id="rn-p"], select[id="rn-d"]').forEach((sl) => { if (![...sl.options].some((o) => o.value === name)) sl.add(new Option(name, name)); }); }
   const nearestArea = (lat, lng) => areas.map((a) => ({ a, km: RS.haversineKm({ lat, lng }, LOC[a]) })).sort((x, y) => x.km - y.km)[0];
   const minsLeft = (iso) => Math.max(0, Math.round((Date.parse(iso) - Date.now()) / 60000));
   function driverNow() {

@@ -29,11 +29,13 @@
 
   // The map point of a suggestion. Ending the search session here keeps Google's billing to one search.
   async function details(id) {
-    const r = await fetch(BASE + 'places/' + encodeURIComponent(id) + '?sessionToken=' + token, { headers: { 'X-Goog-Api-Key': KEY(), 'X-Goog-FieldMask': 'location' } });
+    const r = await fetch(BASE + 'places/' + encodeURIComponent(id) + '?sessionToken=' + token, { headers: { 'X-Goog-Api-Key': KEY(), 'X-Goog-FieldMask': 'location,addressComponents' } });
     token = newToken();
     if (!r.ok) throw new Error('Could not load that place');
     const j = await r.json();
-    return { lat: j.location.latitude, lng: j.location.longitude, name: '' };
+    const comp = (t) => { const c = (j.addressComponents || []).find((x) => (x.types || []).includes(t)); return c || null; };
+    const cityC = comp('locality') || comp('postal_town') || comp('sublocality') || comp('administrative_area_level_3') || comp('administrative_area_level_2'), regC = comp('administrative_area_level_1');
+    return { lat: j.location.latitude, lng: j.location.longitude, name: '', city: cityC ? cityC.longText : '', region: regC ? (regC.shortText || '') : '' };
   }
 
   // The street address at a point (for Use my location). First choice: Google's address lookup (Geocoding), the same one Google Maps uses when you drop a pin.
