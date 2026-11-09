@@ -13,3 +13,6 @@ Last updated: 2026-11-09 by claude
 ## Next ideas (not started, need Jules' OK)
 - Riders double booking.
 - Items from the ChatGPT feedback.
+
+## Decisions by Jules
+- 2026-11-09: Keep EXACT addresses (accuracy matters more). Do NOT build 'hide addresses until confirmed' or public pickup points for now.
