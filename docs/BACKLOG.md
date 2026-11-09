@@ -44,3 +44,40 @@ Newest decisions first. Nothing here is being built. Jules decides what moves up
 - A rider cannot report that the DRIVER never showed. Today the driver still gets the points after 3 hours. Idea: rider taps 'Driver did not arrive' 15+ min after pickup time, gets all points back, it goes on the driver's record. (Money rule: needs Jules' OK.)
 - A driver who cancels late has no consequence except a count (already shown as 'cancelled rides (30 days)').
 - No repeat-offender rule yet (for example a warning or pause after several no-shows).
+
+## Gathered from older docs and chats (added 2026-11-09)
+### Product ideas (docs/REQUIREMENTS.md: P1 = soon after launch, P2 = later)
+- P1: Share-my-trip link and an emergency button. (A "share this ride" message already exists.)
+- P1: In-app chat with phone numbers hidden.
+- P1: Women-only / same-company-only matching (needs legal review).
+- P1: Insurance guidance screen ("what is covered").
+- P1: Employer dashboard (participation, CO2, parking saved).
+- P1: Rider-to-driver "I'm running late" automatic update.
+- P2: HOV-lane and parking-perk tie-ins.
+- P2: Savings and CO2 tracker.
+
+### Driver wishes (docs/UX_REVIEW_2026-11-05.md, "Missing things a driver would reasonably expect"; check which are already done)
+- Driver can send the rider a plan message ("I leave at 7:42, pick-up at X").
+- Show "You will earn 17 pts" on every request and on the plan.
+- If the window can't be edited after a rider locks it: say why and offer "Cancel and repost".
+- Show the rider's ready window on the plan, and tell the driver when they may drive on.
+- "1 of 3 seats taken" on the trip card.
+- "Repost this trip" shortcut from past trips.
+- Undo for Accept within about 1 minute.
+- Optional decline reason (too far, time does not suit).
+- One place to see the next 7 days of a repeating trip with the riders for each day.
+
+### Business and launch decisions (docs/OPEN_QUESTIONS.md; mostly unanswered)
+- Name: is "RideShare" final? Points for drivers who never ride (perks, sponsor rewards, or cash)? Platform fee (10-15% of cash shares or none until employers pay)? Profit or non-profit (leaning: no fee, funded by employers/grants)?
+- Pilot first (30-50 commuters, no-code) or build first? Try the existing apps (Liftango, gobyRIDE) for 1-2 weeks first?
+- Employer check: is Electronic Arts (Burnaby) on TransLink's registered-employer list? (email travelsmart@translink.ca)
+- Scope: commute-only in BC first, long-distance and cross-border later (docs/EXPANSION_BEYOND_METRO.md).
+- Check the employment agreement (IP ownership, outside business activity) before stage 1 (docs/STAGED_PLAN.md).
+
+### Small clean-ups and chores
+- Remove the "Test version" banner and sample riders before real launch (say "go live mode").
+- Migration 056 (extra places) was not needed by the app; the row in TODO_FOR_JULES.md says so.
+- Code-review leftovers from 2026-11-09: slow saves for drivers with very many repeating trips; other people's place names can appear in your place list; one temporary Google error turns address search off until reload; dead code in the Trips filter (old chip buttons).
+- Jules only: set a Google Cloud budget alert (Claude makes no Google Cloud changes).
+- Rejected on purpose: "change this date and all following dates" (too complicated).
+- Not covered: older chats from before 2026-11-09 may hold items that were never written down; tell Claude if you remember one.
