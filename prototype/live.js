@@ -522,21 +522,19 @@
       return (g('hour') % 24) * 60 + g('minute');
     } catch (e) { return null; }
   };
-  const lateUsedThisMonth = (excludeId) => matches.some((x) => x.rider_id === user.id && x.id !== excludeId && x.late && x.cancelled_by === user.id && x.cancelled_at && RSD.vanMonth(Date.parse(x.cancelled_at)) === RSD.vanMonth(Date.now()));
+  // A rider can cancel for free until the driver's detour for them starts: the pickup time minus the minutes they add to the drive (at least 3).
+  const freeUntilMs = (m) => { const pk = pickupMs(m); return pk == null ? null : pk - Math.max(+m.detour_min || 0, 3) * 60000; };
+  const freeUntilText = (m) => { const f = freeUntilMs(m); return f == null ? '' : clk(vanMin(new Date(f).toISOString())); };
   // Plain-language result of cancelling this match now (mirrors the database rules).
   function cancelInfo(m) {
     const isRider = m.rider_id === user.id, pts = m.pay_with === 'points' ? m.points : 0;
     if (m.status === 'requested') return { ok: true, text: 'Free to cancel. No points have moved.' };
     if (!isRider) return { ok: true, text: 'If you cancel, ' + nm(m.rider_id) + ' gets ' + (pts ? 'all ' + pts + ' points' : 'nothing charged') + ' back. Cancelling often shows as a warning next to your name.' };
-    const pk = pickupMs(m); if (pk == null) return { ok: true, text: 'Cancel this ride.' };
-    if (!m.arrived_at && Date.now() >= pk + 15 * 60000) return { ok: true, text: 'Your driver is very late. You can cancel and get ' + (pts ? 'all ' + pts + ' points' : 'nothing charged') + ' back.' };
-    if (Date.now() >= pk) return { ok: false, text: 'The pickup time has passed, so this ride can no longer be cancelled. Your driver can close the ride as a missed pickup.' };
-    const late = pk - Date.now() < LATE_MIN * 60000;
-    if (!pts) return { ok: true, text: late ? 'Late cancel (within 2 hours). No points involved, but it counts toward your cancellation record.' : 'Free to cancel. No points involved.' };
-    if (!late) return { ok: true, text: 'Free to cancel: you get all ' + pts + ' points back.' };
-    if (!lateUsedThisMonth(m.id)) return { ok: true, text: 'This is a late cancel (within 2 hours), but your one free late cancel this month covers it: you get all ' + pts + ' points back.' };
+    const pk = pickupMs(m), fu = freeUntilMs(m); if (pk == null) return { ok: true, text: 'Cancel this ride.' };
+    if (!m.arrived_at && Date.now() >= pk + 5 * 60000) return { ok: true, text: 'Your driver is late. You can cancel and get ' + (pts ? 'all ' + pts + ' points' : 'nothing charged') + ' back.' };
+    if (Date.now() < fu) return { ok: true, text: (pts ? 'Free to cancel: you get all ' + pts + ' points back.' : 'Free to cancel. No points involved.') + ' This is free until ' + freeUntilText(m) + '.' };
     const keep = Math.floor(pts / 2);
-    return { ok: true, text: 'Late cancel (within 2 hours) and your free one this month is used: your driver keeps ' + keep + ' points and you get ' + (pts - keep) + ' back.' };
+    return { ok: true, text: pts ? 'Your driver has already started the detour for you, so this is a late cancel: your driver keeps ' + keep + ' points and you get ' + (pts - keep) + ' back. It also shows on your record.' : 'Your driver has already started the detour for you, so this is a late cancel. No points are involved, but it shows on your record.' };
   }
   // the driver has arrived at the pickup, and it is the rider's pickup time or later
   const canNoShow = (m) => { const pk = pickupMs(m); return m.status === 'accepted' && !m.picked_up_at && m.driver_id === user.id && pk != null && !!m.arrived_at && Date.now() >= pk; };
@@ -1438,14 +1436,14 @@
         actions = b.length ? `<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:8px">${b.join(' ')}</div>` : '';
       }
       const held = x.status === 'accepted' && x.pay_with === 'points' && !x.settled ? ' (held until the ride)' : '';
-      return `<div style="padding:8px 0;border-top:1px solid var(--line)"><b>${when(x)}</b> <span class="tag">${esc(x.status === 'accepted' ? STEP_LABEL[stageOf(x)] : statusText(x.status))}</span>${isRegular(x) ? ' <span class="tag">regular</span>' : ''}${x.status === 'accepted' ? '<div style="margin:8px 0">' + whoCard(other, isRider ? 'driver' : 'rider') + '</div>' + meetLine(x) : ''}<div class="mut">${isRider ? 'Driver' : 'Rider'} ${nm(other)}${badge(other, isRider ? 'driver' : 'rider')} &middot; ${pay}${held}</div>${actions}</div>`;
+      return `<div style="padding:8px 0;border-top:1px solid var(--line)"><b>${when(x)}</b> <span class="tag">${esc(x.status === 'accepted' ? STEP_LABEL[stageOf(x)] : statusText(x.status))}</span>${isRegular(x) ? ' <span class="tag">regular</span>' : ''}${x.status === 'accepted' ? '<div style="margin:8px 0">' + whoCard(other, isRider ? 'driver' : 'rider') + '</div>' + meetLine(x) : ''}<div class="mut">${isRider ? 'Driver' : 'Rider'} ${nm(other)}${badge(other, isRider ? 'driver' : 'rider')} &middot; ${pay}${held}</div>${isRider && x.status === 'accepted' && !x.picked_up_at && freeUntilMs(x) != null && Date.now() < freeUntilMs(x) ? '<div class="mut">Cancel free until ' + freeUntilText(x) + '</div>' : ''}${actions}</div>`;
     };
     const riderRows = asRider.length ? asRider.map((x) => row(x, true)).join('') : '<p class="mut">No upcoming rides.</p>';
     const driverRows = asDriver.length ? asDriver.map((x) => row(x, false)).join('') : '<p class="mut">No upcoming passengers.</p>';
     const past = matches.filter((x) => ['completed', 'cancelled', 'no_show', 'declined'].includes(x.status)).slice(0, 30);
     const pastRows = past.length ? past.slice(0, 8).map((x) => { const isRider = x.rider_id === user.id; return `<div style="padding:6px 0;border-top:1px solid var(--line)">${when(x)} <span class="tag">${esc(statusText(x.status))}</span><div class="mut">${isRider ? 'Driver' : 'Rider'} ${nm(isRider ? x.driver_id : x.rider_id)} &middot; ${x.pay_with === 'points' ? x.points + ' pts' : 'cash'}${x.refunded ? ' &middot; ' + x.refunded + ' pts returned' : ''}</div></div>`; }).join('') : '<p class="mut">Nothing yet.</p>';
     const policy = `<p class="mut hint">Points are held when a driver accepts a rider, and paid to the driver after the ride. Cash rides: no points move.</p>
-      <p style="margin:10px 0 2px"><b>If you are the rider</b></p><ul class="mut" style="margin:4px 0 0 18px;padding:0"><li>Cancel more than 2 hours before pickup: you get all your points back.</li><li>Cancel within 2 hours: your first late cancel each month is free. After that, the driver keeps half of the points reserved for this ride.</li><li>You cannot cancel after the pickup time.</li></ul>
+      <p style="margin:10px 0 2px"><b>If you are the rider</b></p><ul class="mut" style="margin:4px 0 0 18px;padding:0"><li>You can cancel any time before the ride starts.</li><li>Cancel before your driver starts the detour for you (the pickup time minus the minutes you add to their drive, at least 3): you get all your points back. Each ride shows "free until" the time.</li><li>Cancel after that: the driver keeps half of the points, and it shows on your record.</li><li>If your driver is 5 or more minutes late and has not arrived, you can cancel and get all your points back.</li></ul>
       <p style="margin:10px 0 2px"><b>If you are the driver</b></p><ul class="mut" style="margin:4px 0 0 18px;padding:0"><li>If you cancel a pickup, the rider gets all their points back.</li><li>If the rider is not at the pickup spot when you get there, tap Rider isn't here (not before their pickup time). The ride closes as a missed pickup and you keep the points.</li></ul>`;
     // Past trips: my finished trips (route, date, who rode, distance) and the rides I took as a rider
     const kmOf = (id) => drives.filter((d) => d.trip_id === id).reduce((a, d) => a + (+d.distance_km || 0), 0);
