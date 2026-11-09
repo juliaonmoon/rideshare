@@ -81,3 +81,8 @@ Newest decisions first. Nothing here is being built. Jules decides what moves up
 - Jules only: set a Google Cloud budget alert (Claude makes no Google Cloud changes).
 - Rejected on purpose: "change this date and all following dates" (too complicated).
 - Not covered: older chats from before 2026-11-09 may hold items that were never written down; tell Claude if you remember one.
+
+## Driver late / did not arrive (researched 2026-11-09; Jules: revisit later)
+- Market: Uber waives the rider's cancel fee when the driver is 5+ minutes past the original arrival time or not making progress (Uber blog "changes to cancellation fees"). Lyft is reported to do the same (secondary sources, unverified). Poparide has no fixed minutes: the passenger reports a no-show after pickup time, support investigates, a verified no-show is a full refund.
+- The rider is never forced to wait. They can cancel any time before pickup. The question is only whether it costs them points. Today a rider cancelling inside 2 hours loses half the points after the first free one each month, even if the driver is the late one.
+- Proposed middle ground: rider may always cancel; free with full refund once the driver is 5+ minutes past pickup time with no "arrived" tap; goes on the driver's record only if the driver gave no heads-up; ride closes as "driver did not arrive" at 15 minutes with no word; automatic "driver is stuck in traffic" notice to the rider. Needs Jules' OK (points rule).
