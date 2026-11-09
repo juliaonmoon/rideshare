@@ -16,3 +16,4 @@ Last updated: 2026-11-09 by claude
 
 ## Decisions by Jules
 - 2026-11-09: Keep EXACT addresses (accuracy matters more). Do NOT build 'hide addresses until confirmed' or public pickup points for now.
+- 2026-11-09: Adults only (18+). Points: no buying/refunding/cash-out for now. Route/employer: does not matter. Backlog lives in docs/BACKLOG.md. Next: reliability record, then cancellation/no-show rules, then the rider's view.
