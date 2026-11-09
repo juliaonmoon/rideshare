@@ -24,7 +24,7 @@ How it works (checked by reading the code 2026-11-09; a real-phone test is still
 - The server's list of stops (driver_route_token) only contains accepted riders who have not been dropped off, plus the trip's destination. A cancelled rider drops out. With no riders left it is just the destination.
 - Android app: the phone helper checks this list on every poll. When the stops change (including a cancel) it shows "Your stops changed. Tap to update Google Maps with the stops that are left", and keeps re-showing it each minute until tapped. Android does not allow an app to restart Google Maps by itself; the driver's tap is required.
 - In the app (web): a rider's cancel creates the notice "A rider cancelled". Since #167 that notice has an **"Update route in Google Maps"** button that opens Maps with the stops left (next rider, or the destination).
-- Still to improve (needs a new Android build): the phone alert text should say "A rider cancelled" instead of the general "Your stops changed".
+- Android alert (built 2026-11-09, tested on the emulator): "<Name> cancelled. Tap to update Google Maps with the stops that are left", or with no riders left "...go straight to your destination". A pickup or drop-off still says "Your stops changed". The native late-driver text now says 3 minutes. Needs the new app installed on the phone.
 ## Heads-up when the driver will be late - built (#165, migration 060)
 - Predicted 2+ minutes late: the rider sees "Your driver is about N min late" (an estimate).
 - Predicted 3+ minutes late: the notice asks "Keep this ride, or cancel for free?". Doing nothing keeps the ride.
