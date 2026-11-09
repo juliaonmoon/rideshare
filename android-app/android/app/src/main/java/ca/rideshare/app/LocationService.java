@@ -695,7 +695,7 @@ public class LocationService extends Service {
     private void notifyLate(JSONObject r) {
         String id = r.optString("id"), who = r.optString("driver_name", "Your driver");
         long pickup = r.optLong("pickup_ms", 0);
-        String text = pickup == 0 ? who + " has not arrived yet." : "Your pickup time was " + clock(pickup) + ". You can cancel for free if " + who + " has not arrived by " + clock(pickup + 15 * 60000L) + ".";
+        String text = pickup == 0 ? who + " has not arrived yet." : "Your pickup time was " + clock(pickup) + ". You can cancel for free if " + who + " has not arrived by " + clock(pickup + 3 * 60000L) + ".";
         Notification n = new NotificationCompat.Builder(this, ALERT_CHANNEL)
                 .setContentTitle(who + " is running late").setContentText(text)
                 .setStyle(new NotificationCompat.BigTextStyle().bigText(text))
@@ -1192,8 +1192,32 @@ public class LocationService extends Service {
     }
 
     /** The stops left to visit changed (Picked up, Dropped off, a rider added or cancelled): tell the driver to update Google Maps. */
+    /** The name of a rider who was on this trip last poll, had not been picked up, and is gone now = the rider cancelled (null if nobody did). Also remembers this poll's riders. */
+    private String cancelledRider(SharedPreferences rp) {
+        String who = null;
+        try {
+            JSONObject prev = new JSONObject(rp.getString("ride_stages", "{}")), cur = new JSONObject();
+            Set<String> ids = new HashSet<>();
+            for (int i = 0; i < rides.length(); i++) {
+                JSONObject r = rides.optJSONObject(i); if (r == null) continue;
+                String id = r.optString("id"); ids.add(id);
+                cur.put(id, r.optString("stage") + "|" + r.optString("name", "A rider"));
+            }
+            java.util.Iterator<String> it = prev.keys();
+            while (it.hasNext()) {
+                String id = it.next(); if (ids.contains(id)) continue;
+                String v = prev.optString(id); int bar = v.indexOf('|');
+                String stage = bar < 0 ? v : v.substring(0, bar), name = bar < 0 ? "A rider" : v.substring(bar + 1);
+                if (!"picked_up".equals(stage) && !"dropped_off".equals(stage)) who = name;   // gone before the pickup: cancelled
+            }
+            rp.edit().putString("ride_stages", cur.toString()).apply();
+        } catch (Exception ignore) { }
+        return who;
+    }
+
     private void routeWatch() {
         SharedPreferences rp = getSharedPreferences("rideshare_tracking", MODE_PRIVATE);
+        String cancelledBy = cancelledRider(rp);
         String last = rp.getString("route_sig", "");
         if (rides.length() == 0 && last.isEmpty()) return;   // no ride under way and no route handed to Maps
         try {
@@ -1205,8 +1229,9 @@ public class LocationService extends Service {
             String sig = nav.getQueryParameter("destination") + "#" + wps;
             if (sig.equals(last)) return;
             if (last.isEmpty()) { rp.edit().putString("route_sig", sig).putString("route_uri", nav.toString()).putString("route_state", "done").apply(); return; }   // first look: Maps already has this route
-            rp.edit().putString("route_sig", sig).putString("route_uri", nav.toString()).putString("route_name", "Your stops").putString("route_state", "shown").apply();
-            postRoute("Your stops", nav);
+            String label = cancelledBy != null ? "cancel:" + cancelledBy : "Your stops";
+            rp.edit().putString("route_sig", sig).putString("route_uri", nav.toString()).putString("route_name", label).putString("route_state", "shown").apply();
+            postRoute(label, nav);
         } catch (Exception ignore) { /* try again next poll */ }
     }
 
@@ -1214,10 +1239,15 @@ public class LocationService extends Service {
     private void postRoute(String name, Uri nav) {
         PendingIntent pi = null;
         String text = "Tap to preview your trip and stops, then start when you are ready.";
+        boolean cancelled = name != null && name.startsWith("cancel:");
+        String who = cancelled ? name.substring(7) : name;
         if (nav != null) {
             Intent maps = new Intent(this, RouteGoActivity.class).setData(nav).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);   // records the tap, then opens Google Maps
             pi = PendingIntent.getActivity(this, 8, maps, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
-            text = "Your stops".equals(name) ? "Tap to update Google Maps with the stops that are left." : "Tap to update your route in Google Maps. Navigation restarts with the new stop.";
+            String wp = nav.getQueryParameter("waypoints");
+            boolean straight = wp == null || wp.isEmpty();   // no rider stops left: just the trip's destination
+            if (cancelled) text = straight ? "Tap to update Google Maps and go straight to your destination." : "Tap to update Google Maps with the stops that are left.";
+            else text = "Your stops".equals(name) ? "Tap to update Google Maps with the stops that are left." : "Tap to update your route in Google Maps. Navigation restarts with the new stop.";
         }
         if (pi == null) {
             Intent link = new Intent(Intent.ACTION_VIEW, Uri.parse("ca.rideshare.app://plan"))
@@ -1225,7 +1255,7 @@ public class LocationService extends Service {
             pi = PendingIntent.getActivity(this, 7, link, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
         }
         Notification n = new NotificationCompat.Builder(this, ALERT_CHANNEL)
-                .setContentTitle("Your stops".equals(name) ? "Your stops changed" : name + " is added to your trip")
+                .setContentTitle(cancelled ? who + " cancelled" : "Your stops".equals(name) ? "Your stops changed" : name + " is added to your trip")
                 .setContentText(text)
                 .setStyle(new NotificationCompat.BigTextStyle().bigText(text))
                 .setSmallIcon(android.R.drawable.ic_dialog_info)
@@ -1259,7 +1289,7 @@ public class LocationService extends Service {
     }
 
     private void clearRoute() {
-        getSharedPreferences("rideshare_tracking", MODE_PRIVATE).edit().remove("route_sig").remove("route_uri").remove("route_name").remove("route_state").remove("route_dismissed_at").remove("route_gone_at").apply();
+        getSharedPreferences("rideshare_tracking", MODE_PRIVATE).edit().remove("route_sig").remove("route_uri").remove("route_name").remove("route_state").remove("route_dismissed_at").remove("route_gone_at").remove("ride_stages").apply();
         try { getSystemService(NotificationManager.class).cancel(3000); } catch (Exception ignore) { }
     }
 
