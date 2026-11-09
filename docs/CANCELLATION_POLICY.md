@@ -7,7 +7,7 @@ Principle: RideShare is **driver-first**. The driver is already making the trip;
 |---|---|
 | Request not accepted yet | Free. No points move. |
 | Accepted, **before the driver's detour starts** | Free. All points back. The seat opens again straight away for other qualified riders. |
-| Accepted, **after the detour has started** (or after the pickup time) | Allowed. The driver keeps **half** the points; the other half comes back. Shows as a "late cancel" on the rider's record. Cash rides: no points, still on the record. |
+| Accepted, **after the detour has started** (or after the pickup time) | Allowed. The driver keeps **all** the points (their time is already spent; Jules' decision 2026-11-09). Shows as a "late cancel" on the rider's record. Cash rides: no points, still on the record. |
 | Driver is **5+ minutes past the pickup time** and has not arrived | Free. All points back. Shows on the **driver's** record ("driver late"). |
 | Rider already picked up | Cannot cancel. |
 

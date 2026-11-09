@@ -2,7 +2,7 @@
 --
 -- A rider can always press Cancel (until the ride has started). What changes is whether the points come back:
 --   * Before the driver's detour starts (pickup time minus the minutes this rider adds to the drive, at least 3 minutes): free, all points back.
---   * Once the detour has started (or the pickup time has passed): the driver keeps half of the points, and it shows as a late cancel.
+--   * Once the detour has started (or the pickup time has passed): the driver keeps all the points (they already spent the time), and it shows as a late cancel.
 --   * If the driver is 5+ minutes past the pickup time and has not arrived: free, all points back, and it shows on the driver's record.
 -- Replaces the old rules: the 2-hour window, the one free late cancel a month, "no cancelling after the pickup time" and the 15-minute wait.
 -- The seat opens up again for other riders straight away (a cancelled ride no longer counts as a pickup).
@@ -44,14 +44,14 @@ begin
   result := 'cancelled_full';
   if m.pay_with = 'points' and m.points > 0 then
     refund := m.points;
-    if is_rider and is_late then keep := m.points / 2; refund := m.points - keep; result := 'cancelled_half'; end if;
+    if is_rider and is_late then keep := m.points; refund := 0; result := 'cancelled_kept'; end if;
     if refund > 0 then
       update public.wallets set points = points + refund where user_id = m.rider_id;
       insert into public.ledger (user_id, delta, reason, match_id) values (m.rider_id, refund, 'Ride cancelled (points returned)', m.id);
     end if;
     if keep > 0 then
       update public.wallets set points = points + keep where user_id = m.driver_id;
-      insert into public.ledger (user_id, delta, reason, match_id) values (m.driver_id, keep, 'Late cancellation (half kept)', m.id);
+      insert into public.ledger (user_id, delta, reason, match_id) values (m.driver_id, keep, 'Late cancellation (points kept)', m.id);
     end if;
   elsif is_rider and is_late then
     result := 'cancelled_free_late';
