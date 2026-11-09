@@ -88,3 +88,6 @@ Newest decisions first. Nothing here is being built. Jules decides what moves up
 - Proposed middle ground: rider may always cancel; free with full refund once the driver is 5+ minutes past pickup time with no "arrived" tap; goes on the driver's record only if the driver gave no heads-up; ride closes as "driver did not arrive" at 15 minutes with no word; automatic "driver is stuck in traffic" notice to the rider. Needs Jules' OK (points rule).
 
 - Legal check to add to question 2 (driver never profits): after the detour starts, a late-cancelling rider's driver keeps ALL the points (Jules' decision 2026-11-09, like Uber's cancellation fee going to the driver). Ask the lawyer whether that still counts as cost sharing.
+
+- Android app update (needs a new APK): the native 'running late' alert still says 'cancel for free after 15 minutes' (now 5), and there is no phone push for the new 'about N min late' heads-up with Keep / Cancel buttons (LocationService.java notifyLate, rider_alerts_token in migration 035). The in-app heads-up works while the app is open.
+- Check on a real phone: cancel a test ride as the rider and confirm the driver's 'Update route' alert appears (route reset).

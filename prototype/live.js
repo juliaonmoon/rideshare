@@ -276,6 +276,7 @@
   }
   document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshDnd(); });
   const editing = { trip: false, req: false, newTrip: false, dayOnly: null };   // dayOnly: {id, d} = changing ONE date of a repeating trip   // newTrip: the form is posting an additional trip, not editing the one shown   // the full form stays hidden behind the summary card until Edit is tapped
+  let etaLate = {}, etaKept = {};   // minutes each driver is predicted to be late (by seat), and the seats where the rider chose to keep the ride
   let pending = null, viewD = null, viewR = null, askCancel = null, rel = {}, mySet = null, styles = {}, isTest = false, testMode = false, drives = [];
   // Personal settings: defaults for new trips and requests (every trip can still be changed before posting).
   const SD = { d_detour_km: null, d_total_detour_km: null, d_detour: 10, d_total_detour: 15, d_wait: 0, d_accepts: 'either', d_seats: 1, d_auto_accept: false, d_chat: 'some', d_pets: true, r_pays: 'points', r_chat: 'some', r_pets: false };
@@ -522,6 +523,12 @@
       return (g('hour') % 24) * 60 + g('minute');
     } catch (e) { return null; }
   };
+  // Heads-up for the rider: the driver is predicted to be late. 1+ minutes: a notice. 3+ minutes: also ask, and cancelling is free. Doing nothing keeps the ride.
+  const etaBanner = (x) => {
+    const n = etaLate[x.id]; if (x.status !== 'accepted' || !(n >= 1)) return '';
+    if (n < 3 || etaKept[x.id]) return '<div class="mut" style="margin-top:6px">Your driver is about ' + n + ' min late' + (etaKept[x.id] ? '. You chose to keep this ride.' : '.') + ' This is an estimate.</div>';
+    return '<div class="open" style="margin-top:6px"><b>Your driver is about ' + n + ' minutes late.</b> Keep this ride, or cancel for free? <span class="mut">(an estimate)</span><div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-etakeep="' + x.id + '">Keep ride</button><button class="btn ghost" data-cancelask="' + x.id + '">Cancel for free</button></div></div>';
+  };
   // A rider can cancel for free until the driver's detour for them starts: the pickup time minus the minutes they add to the drive (at least 3).
   const freeUntilMs = (m) => { const pk = pickupMs(m); return pk == null ? null : pk - Math.max(+m.detour_min || 0, 3) * 60000; };
   const freeUntilText = (m) => { const f = freeUntilMs(m); return f == null ? '' : clk(vanMin(new Date(f).toISOString())); };
@@ -532,6 +539,7 @@
     if (!isRider) return { ok: true, text: 'If you cancel, ' + nm(m.rider_id) + ' gets ' + (pts ? 'all ' + pts + ' points' : 'nothing charged') + ' back. Cancelling often shows as a warning next to your name.' };
     const pk = pickupMs(m), fu = freeUntilMs(m); if (pk == null) return { ok: true, text: 'Cancel this ride.' };
     if (!m.arrived_at && Date.now() >= pk + 5 * 60000) return { ok: true, text: 'Your driver is late. You can cancel and get ' + (pts ? 'all ' + pts + ' points' : 'nothing charged') + ' back.' };
+    if (etaLate[m.id] >= 3) return { ok: true, text: 'Your driver is about ' + etaLate[m.id] + ' minutes late, so you can cancel for free and get ' + (pts ? 'all ' + pts + ' points' : 'nothing charged') + ' back.' };
     if (Date.now() < fu) return { ok: true, text: (pts ? 'Free to cancel: you get all ' + pts + ' points back.' : 'Free to cancel. No points involved.') + ' This is free until ' + freeUntilText(m) + '.' };
     return { ok: true, text: pts ? 'Your driver has already started the detour for you, so this is a late cancel: your driver keeps all ' + pts + ' points for their time. It also shows on your record.' : 'Your driver has already started the detour for you, so this is a late cancel. No points are involved, but it shows on your record.' };
   }
@@ -671,6 +679,8 @@
       try { const st = await sb.from('user_settings').select('*').eq('user_id', uid).maybeSingle(); mySet = st.data || null; const sr = await sb.rpc('ride_styles', { p_ids: [...ids] }); styles = {}; (sr.data || []).forEach((x) => { styles[x.user_id] = x; }); } catch (e) { /* older database without settings: ignore */ }
       const rl = await sb.from('reliability').select('*'); rel = {}; (rl.data || []).forEach((x) => { rel[x.user_id] = x; });
       const pp = await sb.from('driver_positions').select('*'); positions = {}; (pp.data || []).forEach((x) => { positions[x.driver_id] = x; });
+      // heads-up: how many minutes late each driver on the way to me is predicted to be (only while they share their position)
+      try { etaLate = {}; await Promise.all(matches.filter((x) => x.rider_id === uid && x.status === 'accepted' && x.en_route_at && !x.arrived_at && !x.picked_up_at).map(async (x) => { const r = await sb.rpc('pickup_eta', { p_match: x.id }); if (!r.error && typeof r.data === 'number') etaLate[x.id] = r.data; })); } catch (e) { /* older database: no heads-up */ }
     } catch (e) { fail(e); } finally { busy = false; syncSeries(); }
     render();
   }
@@ -1435,14 +1445,14 @@
         actions = b.length ? `<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:8px">${b.join(' ')}</div>` : '';
       }
       const held = x.status === 'accepted' && x.pay_with === 'points' && !x.settled ? ' (held until the ride)' : '';
-      return `<div style="padding:8px 0;border-top:1px solid var(--line)"><b>${when(x)}</b> <span class="tag">${esc(x.status === 'accepted' ? STEP_LABEL[stageOf(x)] : statusText(x.status))}</span>${isRegular(x) ? ' <span class="tag">regular</span>' : ''}${x.status === 'accepted' ? '<div style="margin:8px 0">' + whoCard(other, isRider ? 'driver' : 'rider') + '</div>' + meetLine(x) : ''}<div class="mut">${isRider ? 'Driver' : 'Rider'} ${nm(other)}${badge(other, isRider ? 'driver' : 'rider')} &middot; ${pay}${held}</div>${isRider && x.status === 'accepted' && !x.picked_up_at && freeUntilMs(x) != null && Date.now() < freeUntilMs(x) ? '<div class="mut">Cancel free until ' + freeUntilText(x) + '</div>' : ''}${actions}</div>`;
+      return `<div style="padding:8px 0;border-top:1px solid var(--line)"><b>${when(x)}</b> <span class="tag">${esc(x.status === 'accepted' ? STEP_LABEL[stageOf(x)] : statusText(x.status))}</span>${isRegular(x) ? ' <span class="tag">regular</span>' : ''}${x.status === 'accepted' ? '<div style="margin:8px 0">' + whoCard(other, isRider ? 'driver' : 'rider') + '</div>' + meetLine(x) : ''}<div class="mut">${isRider ? 'Driver' : 'Rider'} ${nm(other)}${badge(other, isRider ? 'driver' : 'rider')} &middot; ${pay}${held}</div>${isRider && x.status === 'accepted' && !x.picked_up_at && freeUntilMs(x) != null && Date.now() < freeUntilMs(x) ? '<div class="mut">Cancel free until ' + freeUntilText(x) + '</div>' : ''}${isRider ? etaBanner(x) : ''}${actions}</div>`;
     };
     const riderRows = asRider.length ? asRider.map((x) => row(x, true)).join('') : '<p class="mut">No upcoming rides.</p>';
     const driverRows = asDriver.length ? asDriver.map((x) => row(x, false)).join('') : '<p class="mut">No upcoming passengers.</p>';
     const past = matches.filter((x) => ['completed', 'cancelled', 'no_show', 'declined'].includes(x.status)).slice(0, 30);
     const pastRows = past.length ? past.slice(0, 8).map((x) => { const isRider = x.rider_id === user.id; return `<div style="padding:6px 0;border-top:1px solid var(--line)">${when(x)} <span class="tag">${esc(statusText(x.status))}</span><div class="mut">${isRider ? 'Driver' : 'Rider'} ${nm(isRider ? x.driver_id : x.rider_id)} &middot; ${x.pay_with === 'points' ? x.points + ' pts' : 'cash'}${x.refunded ? ' &middot; ' + x.refunded + ' pts returned' : ''}</div></div>`; }).join('') : '<p class="mut">Nothing yet.</p>';
     const policy = `<p class="mut hint">Points are held when a driver accepts a rider, and paid to the driver after the ride. Cash rides: no points move.</p>
-      <p style="margin:10px 0 2px"><b>If you are the rider</b></p><ul class="mut" style="margin:4px 0 0 18px;padding:0"><li>You can cancel any time before the ride starts.</li><li>Cancel before your driver starts the detour for you (the pickup time minus the minutes you add to their drive, at least 3): you get all your points back. Each ride shows "free until" the time.</li><li>Cancel after that: the driver keeps the points for their time, and it shows on your record.</li><li>If your driver is 5 or more minutes late and has not arrived, you can cancel and get all your points back.</li></ul>
+      <p style="margin:10px 0 2px"><b>If you are the rider</b></p><p class="mut" style="margin:2px 0">RideShare is not a taxi. Your driver is already on a trip and picks you up on the way. Times are estimates. If your driver will be late we tell you, and you can cancel for free.</p><ul class="mut" style="margin:4px 0 0 18px;padding:0"><li>You can cancel any time before the ride starts.</li><li>Cancel before your driver starts the detour for you (the pickup time minus the minutes you add to their drive, at least 3): you get all your points back. Each ride shows "free until" the time.</li><li>Cancel after that: the driver keeps the points for their time, and it shows on your record.</li><li>If your driver is predicted to be about 3 or more minutes late, or is 5 or more minutes past the pickup time and has not arrived, you can cancel and get all your points back.</li></ul>
       <p style="margin:10px 0 2px"><b>If you are the driver</b></p><ul class="mut" style="margin:4px 0 0 18px;padding:0"><li>If you cancel a pickup, the rider gets all their points back.</li><li>If the rider is not at the pickup spot when you get there, tap Rider isn't here (not before their pickup time). The ride closes as a missed pickup and you keep the points.</li></ul>`;
     // Past trips: my finished trips (route, date, who rode, distance) and the rides I took as a rider
     const kmOf = (id) => drives.filter((d) => d.trip_id === id).reduce((a, d) => a + (+d.distance_km || 0), 0);
@@ -1961,6 +1971,7 @@ const grpOpts = (G) => [['', 'Any']].concat(G.map(([k, l]) => [k, l + ' (' + bas
     each('[data-req]', (b) => { if (needProfile('ride')) return; const base = { p_trip: b.dataset.req, p_request: b.dataset.rq, p_pay_with: b.dataset.pay, p_date: b.dataset.date };
       run((async () => { const r = await sb.rpc('request_seat', base); return noFn(r) ? sb.rpc('request_seat', { ...base, p_points: +b.dataset.pts, ...(DKOK ? { p_detour_min: +b.dataset.dmin, p_detour_km: +b.dataset.dkm } : {}) }) : r; })(), 'Seat requested'); });
     each('[data-can]', (b) => run(sb.rpc('cancel_ride', { p_match: b.dataset.can }), 'Cancelled'));
+    each('[data-etakeep]', (b) => { etaKept[b.dataset.etakeep] = true; render(); });
     each('[data-cancelask]', (b) => { askCancel = b.dataset.cancelask; render(); });
     each('[data-cancelno]', () => { askCancel = null; render(); });
     each('[data-cancelgo]', (b) => { askCancel = null; run(sb.rpc('cancel_ride', { p_match: b.dataset.cancelgo }), 'Ride cancelled. See your points history for any refund.'); });
