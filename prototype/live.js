@@ -990,7 +990,7 @@
   function noticeBanner() {
     if (!user || !notices.length) return '';
     const show = notices.slice(0, 3), more = notices.length - show.length;
-    return card('Update', show.map((n) => '<div style="padding:6px 0;border-top:1px solid var(--line)"><b>' + esc(n.title) + '</b><div>' + esc(n.body) + '</div><div style="margin-top:6px"><button class="btn ghost" data-notice-read="' + n.id + '">OK</button>' + (n.kind === 'ride_cancelled_by_driver' ? ' <button class="btn" data-askride="1">Find another ride</button>' : '') + '</div></div>').join('') + (more > 0 ? '<p class="mut">' + more + ' more</p>' : '') + (notices.length > 1 ? '<p><button class="btn ghost" data-notice-read="all">OK to all</button></p>' : ''));
+    return card('Update', show.map((n) => '<div style="padding:6px 0;border-top:1px solid var(--line)"><b>' + esc(n.title) + '</b><div>' + esc(n.body) + '</div><div style="margin-top:6px"><button class="btn ghost" data-notice-read="' + n.id + '">OK</button>' + (n.kind === 'ride_cancelled_by_driver' ? ' <button class="btn" data-askride="1">Find another ride</button>' : '') + (n.kind === 'ride_cancelled_by_rider' ? ' <button class="btn" data-reroute="' + n.id + '">Update route in Google Maps</button>' : '') + '</div></div>').join('') + (more > 0 ? '<p class="mut">' + more + ' more</p>' : '') + (notices.length > 1 ? '<p><button class="btn ghost" data-notice-read="all">OK to all</button></p>' : ''));
   }
   function riderTop() { return hv() === 'classic' ? lostBanner() + riderTopOne() + cancelAllCard() : hv() === 'ride' ? lostBanner() + riderTopOne() : hv() === 'feed' ? noticeBanner() + lostBanner() + rideHero() : ''; }
   function riderTopOne() {
@@ -1924,6 +1924,8 @@ const grpOpts = (G) => [['', 'Any']].concat(G.map(([k, l]) => [k, l + ' (' + bas
     each('[data-tfs]', (b) => { const k = b.dataset.tfs; if (tf.st.has(k)) tf.st.delete(k); else tf.st.add(k); saveTf(); render(); });
     each('[data-tfv]', (b) => { tf.view = b.dataset.tfv; tf.trip = null; saveTf(); render(); });
     each('[data-tft]', (b) => { tf.trip = tf.trip === b.dataset.tft ? null : b.dataset.tft; render(); });
+    // A rider cancelled: show the trip again and open Google Maps with the stops that are left (the next rider, or straight to the destination).
+    each('[data-reroute]', async (b) => { try { await sb.rpc('mark_notices_read', { p_ids: [b.dataset.reroute] }); } catch (e) { /* ignore */ } notices = notices.filter((n) => n.id !== b.dataset.reroute); await loadAll(); openTodayTrip(); setTimeout(() => { if (window.__startNav) window.__startNav(true); }, 1100); });
     each('[data-notice-read]', async (b) => { const id = b.dataset.noticeRead; await sb.rpc('mark_notices_read', { p_ids: id === 'all' ? null : [id] }); notices = id === 'all' ? [] : notices.filter((n) => n.id !== id); formSig = ''; render(); loadAll(); });
     each('[data-tfclear]', () => { tf = { when: 'upcoming', role: 'all', st: new Set(), view: 'trip', pax: 'all', trip: null }; saveTf(); render(); });
     each('[data-askride]', () => { const rd = $('rs-riding'); if (rd) rd.click(); });   // the Riding side of Home has the Ask for a ride form open
