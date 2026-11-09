@@ -46,6 +46,7 @@ Open https://supabase.com/dashboard/project/iivhfapvkseeomxtsrxf/sql/new, paste 
 | `supabase/migrations/055_no_double_booking.sql` | A driver cannot have two trips that overlap on the same day (new trip, edit, change one date); the second one is refused (needs 048, 049) | Done |
 | `supabase/migrations/056_more_places_canada_and_usa.sql` | More places (rest of BC, Washington, Oregon) so searches like Bellevue Square are accepted | Not needed (the app does not use it) |
 | `supabase/migrations/057_double_booking_past_midnight.sql` | The double-booking rule also catches trips that run past midnight (needs 055) | **To run** |
+| `supabase/migrations/058_reliability_rides_done.sql` | Shows how many rides each person has completed next to their name ("12 rides done" or "New member") (needs 004) | **To run** |
 
 How to copy a file to the clipboard: ask Claude, or open the file on GitHub, click "Copy raw file", then paste it into the SQL editor.
 
