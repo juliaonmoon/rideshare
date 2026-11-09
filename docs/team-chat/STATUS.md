@@ -8,7 +8,7 @@ Last updated: 2026-11-09 by claude
 
 ## Waiting on
 - Jules: run migration 057; answer anything marked FOR JULES.
-- ChatGPT: feedback on missing features (Jules is pasting it in as a `from-chatgpt` note).
+- Jules: answer the 4 questions in `notes/2026-11-09-1100-from-claude-to-jules.md` (ChatGPT's review is in `2026-11-09-1000-from-chatgpt-to-claude.md`).
 
 ## Next ideas (not started, need Jules' OK)
 - Riders double booking.
