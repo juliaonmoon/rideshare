@@ -39,3 +39,8 @@ Newest decisions first. Nothing here is being built. Jules decides what moves up
 - Real two-phone test: `docs/TODO_FOR_JULES.md` section 2 (most important).
 - iPhone options, Play Store, Supabase settings before real users: `docs/TODO_FOR_JULES.md` sections 5 to 7.
 - Decisions list: `docs/OPEN_QUESTIONS.md`.
+
+## Cancellation and no-show gaps (found 2026-11-09; the rider side is already covered: 2-hour late rule, one free late cancel a month, half the points kept, driver can mark a missed pickup)
+- A rider cannot report that the DRIVER never showed. Today the driver still gets the points after 3 hours. Idea: rider taps 'Driver did not arrive' 15+ min after pickup time, gets all points back, it goes on the driver's record. (Money rule: needs Jules' OK.)
+- A driver who cancels late has no consequence except a count (already shown as 'cancelled rides (30 days)').
+- No repeat-offender rule yet (for example a warning or pause after several no-shows).

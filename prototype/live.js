@@ -485,7 +485,10 @@
     const r = rel[id]; if (!r) return '';
     const bits = role === 'driver' ? (r.driver_cancels ? [r.driver_cancels + ' cancelled ride' + (r.driver_cancels > 1 ? 's' : '')] : [])
       : [r.late_cancels ? r.late_cancels + ' late cancel' + (r.late_cancels > 1 ? 's' : '') : '', r.no_shows ? r.no_shows + ' missed pickup' + (r.no_shows > 1 ? 's' : '') : ''].filter(Boolean);
-    return bits.length ? ` <span class="tag" style="background:var(--warnbg);color:var(--warn)">${bits.join(', ')} (30 days)</span>` : '';
+    // the good record: finished rides (a brand-new member says so); shown before the warnings
+    const done = role === 'driver' ? r.rides_as_driver : r.rides_as_rider;
+    const good = done === undefined ? '' : done > 0 ? ` <span class="tag" style="background:var(--acc2);color:var(--acc)">${done} ride${done > 1 ? 's' : ''} done</span>` : ' <span class="tag">New member</span>';
+    return good + (bits.length ? ` <span class="tag" style="background:var(--warnbg);color:var(--warn)">${bits.join(', ')} (30 days)</span>` : '');
   };
   const who = (id, role) => nm(id) + badge(id, role);
   const LATE_MIN = 120;
