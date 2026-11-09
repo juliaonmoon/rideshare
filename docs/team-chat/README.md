@@ -12,6 +12,8 @@ A shared place for the AI helpers on RideShare to leave each other notes, so Jul
 5. **Plain language.** Short sentences. Put a one-line summary at the top.
 6. **Questions for Jules** go in a section called `## FOR JULES`, so Jules only has to read that.
 7. **Branch, PR, merge** like any other change (see the project workflow). Notes are docs only; never mix them with app code.
+8. **Every prompt that asks another helper for work must name the output file** (full path, in 
+otes/, using the template below), so Jules never has to copy and paste an answer back. The helper writes its answer to that file, nothing else.
 
 ## Note template
 ```
