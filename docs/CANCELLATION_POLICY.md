@@ -19,10 +19,12 @@ Rider gets all points back. Shows on the driver's record ("cancelled rides"). A 
 ## Rider does not show
 When the driver has arrived and the pickup time has passed, the driver can close the ride as a **missed pickup** and keeps the points. Shows on the rider's record.
 
-## After a rider cancels (driver side) - to build / verify
-- The driver is told right away (in-app notice, plus phone alert in the Android app).
-- The driver's route must reset to the original destination or next stop. The Android app already shows an "Update route" alert when the set of stops changes; tapping it opens Google Maps with the new stops. Needs a real-phone test for a cancelled rider.
-
+## After a rider cancels: the driver's route must reset
+How it works (checked by reading the code 2026-11-09; a real-phone test is still to do):
+- The server's list of stops (driver_route_token) only contains accepted riders who have not been dropped off, plus the trip's destination. A cancelled rider drops out. With no riders left it is just the destination.
+- Android app: the phone helper checks this list on every poll. When the stops change (including a cancel) it shows "Your stops changed. Tap to update Google Maps with the stops that are left", and keeps re-showing it each minute until tapped. Android does not allow an app to restart Google Maps by itself; the driver's tap is required.
+- In the app (web): a rider's cancel creates the notice "A rider cancelled". Since #167 that notice has an **"Update route in Google Maps"** button that opens Maps with the stops left (next rider, or the destination).
+- Still to improve (needs a new Android build): the phone alert text should say "A rider cancelled" instead of the general "Your stops changed".
 ## Heads-up when the driver will be late - built (#165, migration 060)
 - Predicted 2+ minutes late: the rider sees "Your driver is about N min late" (an estimate).
 - Predicted 3+ minutes late: the notice asks "Keep this ride, or cancel for free?". Doing nothing keeps the ride.

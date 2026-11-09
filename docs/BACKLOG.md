@@ -91,3 +91,5 @@ Newest decisions first. Nothing here is being built. Jules decides what moves up
 
 - Android app update (needs a new APK): the native 'running late' alert still says 'cancel for free after 15 minutes' (now 5), and there is no phone push for the new 'about N min late' heads-up with Keep / Cancel buttons (LocationService.java notifyLate, rider_alerts_token in migration 035). The in-app heads-up works while the app is open.
 - Check on a real phone: cancel a test ride as the rider and confirm the driver's 'Update route' alert appears (route reset).
+
+- Android build: make the route-reset phone alert say 'A rider cancelled. Tap to update Google Maps' (LocationService.java routeWatch/postRoute use the general 'Your stops changed'). Test on a real phone: accept a test rider, start the trip, cancel as the rider, confirm the alert and that Maps shows the right next stop or the destination.
