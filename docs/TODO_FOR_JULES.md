@@ -48,6 +48,7 @@ Open https://supabase.com/dashboard/project/iivhfapvkseeomxtsrxf/sql/new, paste 
 | `supabase/migrations/057_double_booking_past_midnight.sql` | The double-booking rule also catches trips that run past midnight (needs 055) | **To run** |
 | `supabase/migrations/058_reliability_rides_done.sql` | Shows how many rides each person has completed next to their name ("12 rides done" or "New member") (needs 004) | **To run** |
 | `supabase/migrations/059_cancel_free_until_detour.sql` | New cancel rule: free until the driver's detour starts, then the driver keeps half; driver 5+ min late = free (needs 033 and 020) | **To run** |
+| `supabase/migrations/060_driver_late_heads_up.sql` | Heads-up when the driver is predicted late; free cancel while 3+ minutes late (needs 006, 027, 059) | **To run** |
 
 How to copy a file to the clipboard: ask Claude, or open the file on GitHub, click "Copy raw file", then paste it into the SQL editor.
 

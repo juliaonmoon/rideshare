@@ -23,10 +23,13 @@ When the driver has arrived and the pickup time has passed, the driver can close
 - The driver is told right away (in-app notice, plus phone alert in the Android app).
 - The driver's route must reset to the original destination or next stop. The Android app already shows an "Update route" alert when the set of stops changes; tapping it opens Google Maps with the new stops. Needs a real-phone test for a cancelled rider.
 
-## Heads-up when the driver will be late - to build next
-- Any predicted lateness: the rider gets a notice ("Your driver is about 2 minutes late").
-- 3+ minutes late: the notice also asks "Cancel this ride?" (free). If the rider ignores it, the ride simply goes on.
-- The driver's predicted arrival comes from live location and is an estimate ("about").
+## Heads-up when the driver will be late - built (#165, migration 060)
+- Predicted 1+ minutes late: the rider sees "Your driver is about N min late" (an estimate).
+- Predicted 3+ minutes late: the notice asks "Keep this ride, or cancel for free?". Doing nothing keeps the ride.
+- While the estimate says 3+ minutes late, cancelling is free (all points back) and is not a mark against the driver.
+- The estimate comes from the driver's live position (only while they share it, so only after "On my way"/Leave now) and is shown as "about".
+- The in-app notice appears while the app is open (it refreshes every 15 seconds). A phone push alert for it, and the older Android "running late" alert (which still says 15 minutes), need an Android app update: see BACKLOG.
+- Booking help says: "RideShare is not a taxi..."
 
 ## Record shown next to names
 "N rides done" or "New member", plus warnings for the last 30 days: late cancels, missed pickups, driver cancels.
