@@ -3,17 +3,21 @@
 Last updated: 2026-11-09 by claude
 
 ## Where we are
-- App version: #161 (live). Migrations run through 055; **057 (late-night double booking) is waiting for Jules to run it**.
-- Built: no double booking for drivers, search for Canada + USA, Trips filters, repeating trips as one row.
+- App version #167 live. SQL run by Jules through 061. The Android app with the new "<Name> cancelled" route alert is built and tested on the emulator, but not yet installed on Jules' phone.
+- Built this week: no double booking (incl. past midnight), Canada+USA address search, Trips filters, reliability record ("N rides done"), new cancellation policy (docs/CANCELLATION_POLICY.md), "Driver did not arrive" at 3 minutes late, late-driver heads-up, route-reset button and Android alert after a rider cancels.
 
-## Waiting on
-- Jules: run migration 057; answer anything marked FOR JULES.
-- Jules: answer the 4 questions in `notes/2026-11-09-1100-from-claude-to-jules.md` (ChatGPT's review is in `2026-11-09-1000-from-chatgpt-to-claude.md`).
+## Waiting on Jules
+- Rider's view requirements (in Jules' own words). Claude then writes docs/RIDER_VIEW.md and compares with the app.
+- Plug in the phone and say "update my phone" to install the new Android app.
 
 ## Next ideas (not started, need Jules' OK)
 - Riders double booking.
-- Items from the ChatGPT feedback.
+- Phone push alert for the "driver about N min late" heads-up (needs an Android build).
+- Items from the ChatGPT review: see docs/BACKLOG.md.
 
 ## Decisions by Jules
-- 2026-11-09: Keep EXACT addresses (accuracy matters more). Do NOT build 'hide addresses until confirmed' or public pickup points for now.
-- 2026-11-09: Adults only (18+). Points: no buying/refunding/cash-out for now. Route/employer: does not matter. Backlog lives in docs/BACKLOG.md. Next: reliability record, then cancellation/no-show rules, then the rider's view.
+- Exact addresses stay. No hiding addresses or public pickup points for now.
+- Adults only (18+). Points: no buying/refunding/cash-out for now.
+- Cancelling: always allowed; free until the driver's detour starts (pickup time minus detour minutes, at least 3); after that the driver keeps all the points; driver 3+ minutes late and not arrived = rider cancels free ("Driver did not arrive").
+- Hands-free: Claude assumes the SQL ran and finds out by building/testing.
+- Backlog lives in docs/BACKLOG.md.
