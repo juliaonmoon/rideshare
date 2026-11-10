@@ -54,5 +54,11 @@ Result key: **AUTO PASS** = a script ran it and it passed. **MANUAL** = a person
 ## Phone/live checks run 2026-11-10 **AUTO PASS**
 App version #167; signed in; pickup_eta installed (060); reliability view has the new columns (058); cancel_ride exists; all seven new texts are in the live app. The exact 059/061 rule can only be proven by the database tests above (the live function text cannot be read from the phone).
 
+## Real two-device test 2026-11-10 **PASS**
+Your phone = driver (main account), Chrome = rider (spare test account). Steps: rider asked for a seat on a test trip; the driver accepted, tapped On my way and turned on driving mode; the phone alerted "Pick up <rider>"; the rider cancelled; **6 seconds later the phone showed "<rider> cancelled. Tap to update Google Maps with the stops that are left."** The route link it prepared points at the trip's destination plus the remaining stops. All test trips and requests were deleted afterwards.
+- Not verified by eye: what Google Maps shows after tapping the alert (Maps was not screenshotted: it shows private places).
+- Found while testing: the app's page stops the phone helper when a rider cancels IF driving mode was not started from the trip screen (a test-setup issue, not a normal-use bug).
+
 ## Still unproven
-Real-phone cancel and route reset; phone push for the late heads-up (not built); rider double booking (not built).
+
+Google Maps result after tapping the cancel alert; phone push for the late heads-up (not built); rider double booking (not built).
