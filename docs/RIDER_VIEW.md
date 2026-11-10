@@ -51,3 +51,18 @@
 2. After a ride, do you want a simple thumbs up/down for the driver?
 3. When no driver fits, should the app keep watching and alert the rider when one appears?
 4. What bothers you most on the rider side today?
+
+## Decisions from Jules (2026-11-10)
+1. **Many drivers at once.** A request goes to every driver whose route fits. The first to accept gets the ride. The others see "no longer available".
+2. **Thumbs up only, no public thumbs down.** A driver's thumbs-up total shows on their profile. A rider can send a private "something went wrong" note that only the team sees.
+3. **Matching is continuous.** No separate "keep watching" feature. The rider just gets a phone alert when a match appears later.
+4. **Biggest rider pain: driver late, no-show, last-minute cancel.**
+5. **"On time" = within 3 minutes of the latest agreed pickup time** (not the original time).
+6. **New pickup time flow.** Both people are told. The rider gets Accept / Decline (decline = free cancel if 3+ min later than agreed). No answer counts as OK for changes up to 15 minutes; bigger delays need a real answer or the ride cancels free after a while. Record "rider did not answer".
+7. **Two kinds of lateness.** Controllable (driver started late versus planned time, or stopped/off route for several minutes) counts against the driver. Traffic while moving does not. First version: count late start and long stops only; driver may add a short note.
+8. **Driver stats shown:** thumbs up, on-time %, late cancels, and how often the driver changed the pickup time (Jules wanted to think about this one).
+9. **Accountability:** poor record ranks lower in matching; 3 marks in 30 days = warning; a person reviews any pause. No fines (points are not money).
+
+## Open: public or private stats? (Claude's recommendation, Jules to decide)
+- **Public:** thumbs-up total, on-time %, late-cancel count. Riders need these to choose.
+- **Private (team only):** "changed pickup time" count, stopped/off-route events, private rider notes, warnings. These are noisy and easy to misread, so use them for ranking and review, not for display.
