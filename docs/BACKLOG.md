@@ -40,10 +40,10 @@ Newest decisions first. Nothing here is being built. Jules decides what moves up
 - iPhone options, Play Store, Supabase settings before real users: `docs/TODO_FOR_JULES.md` sections 5 to 7.
 - Decisions list: `docs/OPEN_QUESTIONS.md`.
 
-## Cancellation and no-show gaps (found 2026-11-09; the rider side is already covered: 2-hour late rule, one free late cancel a month, half the points kept, driver can mark a missed pickup)
-- A rider cannot report that the DRIVER never showed. Today the driver still gets the points after 3 hours. Idea: rider taps 'Driver did not arrive' 15+ min after pickup time, gets all points back, it goes on the driver's record. (Money rule: needs Jules' OK.)
-- A driver who cancels late has no consequence except a count (already shown as 'cancelled rides (30 days)').
-- No repeat-offender rule yet (for example a warning or pause after several no-shows).
+## Cancellation and no-show: remaining gaps (the main rules are DONE, see docs/CANCELLATION_POLICY.md)
+- Auto-refund when the driver never taps Arrived and the rider just walks away without cancelling (today the app pays the driver after 3 hours). Suggested: close as 'driver did not arrive' 30 minutes after pickup time. Needs Jules' OK.
+- Repeat-offender rule (warning or pause after several no-shows or late cancels).
+- A driver who cancels late has no consequence except a count.
 
 ## Gathered from older docs and chats (added 2026-11-09)
 ### Product ideas (docs/REQUIREMENTS.md: P1 = soon after launch, P2 = later)
@@ -82,16 +82,8 @@ Newest decisions first. Nothing here is being built. Jules decides what moves up
 - Rejected on purpose: "change this date and all following dates" (too complicated).
 - Not covered: older chats from before 2026-11-09 may hold items that were never written down; tell Claude if you remember one.
 
-## Driver late / did not arrive (researched 2026-11-09; Jules: revisit later)
-- Market: Uber waives the rider's cancel fee when the driver is 5+ minutes past the original arrival time or not making progress (Uber blog "changes to cancellation fees"). Lyft is reported to do the same (secondary sources, unverified). Poparide has no fixed minutes: the passenger reports a no-show after pickup time, support investigates, a verified no-show is a full refund.
-- The rider is never forced to wait. They can cancel any time before pickup. The question is only whether it costs them points. Today a rider cancelling inside 2 hours loses half the points after the first free one each month, even if the driver is the late one.
-- Proposed middle ground: rider may always cancel; free with full refund once the driver is 5+ minutes past pickup time with no "arrived" tap; goes on the driver's record only if the driver gave no heads-up; ride closes as "driver did not arrive" at 15 minutes with no word; automatic "driver is stuck in traffic" notice to the rider. Needs Jules' OK (points rule).
-
-- Legal check to add to question 2 (driver never profits): after the detour starts, a late-cancelling rider's driver keeps ALL the points (Jules' decision 2026-11-09, like Uber's cancellation fee going to the driver). Ask the lawyer whether that still counts as cost sharing.
-
-- Android app update (needs a new APK): the native 'running late' alert still says 'cancel for free after 15 minutes' (now 5), and there is no phone push for the new 'about N min late' heads-up with Keep / Cancel buttons (LocationService.java notifyLate, rider_alerts_token in migration 035). The in-app heads-up works while the app is open.
-- Check on a real phone: cancel a test ride as the rider and confirm the driver's 'Update route' alert appears (route reset).
-
-- Android build: make the route-reset phone alert say 'A rider cancelled. Tap to update Google Maps' (LocationService.java routeWatch/postRoute use the general 'Your stops changed'). Test on a real phone: accept a test rider, start the trip, cancel as the rider, confirm the alert and that Maps shows the right next stop or the destination.
-
-- DONE 2026-11-09 (Android build): the route-reset phone alert now says '<Name> cancelled. Tap to update Google Maps...' (or 'go straight to your destination' when no riders are left); tested on the emulator with a fake server. Still to do: install the new app on Jules' phone (plug in, 'update my phone').
+## Android / phone follow-ups
+- DONE: route-reset alert says '<Name> cancelled' (emulator-tested). Install on Jules' phone: plug in, 'update my phone'.
+- Phone push for the 'driver about N min late' heads-up with Keep / Cancel buttons (LocationService.java notifyLate, rider_alerts_token in migration 035). The in-app heads-up works while the app is open.
+- Real-phone test of the route reset (accept a test rider, start the trip, cancel as the rider, confirm the alert and Maps).
+- Legal: after the detour starts a late-cancelling rider's driver keeps ALL the points (Jules' decision 2026-11-09). Ask the lawyer whether that still counts as cost sharing (question 2 above).
