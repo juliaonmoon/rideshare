@@ -56,9 +56,9 @@ App version #167; signed in; pickup_eta installed (060); reliability view has th
 
 ## Real two-device test 2026-11-10 **PASS**
 Your phone = driver (main account), Chrome = rider (spare test account). Steps: rider asked for a seat on a test trip; the driver accepted, tapped On my way and turned on driving mode; the phone alerted "Pick up <rider>"; the rider cancelled; **6 seconds later the phone showed "<rider> cancelled. Tap to update Google Maps with the stops that are left."** The route link it prepared points at the trip's destination plus the remaining stops. All test trips and requests were deleted afterwards.
-- Not verified by eye: what Google Maps shows after tapping the alert (Maps was not screenshotted: it shows private places).
+- Tap on the alert (real tap on the real alert, 2026-11-10): Google Maps opened and started turn-by-turn navigation straight away to the NEXT stop in the list (here a sample rider about 3 min / 1.5 km away), with the other stops and the trip destination queued behind it. It did not show a blank search screen. I ended the navigation afterwards.
 - Found while testing: the app's page stops the phone helper when a rider cancels IF driving mode was not started from the trip screen (a test-setup issue, not a normal-use bug).
 
 ## Still unproven
 
-Google Maps result after tapping the cancel alert; phone push for the late heads-up (not built); rider double booking (not built).
+phone push for the late heads-up (not built); rider double booking (not built).
