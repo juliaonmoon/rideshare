@@ -63,6 +63,6 @@
 8. **Driver stats shown:** thumbs up, on-time %, late cancels, and how often the driver changed the pickup time (Jules wanted to think about this one).
 9. **Accountability:** poor record ranks lower in matching; 3 marks in 30 days = warning; a person reviews any pause. No fines (points are not money).
 
-## Open: public or private stats? (Claude's recommendation, Jules to decide)
+## DECIDED (Jules, 2026-11-11): public vs private stats
 - **Public:** thumbs-up total, on-time %, late-cancel count. Riders need these to choose.
 - **Private (team only):** "changed pickup time" count, stopped/off-route events, private rider notes, warnings. These are noisy and easy to misread, so use them for ranking and review, not for display.
