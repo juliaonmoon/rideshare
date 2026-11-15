@@ -653,6 +653,11 @@ public class LocationService extends Service {
                     String prev = riderStage.put(id, stage);
                     if (!stage.equals(prev) && !"picked_up".equals(stage)) notifyRider(r, stage);
                     if (r.optBoolean("late", false) && lateShown.add(id)) notifyLate(r);
+                    long prop = r.optLong("prop_ms", 0);
+                    if (prop > 0 && propShown.add(id + ":" + prop)) notifyProposal(r, prop);
+                    int lm = r.isNull("late_min") ? -1000 : r.optInt("late_min", -1000);
+                    if (lm < 2) etaShown.remove(id);
+                    else if (lm >= 3) { Integer last = etaShown.get(id); if (last == null || lm >= last + 5) { etaShown.put(id, lm); notifyEta(r, lm); } }
                 }
             }
             riderStage.keySet().retainAll(seen);
@@ -687,6 +692,44 @@ public class LocationService extends Service {
                 try { getSystemService(NotificationManager.class).notify(idOf(ID_MSG, id), n); } catch (Exception ignore) { }
             }
         } catch (Exception ignore) { /* try again next time */ }
+    }
+
+    private final Set<String> propShown = new HashSet<>();   // new-pickup-time requests already shown (seat:time)
+    private final java.util.Map<String, Integer> etaShown = new java.util.HashMap<>();   // seat -> minutes late we last warned about
+
+    /** The driver asks for a later pickup time: tell the rider. Tapping opens the app, where Accept / Keep / Cancel for free are. */
+    private void notifyProposal(JSONObject r, long propMs) {
+        String id = r.optString("id"), who = r.optString("driver_name", "Your driver");
+        long pickup = r.optLong("pickup_ms", 0);
+        String text = who + " asks to pick you up at " + clock(propMs) + (pickup > 0 ? " instead of " + clock(pickup) : "") + ". Open the app to accept or keep the original time. If you do nothing, the time does not change.";
+        Notification n = new NotificationCompat.Builder(this, ALERT_CHANNEL)
+                .setContentTitle("New pickup time?").setContentText(text)
+                .setStyle(new NotificationCompat.BigTextStyle().bigText(text))
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setDefaults(Notification.DEFAULT_ALL)
+                .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+                .setAutoCancel(true)
+                .setContentIntent(openIntent())
+                .build();
+        try { getSystemService(NotificationManager.class).notify(idOf(ID_RIDER + 0x2000, id), n); } catch (Exception ignore) { }
+    }
+
+    /** The driver's live position says the pickup will be about N minutes late (3 or more): the rider can keep the ride or cancel for free. */
+    private void notifyEta(JSONObject r, int mins) {
+        String id = r.optString("id"), who = r.optString("driver_name", "Your driver");
+        String text = who + " looks about " + mins + " minutes late (an estimate). Open the app to keep your ride or cancel for free. If you do nothing, the ride stays.";
+        Notification n = new NotificationCompat.Builder(this, ALERT_CHANNEL)
+                .setContentTitle(who + " may be late").setContentText(text)
+                .setStyle(new NotificationCompat.BigTextStyle().bigText(text))
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setDefaults(Notification.DEFAULT_ALL)
+                .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+                .setAutoCancel(true)
+                .setContentIntent(openIntent())
+                .build();
+        try { getSystemService(NotificationManager.class).notify(idOf(ID_RIDER + 0x3000, id), n); } catch (Exception ignore) { }
     }
 
     private final Set<String> lateShown = new HashSet<>();   // seats whose "running late" alert has been shown
