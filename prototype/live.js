@@ -544,7 +544,9 @@
     return { ok: true, text: pts ? 'Your driver has already started the detour for you, so this is a late cancel: your driver keeps all ' + pts + ' points for their time. It also shows on your record.' : 'Your driver has already started the detour for you, so this is a late cancel. No points are involved, but it shows on your record.' };
   }
   // the driver has arrived at the pickup, and it is the rider's pickup time or later
-  const canNoShow = (m) => { const pk = pickupMs(m); return m.status === 'accepted' && !m.picked_up_at && m.driver_id === user.id && pk != null && !!m.arrived_at && Date.now() >= pk; };
+  const canNoShow = (m) => { const pk = pickupMs(m); return m.status === 'accepted' && !m.picked_up_at && m.driver_id === user.id && pk != null && !!m.arrived_at && Date.now() >= pk && Date.now() >= Date.parse(m.arrived_at) + noShowWaitMin(m) * 60000; };
+  const noShowWaitMin = (m) => (m.rider_here_at ? 10 : 5);
+  const noShowHint = (m) => { if (m.status !== 'accepted' || m.picked_up_at || m.driver_id !== user.id || !m.arrived_at) return ''; const left = Math.ceil((Date.parse(m.arrived_at) + noShowWaitMin(m) * 60000 - Date.now()) / 60000); const here = m.rider_here_at ? '<div class="open" style="margin-top:6px">The rider says they are here. Look around or send a message.</div>' : ''; return here + (left > 0 && !canNoShow(m) ? '<div class="mut" style="margin-top:6px">You can close this as a missed pickup in about ' + left + ' min.</div>' : ''); };
   // Ride steps (driver taps, rider sees): accepted -> on_my_way -> arrived -> picked_up -> dropped_off (completed)
   const stageOf = (m) => (m.status === 'completed' && m.dropped_off_at ? 'dropped_off' : m.picked_up_at ? 'picked_up' : m.arrived_at ? 'arrived' : m.en_route_at ? 'on_my_way' : 'accepted');
   const STEP_LABEL = { accepted: 'seat confirmed', on_my_way: 'driver on the way', arrived: 'driver has arrived', picked_up: 'ride in progress', dropped_off: 'completed' };
@@ -1436,13 +1438,14 @@
       } else {
         const b = [];
         if (!isRider && x.status === 'requested') b.push(`<button class="btn" data-acc="${x.id}">Accept</button> <button class="btn ghost" data-dec="${x.id}">Decline</button>`);
+        if (isRider && x.status === 'accepted' && !x.picked_up_at && !x.rider_here_at && pickupMs(x) != null && Date.now() >= pickupMs(x) - 30 * 60000) b.push(`<button class="btn" data-here="${x.id}">I'm here</button>`);
         if (canNoShow(x)) b.push(`<button class="btn ghost" data-noshow="${x.id}">Rider isn't here</button>`);
         if ((isRider || x.status === 'accepted') && !x.picked_up_at) b.push(`<button class="btn ghost" data-cancelask="${x.id}">${!isRider ? 'Cancel pickup' : x.status === 'requested' ? 'Cancel request' : (!x.arrived_at && pickupMs(x) != null && Date.now() >= pickupMs(x) + 3 * 60000) ? 'Driver did not arrive' : 'Cancel ride'}</button>`);
         if (msgButton(x) && x.status === 'accepted') b.push(msgButton(x));
         if (isRider && meetButton(x)) b.push(meetButton(x));
         if (isRegular(x) && !x.picked_up_at) b.push(`<button class="btn ghost" data-stopseries="${x.trip_id}|${x.request_id}">End regular booking</button>`);
         if (x.status === 'accepted' && PCOK) b.push(`<button class="btn ghost" data-share="${x.id}">Share trip details</button>`, `<button class="btn ghost" data-report="${x.id}|${other}">Report a problem</button>`);
-        actions = b.length ? `<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:8px">${b.join(' ')}</div>` : '';
+        actions = (isRider && x.rider_here_at && x.status === 'accepted' && !x.picked_up_at ? '<div class="mut" style="margin-top:6px">You told the driver you are here.</div>' : '') + (!isRider ? noShowHint(x) : '') + (b.length ? `<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:8px">${b.join(' ')}</div>` : '');
       }
       const held = x.status === 'accepted' && x.pay_with === 'points' && !x.settled ? ' (held until the ride)' : '';
       return `<div style="padding:8px 0;border-top:1px solid var(--line)"><b>${when(x)}</b> <span class="tag">${esc(x.status === 'accepted' ? STEP_LABEL[stageOf(x)] : statusText(x.status))}</span>${isRegular(x) ? ' <span class="tag">regular</span>' : ''}${x.status === 'accepted' ? '<div style="margin:8px 0">' + whoCard(other, isRider ? 'driver' : 'rider') + '</div>' + meetLine(x) : ''}<div class="mut">${isRider ? 'Driver' : 'Rider'} ${nm(other)}${badge(other, isRider ? 'driver' : 'rider')} &middot; ${pay}${held}</div>${isRider && x.status === 'accepted' && !x.picked_up_at && freeUntilMs(x) != null && Date.now() < freeUntilMs(x) ? '<div class="mut">Cancel free until ' + freeUntilText(x) + '</div>' : ''}${isRider ? etaBanner(x) : ''}${actions}</div>`;
@@ -1990,7 +1993,8 @@ const grpOpts = (G) => [['', 'Any']].concat(G.map(([k, l]) => [k, l + ' (' + bas
       } catch (e) { /* the helper is not running: the stops-changed alert covers it */ }
     });
     each('[data-incar]', (b) => run(sb.rpc('rider_in_car', { p_match: b.dataset.incar }), 'Thanks, confirmed'));
-    each('[data-noshow]', (b) => !window.confirm('Is the rider not at the pickup spot?\n\nThe ride closes as a missed pickup and you keep the points. This goes on the rider\'s record.') ? null : run(sb.rpc('mark_no_show', { p_match: b.dataset.noshow }), 'Closed as a missed pickup. You keep the points.'));
+    each('[data-here]', (b) => run(sb.rpc('rider_here', { p_match: b.dataset.here }), 'The driver can see you are here'));
+    each('[data-noshow]', (b) => !window.confirm('Is the rider not at the pickup spot?\n\nThe ride closes as a missed pickup and you keep the points. This goes on the rider\'s record.') ? null : run(sb.rpc('mark_no_show', { p_match: b.dataset.noshow }), 'Closed as a missed pickup. You keep the points. (If the rider said they were here, the team may take a look.)'));
     each('[data-acc]', (b) => run(sb.rpc('respond_match', { p_match: b.dataset.acc, p_accept: true }), 'Accepted'));
     each('[data-dec]', (b) => run(sb.rpc('respond_match', { p_match: b.dataset.dec, p_accept: false }), 'Declined'));
     each('[data-offtrip]', (b) => !window.confirm((b.dataset.rep ? 'Stop this repeating trip?\n\nAll its remaining dates are cancelled. ' : 'Cancel this trip?\n\n') + 'Riders who are booked are told and get their points back.') ? null : run(cancelTrip(b.dataset.offtrip), b.dataset.rep ? 'Repeating trip stopped' : 'Trip cancelled'));

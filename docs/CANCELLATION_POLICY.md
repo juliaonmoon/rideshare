@@ -17,7 +17,7 @@ Principle: RideShare is **driver-first**. The driver is already making the trip;
 Rider gets all points back. Shows on the driver's record ("cancelled rides"). A cancel within 2 hours of pickup also counts as a late driver cancel.
 
 ## Rider does not show
-When the driver has arrived and the pickup time has passed, the driver can close the ride as a **missed pickup** and keeps the points. Shows on the rider's record.
+When the driver has arrived and the pickup time has passed, the driver can close the ride as a **missed pickup** after waiting **5 minutes from tapping Arrived**, and keeps the points. Shows on the rider's record. The rider has an **I'm here** button (from 30 min before pickup). If they tapped it, the wait is **10 minutes** and the missed pickup is flagged *disputed* for the team to review (the driver still keeps the points for now).
 
 ## After a rider cancels: the driver's route must reset
 How it works (checked by reading the code 2026-11-09; a real-phone test is still to do):

@@ -1,4 +1,4 @@
-﻿# Things only Jules can do (running list)
+# Things only Jules can do (running list)
 
 Kept up to date by Claude. Newest status is at the top of each section. Nothing in this file is a secret: never paste passwords, tokens or keys into it.
 
@@ -50,6 +50,7 @@ Open https://supabase.com/dashboard/project/iivhfapvkseeomxtsrxf/sql/new, paste 
 | `supabase/migrations/059_cancel_free_until_detour.sql` | New cancel rule: free until the driver's detour starts, then the driver keeps half; driver 5+ min late = free (needs 033 and 020) | **To run** |
 | `supabase/migrations/060_driver_late_heads_up.sql` | Heads-up when the driver is predicted late; free cancel while 3+ minutes late (needs 006, 027, 059) | **To run** |
 | `supabase/migrations/061_driver_late_after_3_minutes.sql` | "Driver did not arrive": a driver 3+ minutes past the pickup time who has not arrived = rider cancels free (was 5 minutes; needs 060) | **To run** |
+| `supabase/migrations/062_rider_no_show_wait.sql` | Rider no-show: driver waits 5 min after Arrived before closing a missed pickup; rider "I'm here" button (wait becomes 10 min and the no-show is flagged disputed) | **To run** |
 
 How to copy a file to the clipboard: ask Claude, or open the file on GitHub, click "Copy raw file", then paste it into the SQL editor.
 
