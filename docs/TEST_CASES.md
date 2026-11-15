@@ -62,3 +62,6 @@ Your phone = driver (main account), Chrome = rider (spare test account). Steps: 
 ## Still unproven
 
 phone push for the late heads-up (not built); rider double booking (not built).
+
+## Rider phone alerts (emulator, 2026-11-15) PASS
+- Fake server sent a ride with a new-time request and a driver predicted 12 min late. The phone showed "may be late" and "New pickup time?" notices with the right times. DB test tests/db/run66.mjs 4/4. Not yet tried end to end with two real people.
