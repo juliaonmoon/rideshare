@@ -277,7 +277,7 @@
   document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshDnd(); });
   const editing = { trip: false, req: false, newTrip: false, dayOnly: null };   // dayOnly: {id, d} = changing ONE date of a repeating trip   // newTrip: the form is posting an additional trip, not editing the one shown   // the full form stays hidden behind the summary card until Edit is tapped
   let etaLate = {}, etaKept = {};   // minutes each driver is predicted to be late (by seat), and the seats where the rider chose to keep the ride
-  let pending = null, viewD = null, viewR = null, askCancel = null, rel = {}, mySet = null, styles = {}, isTest = false, testMode = false, drives = [];
+  let pending = null, viewD = null, viewR = null, askCancel = null, askTime = null, rel = {}, mySet = null, styles = {}, isTest = false, testMode = false, drives = [];
   // Personal settings: defaults for new trips and requests (every trip can still be changed before posting).
   const SD = { d_detour_km: null, d_total_detour_km: null, d_detour: 10, d_total_detour: 15, d_wait: 0, d_accepts: 'either', d_seats: 1, d_auto_accept: false, d_chat: 'some', d_pets: true, r_pays: 'points', r_chat: 'some', r_pets: false };
   const S_ = () => Object.assign({}, SD, mySet || {});
@@ -558,6 +558,16 @@
     const spot = stageOf(m) !== 'picked_up' && m.meet_lat != null ? { lat: +m.meet_lat, lng: +m.meet_lng } : pt(req, stageOf(m) === 'picked_up' ? 'dropoff' : 'pickup'); if (!spot) return '';
     return 'https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=' + spot.lat + ',' + spot.lng;
   }
+  const propOpen = (m) => m.status === 'accepted' && !!m.prop_time && !m.picked_up_at && Date.parse(m.prop_time) > Date.now();
+  const clockOf = (ms) => { const d = new Date(ms); return d.toLocaleTimeString('en-CA', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'America/Vancouver' }).replace(' a.m.', ' am').replace(' p.m.', ' pm'); };
+  const timeLine = (m, isRider) => {
+    if (m.status !== 'accepted' || m.picked_up_at) return '';
+    const cur = pickupMs(m);
+    if (isRider && propOpen(m)) { const nw = Date.parse(m.prop_time), plus = Math.round((nw - cur) / 60000); return '<div class="open" style="margin-top:6px"><b>Your driver asks for a new pickup time: ' + clockOf(nw) + '</b> <span class="mut">(was ' + clockOf(cur) + ')</span><div class="mut">If you do nothing, the time stays ' + clockOf(cur) + '.</div><div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-ptans="' + m.id + '|accept">Accept ' + clockOf(nw) + '</button><button class="btn ghost" data-ptans="' + m.id + '|decline">Keep ' + clockOf(cur) + '</button>' + (plus >= 3 ? '<button class="btn ghost" data-ptans="' + m.id + '|cancel">Cancel for free</button>' : '') + '</div></div>'; }
+    if (!isRider && propOpen(m)) return '<div class="mut" style="margin-top:6px">Asked the rider for ' + clockOf(Date.parse(m.prop_time)) + '. Until they accept, the pickup time stays ' + clockOf(cur) + '.</div>';
+    if (!isRider && askTime === m.id) return '<div class="open" style="margin-top:6px">Running late? Ask the rider for a later pickup time (now ' + clockOf(cur) + '). <span class="mut">If they do not answer, the time does not change.</span><div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap">' + [5, 10, 15, 20, 30].map((k) => '<button class="btn" data-ptpick="' + m.id + '|' + k + '">' + clockOf(cur + k * 60000) + ' (+' + k + ')</button>').join('') + '<button class="btn ghost" data-ptno="1">Never mind</button></div></div>';
+    return '';
+  };
   const statusText = (s) => ({ requested: 'requested', accepted: 'accepted', completed: 'completed', cancelled: 'cancelled', declined: 'declined', no_show: 'missed pickup' }[s] || s);
 
   const dowOf = (d) => { const x = d && new Date(d + 'T12:00:00'); return x && !isNaN(x) ? x.getDay() : undefined; };
@@ -1439,13 +1449,14 @@
         const b = [];
         if (!isRider && x.status === 'requested') b.push(`<button class="btn" data-acc="${x.id}">Accept</button> <button class="btn ghost" data-dec="${x.id}">Decline</button>`);
         if (isRider && x.status === 'accepted' && !x.picked_up_at && !x.rider_here_at && pickupMs(x) != null && Date.now() >= pickupMs(x) - 30 * 60000) b.push(`<button class="btn" data-here="${x.id}">I'm here</button>`);
+        if (!isRider && x.status === 'accepted' && !x.arrived_at && !x.picked_up_at && !propOpen(x) && askTime !== x.id) b.push(`<button class="btn ghost" data-ptask="${x.id}">Running late? New time</button>`);
         if (canNoShow(x)) b.push(`<button class="btn ghost" data-noshow="${x.id}">Rider isn't here</button>`);
         if ((isRider || x.status === 'accepted') && !x.picked_up_at) b.push(`<button class="btn ghost" data-cancelask="${x.id}">${!isRider ? 'Cancel pickup' : x.status === 'requested' ? 'Cancel request' : (!x.arrived_at && pickupMs(x) != null && Date.now() >= pickupMs(x) + 3 * 60000) ? 'Driver did not arrive' : 'Cancel ride'}</button>`);
         if (msgButton(x) && x.status === 'accepted') b.push(msgButton(x));
         if (isRider && meetButton(x)) b.push(meetButton(x));
         if (isRegular(x) && !x.picked_up_at) b.push(`<button class="btn ghost" data-stopseries="${x.trip_id}|${x.request_id}">End regular booking</button>`);
         if (x.status === 'accepted' && PCOK) b.push(`<button class="btn ghost" data-share="${x.id}">Share trip details</button>`, `<button class="btn ghost" data-report="${x.id}|${other}">Report a problem</button>`);
-        actions = (isRider && x.rider_here_at && x.status === 'accepted' && !x.picked_up_at ? '<div class="mut" style="margin-top:6px">You told the driver you are here.</div>' : '') + (!isRider ? noShowHint(x) : '') + (b.length ? `<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:8px">${b.join(' ')}</div>` : '');
+        actions = (isRider && x.rider_here_at && x.status === 'accepted' && !x.picked_up_at ? '<div class="mut" style="margin-top:6px">You told the driver you are here.</div>' : '') + (!isRider ? noShowHint(x) : '') + timeLine(x, isRider) + (b.length ? `<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:8px">${b.join(' ')}</div>` : '');
       }
       const held = x.status === 'accepted' && x.pay_with === 'points' && !x.settled ? ' (held until the ride)' : '';
       return `<div style="padding:8px 0;border-top:1px solid var(--line)"><b>${when(x)}</b> <span class="tag">${esc(x.status === 'accepted' ? STEP_LABEL[stageOf(x)] : statusText(x.status))}</span>${isRegular(x) ? ' <span class="tag">regular</span>' : ''}${x.status === 'accepted' ? '<div style="margin:8px 0">' + whoCard(other, isRider ? 'driver' : 'rider') + '</div>' + meetLine(x) : ''}<div class="mut">${isRider ? 'Driver' : 'Rider'} ${nm(other)}${badge(other, isRider ? 'driver' : 'rider')} &middot; ${pay}${held}</div>${isRider && x.status === 'accepted' && !x.picked_up_at && freeUntilMs(x) != null && Date.now() < freeUntilMs(x) ? '<div class="mut">Cancel free until ' + freeUntilText(x) + '</div>' : ''}${isRider ? etaBanner(x) : ''}${actions}</div>`;
@@ -1670,7 +1681,7 @@ const grpOpts = (G) => [['', 'Any']].concat(G.map(([k, l]) => [k, l + ' (' + bas
   function resetClientState() {
     stopShare(true);
     editing.trip = false; editing.req = false; editing.newTrip = false; editing.dayOnly = null;
-    homeView = 'feed'; detailTripId = null; selTripId = null; pending = null; viewD = null; viewR = null; calDay = null; calMonth = null; askCancel = null; mapSig = {}; formSig = '';
+    homeView = 'feed'; detailTripId = null; selTripId = null; pending = null; viewD = null; viewR = null; calDay = null; calMonth = null; askCancel = null; askTime = null; mapSig = {}; formSig = '';
     [nowSel, LV].forEach((o) => Object.keys(o).forEach((k) => { delete o[k]; }));
     plReset('ln-o', 'ln-d', 'lt-o', 'lt-d', 'lr-p', 'lr-d', 'rn-p', 'rn-d');
     tripMode = 'now'; rideMode = 'now'; tripsView = 'driver'; offerOpen = false; tripsPane = 'list'; tf = { when: 'upcoming', role: 'all', st: new Set(), view: 'trip', pax: 'all', trip: null }; saveTf(); keep('rs_trips_pane', 'list');
@@ -1993,6 +2004,10 @@ const grpOpts = (G) => [['', 'Any']].concat(G.map(([k, l]) => [k, l + ' (' + bas
       } catch (e) { /* the helper is not running: the stops-changed alert covers it */ }
     });
     each('[data-incar]', (b) => run(sb.rpc('rider_in_car', { p_match: b.dataset.incar }), 'Thanks, confirmed'));
+    each('[data-ptask]', (b) => { askTime = b.dataset.ptask; render(); });
+    each('[data-ptno]', () => { askTime = null; render(); });
+    each('[data-ptpick]', (b) => { const [id, k] = b.dataset.ptpick.split('|'); const mm = matches.find((z) => z.id === id); askTime = null; if (mm) run(sb.rpc('propose_pickup_time', { p_match: id, p_time: new Date(pickupMs(mm) + Number(k) * 60000).toISOString() }), 'Asked the rider. Until they accept, the time does not change.'); });
+    each('[data-ptans]', (b) => { const [id, ch] = b.dataset.ptans.split('|'); run(sb.rpc('answer_pickup_time', { p_match: id, p_choice: ch }), ch === 'accept' ? 'New pickup time agreed' : ch === 'decline' ? 'Kept the original time' : 'Ride cancelled. Your points are back.'); });
     each('[data-here]', (b) => run(sb.rpc('rider_here', { p_match: b.dataset.here }), 'The driver can see you are here'));
     each('[data-noshow]', (b) => !window.confirm('Is the rider not at the pickup spot?\n\nThe ride closes as a missed pickup and you keep the points. This goes on the rider\'s record.') ? null : run(sb.rpc('mark_no_show', { p_match: b.dataset.noshow }), 'Closed as a missed pickup. You keep the points. (If the rider said they were here, the team may take a look.)'));
     each('[data-acc]', (b) => run(sb.rpc('respond_match', { p_match: b.dataset.acc, p_accept: true }), 'Accepted'));
