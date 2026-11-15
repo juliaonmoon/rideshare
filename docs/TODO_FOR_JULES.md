@@ -52,6 +52,7 @@ Open https://supabase.com/dashboard/project/iivhfapvkseeomxtsrxf/sql/new, paste 
 | `supabase/migrations/061_driver_late_after_3_minutes.sql` | "Driver did not arrive": a driver 3+ minutes past the pickup time who has not arrived = rider cancels free (was 5 minutes; needs 060) | **To run** |
 | `supabase/migrations/062_rider_no_show_wait.sql` | Rider no-show: driver waits 5 min after Arrived before closing a missed pickup; rider "I'm here" button (wait becomes 10 min and the no-show is flagged disputed) | **To run** |
 | `supabase/migrations/063_new_pickup_time.sql` | New pickup time: driver asks for a later time (before Arrived), rider Accept / Keep original / Cancel for free (3+ min later). No answer = no change (needs 062) | **To run** |
+| `supabase/migrations/064_driver_on_time.sql` | Driver on-time record: a ride is on time when the driver tapped Arrived within 3 minutes of the agreed pickup time (needs 058) | **To run** |
 
 How to copy a file to the clipboard: ask Claude, or open the file on GitHub, click "Copy raw file", then paste it into the SQL editor.
 
