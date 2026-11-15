@@ -40,3 +40,8 @@ How it works (checked by reading the code 2026-11-09; a real-phone test is still
 - The driver can ask for a later pickup time before tapping Arrived (up to 60 min later). The rider can accept, keep the original time, or cancel for free if the new time is 3+ minutes later.
 - **No answer = no change.** The agreed time stays until the rider accepts.
 - Lateness is measured against the agreed time.
+
+## Driver never arrived and rider left (migration 065)
+- If the driver has not tapped Arrived 30 minutes after the pickup time, the ride closes itself. The rider gets all points back and the driver gets a late mark. (Jules OK'd 30 minutes, 2026-11-15.)
+- Does not apply if the driver tapped Arrived, if anyone was picked up, or if the rider confirmed being in the car.
+- No timer job: the check runs whenever anyone opens the app.

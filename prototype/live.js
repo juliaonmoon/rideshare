@@ -601,7 +601,7 @@
     try {
       const uid = user.id;
       try { await sb.rpc('settle_due'); } catch (e) { /* older database: ignore */ }
-      try { await sb.rpc('expire_live'); } catch (e) { /* older database: ignore */ }
+      try { await sb.rpc('expire_live'); } catch (e) { /* older database: ignore */ } try { await sb.rpc('expire_missing_arrivals'); } catch (e) { /* older database: ignore */ }
       if (dndOn === null) refreshDnd();
       if (DKOK === null) DKOK = !(await sb.from('trips').select('max_detour_km').limit(1)).error;
       if (AAOK === null) AAOK = !(await sb.from('trips').select('auto_accept').limit(1)).error;
