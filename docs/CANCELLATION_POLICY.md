@@ -35,3 +35,8 @@ How it works (checked by reading the code 2026-11-09; a real-phone test is still
 
 ## Record shown next to names
 "N rides done" or "New member", plus warnings for the last 30 days: late cancels, missed pickups, driver cancels.
+
+## New pickup time (migration 063)
+- The driver can ask for a later pickup time before tapping Arrived (up to 60 min later). The rider can accept, keep the original time, or cancel for free if the new time is 3+ minutes later.
+- **No answer = no change.** The agreed time stays until the rider accepts.
+- Lateness is measured against the agreed time.

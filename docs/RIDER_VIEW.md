@@ -58,7 +58,7 @@
 3. **Matching is continuous.** No separate "keep watching" feature. The rider just gets a phone alert when a match appears later.
 4. **Biggest rider pain: driver late, no-show, last-minute cancel.**
 5. **"On time" = within 3 minutes of the latest agreed pickup time** (not the original time).
-6. **New pickup time flow.** Both people are told. The rider gets Accept / Decline (decline = free cancel if 3+ min later than agreed). No answer counts as OK for changes up to 15 minutes; bigger delays need a real answer or the ride cancels free after a while. Record "rider did not answer".
+6. **New pickup time flow (BUILT, migration 063).** The driver asks for a later time (+5 to +30 min, before tapping Arrived). The rider sees Accept / Keep original / Cancel for free (free only if 3+ min later). **No answer = no change** (Jules, 2026-11-15): the agreed time stays. Each proposal is counted privately. Not built yet: a phone push for the proposal (it shows in the app and as a notice).
 7. **Two kinds of lateness.** Controllable (driver started late versus planned time, or stopped/off route for several minutes) counts against the driver. Traffic while moving does not. First version: count late start and long stops only; driver may add a short note.
 8. **Driver stats shown:** thumbs up, on-time %, late cancels, and how often the driver changed the pickup time (Jules wanted to think about this one).
 9. **Accountability:** poor record ranks lower in matching; 3 marks in 30 days = warning; a person reviews any pause. No fines (points are not money).
