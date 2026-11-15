@@ -66,3 +66,8 @@
 ## DECIDED (Jules, 2026-11-11): public vs private stats
 - **Public:** thumbs-up total, on-time %, late-cancel count. Riders need these to choose.
 - **Private (team only):** "changed pickup time" count, stopped/off-route events, private rider notes, warnings. These are noisy and easy to misread, so use them for ranking and review, not for display.
+
+## Driver stats (BUILT, migration 064 + app #170)
+- Public: "N thumbs up" (already collected by the Good button), "on time X% of N rides" (shown from 3 rides), late cancels (existing warning tag).
+- Private: the "Not good" button now says so and is no longer shown to others (no more % liked). Time-change counts and stop events stay team-only.
+- On time = driver tapped Arrived within 3 minutes of the agreed pickup time.

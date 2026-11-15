@@ -356,12 +356,12 @@
       if (res && res.notifications === false) toast('Phone alerts are off. Allow notifications for RideShare in your phone settings to hear when your driver is on the way.');
     } catch (e) { /* permission refused: no phone alerts */ }
   }
-  const scoreTag = (id) => { const z = scores[id]; return z && z.n > 0 ? ' <span class="tag">' + Math.round(100 * z.up / z.n) + '% liked (' + z.n + ')</span>' : ''; };
+  const scoreTag = (id) => { const z = scores[id]; return z && z.up > 0 ? ' <span class="tag">' + z.up + ' thumbs up</span>' : ''; };
   const unreadFor = (matchId) => msgs.filter((m) => m.match_id === matchId && m.recipient_id === (user && user.id) && !m.read_at).length;
   const msgButton = (m) => { if (!MSOK || !m) return ''; const n = unreadFor(m.id); return (m.status === 'accepted' || m.status === 'completed') ? '<button class="btn ghost" data-msg="' + m.id + '">Message' + (n ? ' (' + n + ' new)' : '') + '</button>' : ''; };
   const rateLine = (m, otherId) => !MSOK || !m || m.status !== 'completed' ? '' : (m.id in myRatings
     ? '<div class="mut" style="margin-top:4px">You rated ' + nm(otherId) + ': ' + (myRatings[m.id] ? 'good' : 'not good') + '</div>'
-    : '<div style="margin-top:6px"><div class="mut">Rate ' + nm(otherId) + ':</div><div style="display:flex;gap:8px;margin-top:4px"><button class="btn ghost" style="flex:1" data-rate="' + m.id + '|1">Good</button><button class="btn ghost" style="flex:1" data-rate="' + m.id + '|0">Not good</button></div></div>');
+    : '<div style="margin-top:6px"><div class="mut">Rate ' + nm(otherId) + ':</div><div style="display:flex;gap:8px;margin-top:4px"><button class="btn ghost" style="flex:1" data-rate="' + m.id + '|1">Good</button><button class="btn ghost" style="flex:1" data-rate="' + m.id + '|0">Not good (private)</button></div><div class="mut" style="margin-top:4px">Only the team sees "Not good". Others see thumbs up only.</div></div>');
   const noFn = (r) => !!(r && r.error && /could not find the function|PGRST202|schema cache/i.test((r.error.message || '') + ' ' + (r.error.code || '')));
   const cancelTrip = async (id) => { const r = await sb.rpc('cancel_trip', { p_trip: id }); return noFn(r) ? sb.from('trips').update({ active: false }).eq('id', id) : r; };
   const cancelRequest = async (id) => { const r = await sb.rpc('cancel_request', { p_request: id }); return noFn(r) ? sb.from('ride_requests').update({ active: false }).eq('id', id) : r; };
@@ -489,7 +489,8 @@
     // the good record: finished rides (a brand-new member says so); shown before the warnings
     const done = role === 'driver' ? r.rides_as_driver : r.rides_as_rider;
     const good = done === undefined ? '' : done > 0 ? ` <span class="tag" style="background:var(--acc2);color:var(--acc)">${done} ride${done > 1 ? 's' : ''} done</span>` : ' <span class="tag">New member</span>';
-    return good + (bits.length ? ` <span class="tag" style="background:var(--warnbg);color:var(--warn)">${bits.join(', ')} (30 days)</span>` : '');
+    const onTime = role === 'driver' && r.timed_rides >= 3 ? ' <span class="tag">on time ' + Math.round(100 * r.on_time_rides / r.timed_rides) + '% of ' + r.timed_rides + ' rides</span>' : '';
+    return good + onTime + (bits.length ? ` <span class="tag" style="background:var(--warnbg);color:var(--warn)">${bits.join(', ')} (30 days)</span>` : '');
   };
   const who = (id, role) => nm(id) + badge(id, role);
   const LATE_MIN = 120;
