@@ -660,6 +660,13 @@ public class LocationService extends Service {
                     else if (lm >= 3) { Integer last = etaShown.get(id); if (last == null || lm >= last + 5) { etaShown.put(id, lm); notifyEta(r, lm); } }
                 }
             }
+            JSONArray fs = o.optJSONArray("finds");
+            if (fs != null) {
+                for (int i = 0; i < fs.length(); i++) {
+                    JSONObject f = fs.optJSONObject(i);
+                    if (f != null && findShown.add(f.optString("id"))) notifyFind(f);
+                }
+            }
             riderStage.keySet().retainAll(seen);
             saveRiderStages();
         } catch (Exception ignore) { /* try again next time */ }
@@ -730,6 +737,24 @@ public class LocationService extends Service {
                 .setContentIntent(openIntent())
                 .build();
         try { getSystemService(NotificationManager.class).notify(idOf(ID_RIDER + 0x3000, id), n); } catch (Exception ignore) { }
+    }
+
+    private final Set<String> findShown = new HashSet<>();   // "a driver fits your ride" notices already shown
+
+    /** A driver posted a trip that fits the rider's waiting request. Tapping opens the app to ask for a seat. */
+    private void notifyFind(JSONObject f) {
+        String id = f.optString("id"), text = f.optString("body", "A driver posted a trip that fits your request. Open the app to ask for a seat.");
+        Notification n = new NotificationCompat.Builder(this, ALERT_CHANNEL)
+                .setContentTitle(f.optString("title", "A driver fits your ride")).setContentText(text)
+                .setStyle(new NotificationCompat.BigTextStyle().bigText(text))
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setDefaults(Notification.DEFAULT_ALL)
+                .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+                .setAutoCancel(true)
+                .setContentIntent(openIntent())
+                .build();
+        try { getSystemService(NotificationManager.class).notify(idOf(ID_RIDER + 0x4000, id), n); } catch (Exception ignore) { }
     }
 
     private final Set<String> lateShown = new HashSet<>();   // seats whose "running late" alert has been shown

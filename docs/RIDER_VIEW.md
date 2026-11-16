@@ -40,7 +40,7 @@
 20. Rider's record builds ("N rides done"). **BUILT**.
 
 ### G. When there is no match
-21. "Tell me when a driver posts a trip that fits" (alert for a saved request). **GAP** (check what a waiting request does today).
+21. "Tell me when a driver posts a trip that fits" (alert for a saved request). **BUILT** (migration 068: when a driver posts a fitting trip, the rider gets a notice, and a phone alert on Android). First version: checks the next 14 days with the same fit check as accepting; not yet tested with two real people.
 22. A fallback such as transit directions. **GAP** (backlog idea).
 
 ### H. Needs and comfort (later)
