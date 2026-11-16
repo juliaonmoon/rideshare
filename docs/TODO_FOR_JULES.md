@@ -54,7 +54,8 @@ Open https://supabase.com/dashboard/project/iivhfapvkseeomxtsrxf/sql/new, paste 
 | `supabase/migrations/063_new_pickup_time.sql` | New pickup time: driver asks for a later time (before Arrived), rider Accept / Keep original / Cancel for free (3+ min later). No answer = no change (needs 062) | **To run** |
 | `supabase/migrations/064_driver_on_time.sql` | Driver on-time record: a ride is on time when the driver tapped Arrived within 3 minutes of the agreed pickup time (needs 058) | **To run** |
 | `supabase/migrations/065_auto_cancel_no_arrival.sql` | If the driver never taps Arrived, the ride closes itself 30 min after pickup time: rider gets all points back, driver gets a late mark | **To run** |
-| `supabase/migrations/067_no_double_booking.sql` | A rider cannot hold two rides within an hour of each other | **To run** |
+| `supabase/migrations/068_driver_appeared.sql` | A waiting rider gets a notice (and an Android phone alert) when a driver posts a trip that fits (needs 042 and 066; new Android app already on your phone) | **To run** |
+| `supabase/migrations/067_no_double_booking.sql` | A rider cannot hold two rides within an hour of each other | Ran |
 | `supabase/migrations/066_rider_phone_alerts.sql` | Rider phone alerts: the phone gets a heads-up when the driver looks 3+ min late and when a new pickup time is asked (needs 060 and 063; also needs the new Android app, already on your phone) | Ran |
 
 How to copy a file to the clipboard: ask Claude, or open the file on GitHub, click "Copy raw file", then paste it into the SQL editor.
