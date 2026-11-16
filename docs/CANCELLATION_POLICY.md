@@ -45,3 +45,8 @@ How it works (checked by reading the code 2026-11-09; a real-phone test is still
 - If the driver has not tapped Arrived 30 minutes after the pickup time, the ride closes itself. The rider gets all points back and the driver gets a late mark. (Jules OK'd 30 minutes, 2026-11-15.)
 - Does not apply if the driver tapped Arrived, if anyone was picked up, or if the rider confirmed being in the car.
 - No timer job: the check runs whenever anyone opens the app.
+
+## Repeat late marks (BUILT, migration 070)
+- A late mark is a ride the driver cancelled late, or never arrived for (the 30-minute auto-cancel), in the last 30 days.
+- At 3 marks the driver gets a friendly warning, and the team gets a row in the `driver_reviews` table (open / reviewed / dismissed, with a team note). Only one open review per driver at a time.
+- Nothing happens automatically beyond the warning: no ban, no lower ranking. A person decides. Ranking poor-record drivers lower is still undecided.
