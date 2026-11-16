@@ -1456,6 +1456,7 @@
         if (msgButton(x) && x.status === 'accepted') b.push(msgButton(x));
         if (isRider && meetButton(x)) b.push(meetButton(x));
         if (isRegular(x) && !x.picked_up_at) b.push(`<button class="btn ghost" data-stopseries="${x.trip_id}|${x.request_id}">End regular booking</button>`);
+        if (x.status === 'accepted' && (x.picked_up_at || x.arrived_at || (pickupMs(x) != null && Date.now() >= pickupMs(x) - 60 * 60000))) b.push('<a class="btn ghost" href="tel:911" style="text-decoration:none">Emergency: call 911</a>');
         if (x.status === 'accepted' && PCOK) b.push(`<button class="btn ghost" data-share="${x.id}">Share trip details</button>`, `<button class="btn ghost" data-report="${x.id}|${other}">Report a problem</button>`);
         actions = (isRider && x.rider_here_at && x.status === 'accepted' && !x.picked_up_at ? '<div class="mut" style="margin-top:6px">You told the driver you are here.</div>' : '') + (!isRider ? noShowHint(x) : '') + timeLine(x, isRider) + (b.length ? `<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:8px">${b.join(' ')}</div>` : '');
       }
