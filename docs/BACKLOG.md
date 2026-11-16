@@ -47,7 +47,7 @@ Newest decisions first. Nothing here is being built. Jules decides what moves up
 
 ## Gathered from older docs and chats (added 2026-11-09)
 ### Product ideas (docs/REQUIREMENTS.md: P1 = soon after launch, P2 = later)
-- P1: Share-my-trip link and an emergency button. (A "share this ride" message already exists.)
+- P1: Share-my-trip link and an emergency button. (BUILT, app #173: an "Emergency: call 911" button on a booked ride from 1 hour before pickup; it opens the phone dialer, it does not call by itself. Not yet checked on the Android app.)
 - P1: In-app chat with phone numbers hidden.
 - P1: Women-only / same-company-only matching (needs legal review).
 - P1: Insurance guidance screen ("what is covered").
