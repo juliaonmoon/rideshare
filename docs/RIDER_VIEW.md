@@ -53,7 +53,7 @@
 4. What bothers you most on the rider side today?
 
 ## Decisions from Jules (2026-11-10)
-1. **Many drivers at once.** A request goes to every driver whose route fits. The first to accept gets the ride. The others see "no longer available".
+1. **Many drivers at once.** A request goes to every driver whose route fits. The first to accept gets the ride. The others see "no longer available". **BUILT** (migration 069 closes the others; the app shows a plain message).
 2. **Thumbs up only, no public thumbs down.** A driver's thumbs-up total shows on their profile. A rider can send a private "something went wrong" note that only the team sees.
 3. **Matching is continuous.** No separate "keep watching" feature. The rider just gets a phone alert when a match appears later.
 4. **Biggest rider pain: driver late, no-show, last-minute cancel.**
