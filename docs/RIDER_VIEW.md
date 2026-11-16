@@ -11,7 +11,7 @@
 1. Ask in under 30 seconds: pickup, drop-off, "now" or a time window, how to pay (points or cash). **BUILT** (check: count the taps).
 2. Search any address in Canada and the USA; the exact address is used. **BUILT**.
 3. A regular commute (same ride every week) set up once. **BUILT** ("regular booking").
-4. A rider cannot be booked on two rides at the same time. **GAP** (drivers are protected; riders are not).
+4. A rider cannot be booked on two rides within an hour of each other. **BUILT** (migration 067).
 
 ### B. Choose a driver
 5. See only drivers who really fit (route, time, detour limit). Drivers who don't fit are hidden. **BUILT**. Check: when nothing fits, tell the rider why and what to change.
@@ -26,7 +26,7 @@
 
 ### D. Meet the driver
 12. Exact pickup spot, meet-spot note, car, plate, and live car on the map with an arrival time. **BUILT**.
-13. "Your driver is about N min late" at 2 minutes, with "keep or cancel for free" at 3. **BUILT in the app**; phone push alert **GAP** (needs an Android build).
+13. "Your driver is about N min late" at 2 minutes, with "keep or cancel for free" at 3. **BUILT** in the app and as a phone alert (migration 066).
 14. "Driver did not arrive" free cancel at 3 minutes late. **BUILT**.
 15. Share trip details with someone you trust. **BUILT**. Emergency button **GAP** (backlog P1).
 
