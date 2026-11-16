@@ -291,7 +291,7 @@
     return out.map((t) => ' <span class="tag">' + t + '</span>').join('');
   };
   let myLiveTrip = null, myLiveReq = null, curTrip = null, curReq = null, positions = {}, nowSel = {}, firstSeen = {};
-  const fail = (e) => toast(e && e.message ? e.message : 'Something went wrong');
+  const fail = (e) => toast(e && /^Already (declined|cancelled)|already has a confirmed seat/.test(e.message || '') ? 'This ride is no longer available. The rider is going with another driver.' : e && e.message ? e.message : 'Something went wrong');
   const nm = (id) => esc(names[id] || 'Someone');
   // photo (or the first letter of the name) and car, shown for the person I am matched with
   const avatar = (id, px) => { const c = cards[id], z = px || 44, base = 'width:' + z + 'px;height:' + z + 'px;border-radius:50%;flex:none;'; return c && c.photo ? '<img src="' + esc(c.photo) + '" alt="" referrerpolicy="no-referrer" style="' + base + 'object-fit:cover;background:var(--line)">' : '<span style="' + base + 'display:inline-flex;align-items:center;justify-content:center;background:var(--line);color:var(--acc);font-weight:700">' + esc((names[id] || '?').trim().charAt(0).toUpperCase()) + '</span>'; };
