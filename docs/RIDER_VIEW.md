@@ -71,3 +71,9 @@
 - Public: "N thumbs up" (already collected by the Good button), "on time X% of N rides" (shown from 3 rides), late cancels (existing warning tag).
 - Private: the "Not good" button now says so and is no longer shown to others (no more % liked). Time-change counts and stop events stay team-only.
 - On time = driver tapped Arrived within 3 minutes of the agreed pickup time.
+
+## Rider location sharing (BUILT v1, migration 071 + app #174)
+- The rider chooses, per ride, with a plain consent message. Off by default. Available from 15 minutes before pickup to 60 minutes after, until picked up.
+- Only the driver of that ride sees it (distance to the pickup spot, plus a Show-on-map link). Deleted when the ride ends. Nothing is kept as history.
+- v1 works while the app is open (Android and web, iPhone web too). Sharing with the screen off on Android needs a native step: not built yet.
+- Position goes through our own server, so Android and iPhone can share with each other.
