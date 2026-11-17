@@ -561,6 +561,28 @@
   }
   const propOpen = (m) => m.status === 'accepted' && !!m.prop_time && !m.picked_up_at && Date.parse(m.prop_time) > Date.now();
   const clockOf = (ms) => { const d = new Date(ms); return d.toLocaleTimeString('en-CA', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'America/Vancouver' }).replace(' a.m.', ' am').replace(' p.m.', ' pm'); };
+  // ---- rider location sharing: the rider chooses, per ride; only the driver of that ride sees it ----
+  let riderPos = {}, rpWatch = null, rpFor = null, rpLast = 0, rpWarned = false;
+  const shareWindow = (m) => { const p = pickupMs(m); return m.status === 'accepted' && !m.picked_up_at && p != null && Date.now() >= p - 15 * 60000 && Date.now() <= p + 60 * 60000; };
+  function rpStop() { if (rpWatch != null && navigator.geolocation) { try { navigator.geolocation.clearWatch(rpWatch); } catch (e) { /* ignore */ } } rpWatch = null; rpFor = null; }
+  function rpEnsure() {
+    const mine = matches.find((x) => user && x.rider_id === user.id && x.rider_share && shareWindow(x));
+    if (!mine || !navigator.geolocation) { rpStop(); return; }
+    if (rpFor === mine.id) return;
+    rpStop(); rpFor = mine.id;
+    rpWatch = navigator.geolocation.watchPosition((pos) => {
+      if (Date.now() - rpLast < 8000) return; rpLast = Date.now();
+      sb.rpc('share_rider_position', { p_match: mine.id, p_lat: pos.coords.latitude, p_lng: pos.coords.longitude, p_accuracy: pos.coords.accuracy || null }).then((r) => { if (r && r.data === false) rpStop(); }, () => { /* try again at the next reading */ });
+    }, () => { if (!rpWarned) { rpWarned = true; toast('Your location is blocked. Allow location for this app to share it with your driver.'); } }, { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 });
+  }
+  const locLine = (m, isRider) => {
+    if (m.status !== 'accepted' || m.picked_up_at || !m.rider_share) return '';
+    if (isRider) return '<div class="mut" style="margin-top:6px">Your driver can see where you are until you are picked up. Keep this app open.</div>';
+    const p = riderPos[m.id];
+    if (!p) return '<div class="mut" style="margin-top:6px">Rider is sharing their location. Waiting for the first reading.</div>';
+    const dist = p.to_pickup_m == null ? '' : (p.to_pickup_m < 1000 ? 'about ' + (Math.round(p.to_pickup_m / 10) * 10) + ' m from the pickup spot' : 'about ' + (p.to_pickup_m / 1000).toFixed(1) + ' km from the pickup spot');
+    return '<div class="open" style="margin-top:6px"><b>Rider location</b>' + (dist ? ': ' + dist : '') + ' <span class="mut">(' + p.age_s + ' s ago)</span> <a href="https://www.google.com/maps/search/?api=1&query=' + p.lat + ',' + p.lng + '" target="_blank" rel="noopener">Show on map</a></div>';
+  };
   const timeLine = (m, isRider) => {
     if (m.status !== 'accepted' || m.picked_up_at) return '';
     const cur = pickupMs(m);
@@ -629,6 +651,7 @@
       riderAlertsCheck();
       myLiveReq = (r.data || []).find(stillLive) || null; myReq = (r.data || []).find((x) => !x.live) || null; curReq = myLiveReq || myReq;
       matches = m.data || []; otherTrips = ot.data || []; otherReqs = orq.data || [];
+      try { rpEnsure(); const nr = {}; await Promise.all(matches.filter((x) => x.driver_id === uid && x.status === 'accepted' && x.rider_share && !x.picked_up_at).slice(0, 4).map(async (x) => { const rp = await sb.rpc('rider_position', { p_match: x.id }); if (!rp.error && rp.data) nr[x.id] = rp.data; })); riderPos = nr; } catch (e) { /* older database: no location sharing */ }
       const tIds = [...new Set(matches.map((x) => x.trip_id))], rIds = [...new Set(matches.map((x) => x.request_id))];
       const [et, er] = await Promise.all([
         tIds.length ? sb.from('trips').select('*').in('id', tIds) : { data: [] },
@@ -1457,8 +1480,9 @@
         if (isRider && meetButton(x)) b.push(meetButton(x));
         if (isRegular(x) && !x.picked_up_at) b.push(`<button class="btn ghost" data-stopseries="${x.trip_id}|${x.request_id}">End regular booking</button>`);
         if (x.status === 'accepted' && (x.picked_up_at || x.arrived_at || (pickupMs(x) != null && Date.now() >= pickupMs(x) - 60 * 60000))) b.push('<a class="btn ghost" href="tel:911" style="text-decoration:none">Emergency: call 911</a>');
+        if (isRider && shareWindow(x)) b.push(x.rider_share ? `<button class="btn ghost" data-locoff="${x.id}">Stop sharing my location</button>` : `<button class="btn" data-locon="${x.id}">Share my location with the driver</button>`);
         if (x.status === 'accepted' && PCOK) b.push(`<button class="btn ghost" data-share="${x.id}">Share trip details</button>`, `<button class="btn ghost" data-report="${x.id}|${other}">Report a problem</button>`);
-        actions = (isRider && x.rider_here_at && x.status === 'accepted' && !x.picked_up_at ? '<div class="mut" style="margin-top:6px">You told the driver you are here.</div>' : '') + (!isRider ? noShowHint(x) : '') + timeLine(x, isRider) + (b.length ? `<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:8px">${b.join(' ')}</div>` : '');
+        actions = (isRider && x.rider_here_at && x.status === 'accepted' && !x.picked_up_at ? '<div class="mut" style="margin-top:6px">You told the driver you are here.</div>' : '') + (!isRider ? noShowHint(x) : '') + locLine(x, isRider) + timeLine(x, isRider) + (b.length ? `<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:8px">${b.join(' ')}</div>` : '');
       }
       const held = x.status === 'accepted' && x.pay_with === 'points' && !x.settled ? ' (held until the ride)' : '';
       return `<div style="padding:8px 0;border-top:1px solid var(--line)"><b>${when(x)}</b> <span class="tag">${esc(x.status === 'accepted' ? STEP_LABEL[stageOf(x)] : statusText(x.status))}</span>${isRegular(x) ? ' <span class="tag">regular</span>' : ''}${x.status === 'accepted' ? '<div style="margin:8px 0">' + whoCard(other, isRider ? 'driver' : 'rider') + '</div>' + meetLine(x) : ''}<div class="mut">${isRider ? 'Driver' : 'Rider'} ${nm(other)}${badge(other, isRider ? 'driver' : 'rider')} &middot; ${pay}${held}</div>${isRider && x.status === 'accepted' && !x.picked_up_at && freeUntilMs(x) != null && Date.now() < freeUntilMs(x) ? '<div class="mut">Cancel free until ' + freeUntilText(x) + '</div>' : ''}${isRider ? etaBanner(x) : ''}${actions}</div>`;
@@ -1843,6 +1867,8 @@ const grpOpts = (G) => [['', 'Any']].concat(G.map(([k, l]) => [k, l + ' (' + bas
     on('lr-stop', () => window.RS_UI.stopSim('lr'));
     const each = (sel, fn) => document.querySelectorAll(['#v-lhome', '#v-ldriver', '#v-lrider', '#v-lupcoming'].map((r) => r + ' ' + sel).join(', ')).forEach((b) => (b.onclick = () => fn(b)));
     each('[data-report]', (b) => { const p = b.dataset.report.split('|'); reportDialog(p[0], p[1]); });
+    each('[data-locon]', (b) => { if (window.confirm('Share your location with your driver?\n\nYour driver will see where you are until you are picked up. Only your driver sees it. It is deleted when the ride ends, and you can stop any time.')) run(sb.rpc('set_location_sharing', { p_match: b.dataset.locon, p_on: true }), 'Sharing your location with your driver'); });
+    each('[data-locoff]', (b) => run(sb.rpc('set_location_sharing', { p_match: b.dataset.locoff, p_on: false }), 'Stopped sharing'));
     each('[data-share]', (b) => shareTrip(b.dataset.share));
     each('[data-meet]', (b) => meetDialog(b.dataset.meet));
     each('[data-ptrip]', (b) => tripDetail(b.dataset.ptrip));
