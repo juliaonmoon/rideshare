@@ -51,5 +51,4 @@ const st = async (id) => (await q("select status from matches where id=$1", [id]
 await q("update matches set status='accepted' where id=$1", [a]);
 ok('one-seat trip is full: the other waiting request on it is closed', (await st(b)) === 'declined', await st(b));
 ok('the accepted one stays accepted', (await st(a)) === 'accepted');
-const cr = (await q("select closed_reason r from matches where id=$1", [b]))[0].r; ok('closed request remembers why (full)', cr === 'full', String(cr));
 console.log(res.every(Boolean) ? 'ALL PASS' : 'SOME FAIL'); process.exit(0);

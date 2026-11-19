@@ -54,7 +54,6 @@ Open https://supabase.com/dashboard/project/iivhfapvkseeomxtsrxf/sql/new, paste 
 | `supabase/migrations/063_new_pickup_time.sql` | New pickup time: driver asks for a later time (before Arrived), rider Accept / Keep original / Cancel for free (3+ min later). No answer = no change (needs 062) | **To run** |
 | `supabase/migrations/064_driver_on_time.sql` | Driver on-time record: a ride is on time when the driver tapped Arrived within 3 minutes of the agreed pickup time (needs 058) | **To run** |
 | `supabase/migrations/065_auto_cancel_no_arrival.sql` | If the driver never taps Arrived, the ride closes itself 30 min after pickup time: rider gets all points back, driver gets a late mark | **To run** |
-| `supabase/migrations/074_closed_reason.sql` | Remembers why a waiting request was closed, for the new Missed requests list (needs 069 and 073) | **To run** |
 | `supabase/migrations/073_close_when_full.sql` | When a trip has no seat left, its other waiting requests are closed (the app also hides them) | Ran |
 | `supabase/migrations/072_rider_location_screen_off.sql` | Rider location sharing keeps working with the screen off on Android (needs 068 and 071; new Android app) | Ran |
 | `supabase/migrations/071_rider_location_sharing.sql` | The rider can share their location with the driver for one ride (off by default; from 15 min before pickup until picked up; deleted after) (needs 063) | Ran |
