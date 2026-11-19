@@ -37,7 +37,7 @@ public class RideShareLocationPlugin extends Plugin {
             return;
         }
         boolean riderOnly = Boolean.TRUE.equals(call.getBoolean("riderOnly", false));
-        if (!riderOnly && getPermissionState("location") != PermissionState.GRANTED) {   // a rider only needs notifications, not the location
+        if ((!riderOnly || Boolean.TRUE.equals(call.getBoolean("shareRider", false))) && getPermissionState("location") != PermissionState.GRANTED) {   // a rider only needs notifications, not the location
             requestPermissionForAlias("location", call, "locationResult");
             return;
         }
@@ -71,7 +71,8 @@ public class RideShareLocationPlugin extends Plugin {
                 .putExtra("url", call.getString("url"))
                 .putExtra("key", call.getString("key", ""))
                 .putExtra("token", call.getString("token"))
-                .putExtra("riderOnly", Boolean.TRUE.equals(call.getBoolean("riderOnly", false)));
+                .putExtra("riderOnly", Boolean.TRUE.equals(call.getBoolean("riderOnly", false)))
+                .putExtra("shareRider", Boolean.TRUE.equals(call.getBoolean("shareRider", false)));
         ContextCompat.startForegroundService(getContext(), i);
         JSObject r = new JSObject();
         r.put("notifications", androidx.core.app.NotificationManagerCompat.from(getContext()).areNotificationsEnabled());

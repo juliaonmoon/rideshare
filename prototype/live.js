@@ -352,7 +352,7 @@
     try {
       const st = await nat.status(); if (st && st.running) return;
       const r = await sb.rpc('start_tracking'); if (r.error || !r.data) return;
-      const res = await nat.start({ url: CFG.supabaseUrl, key: CFG.supabaseKey, token: r.data, riderOnly: true });
+      const res = await nat.start({ url: CFG.supabaseUrl, key: CFG.supabaseKey, token: r.data, riderOnly: true, shareRider: !!rpFor });
       if (res && res.notifications === false) toast('Phone alerts are off. Allow notifications for RideShare in your phone settings to hear when your driver is on the way.');
     } catch (e) { /* permission refused: no phone alerts */ }
   }
@@ -562,7 +562,7 @@
   const propOpen = (m) => m.status === 'accepted' && !!m.prop_time && !m.picked_up_at && Date.parse(m.prop_time) > Date.now();
   const clockOf = (ms) => { const d = new Date(ms); return d.toLocaleTimeString('en-CA', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'America/Vancouver' }).replace(' a.m.', ' am').replace(' p.m.', ' pm'); };
   // ---- rider location sharing: the rider chooses, per ride; only the driver of that ride sees it ----
-  let riderPos = {}, rpWatch = null, rpFor = null, rpLast = 0, rpWarned = false;
+  let rpNativeFail = null, riderPos = {}, rpWatch = null, rpFor = null, rpLast = 0, rpWarned = false;
   const shareWindow = (m) => { const p = pickupMs(m); return m.status === 'accepted' && !m.picked_up_at && p != null && Date.now() >= p - 15 * 60000 && Date.now() <= p + 60 * 60000; };
   function rpStop() { if (rpWatch != null && navigator.geolocation) { try { navigator.geolocation.clearWatch(rpWatch); } catch (e) { /* ignore */ } } rpWatch = null; rpFor = null; }
   function rpEnsure() {
@@ -570,6 +570,11 @@
     if (!mine || !navigator.geolocation) { rpStop(); return; }
     if (rpFor === mine.id) return;
     rpStop(); rpFor = mine.id;
+    const nat = nativeLoc();
+    if (nat && rpNativeFail !== mine.id) {   // the Android app sends the position itself, also with the screen off
+      sb.rpc('start_tracking').then((r) => { if (r.error || !r.data) throw new Error('token'); return nat.start({ url: CFG.supabaseUrl, key: CFG.supabaseKey, token: r.data, riderOnly: true, shareRider: true }); }).catch(() => { rpNativeFail = mine.id; rpFor = null; rpEnsure(); });
+      return;
+    }
     rpWatch = navigator.geolocation.watchPosition((pos) => {
       if (Date.now() - rpLast < 8000) return; rpLast = Date.now();
       sb.rpc('share_rider_position', { p_match: mine.id, p_lat: pos.coords.latitude, p_lng: pos.coords.longitude, p_accuracy: pos.coords.accuracy || null }).then((r) => { if (r && r.data === false) rpStop(); }, () => { /* try again at the next reading */ });
