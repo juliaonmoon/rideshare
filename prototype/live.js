@@ -881,6 +881,26 @@
     const q = [...otherReqs, ...extraReqs].find((r) => r.id === x.request_id); if (!q) return '';
     return '<div style="padding:8px 0;border-top:1px solid var(--line)"><b style="font-size:17px">' + nm(x.rider_id) + '</b>' + badge(x.rider_id, 'rider') + tagsFor(x.rider_id, 'rider') + (() => { const tr = tripBy(x.trip_id); return '<div style="margin:4px 0;font-size:16px"><b>' + esc(dateLong(x.ride_date)) + '</b>' + (tr ? ' &middot; ' + (isFlexFree(tr) ? 'you leave between ' + clk(tr.flex_from) + ' and ' + clk(tr.flex_to) : 'you leave ' + clk(tr.depart_min)) : '') + '</div>' + (tr && !inTrip ? '<div class="mut">Your trip: ' + esc(disp(tr, 'origin')) + ' to ' + esc(disp(tr, 'dest')) + '</div>' : ''); })() + '<div class="mut">Rider: ' + esc(disp(q, 'pickup')) + ' to ' + esc(disp(q, 'dropoff')) + ' &middot; ready ' + clk(q.ready_from) + ' to ' + clk(q.ready_to) + ' &middot; ' + (x.pay_with === 'points' ? x.points + ' pts' : 'cash gas-share') + '</div>' + detourLine(reqFit(x)) + leaveLine(x.id) + '<div style="margin-top:8px"><button class="btn" data-acc="' + x.id + '" style="padding:12px 22px;font-size:16px">Accept</button> <button class="btn ghost" data-dec="' + x.id + '">Decline</button></div></div>';
   }
+  // Requests that no longer work for me (rider cancelled, trip full, rider went with someone else, no longer fits): kept here instead of the active list
+  function missedCard() {
+    if (!user) return '';
+    const t0 = todayStr(), nowMs = Date.now(), reqById = {};
+    [...otherReqs, ...extraReqs].forEach((q) => { reqById[q.id] = q; });
+    const mine = matches.filter((x) => x.driver_id === user.id && x.ride_date >= t0);
+    const full = (x) => { const tr = tripBy(x.trip_id); return !!tr && mine.filter((a) => a.trip_id === x.trip_id && a.ride_date === x.ride_date && (a.status === 'accepted' || a.status === 'completed')).length >= (tr.max_pickups || 3); };
+    const items = [];
+    mine.forEach((x) => {
+      if (x.status === 'declined' && x.closed_reason) items.push([x, x.closed_reason === 'full' ? 'Your trip was full' : 'The rider went with another driver']);
+      else if (x.status === 'requested') {
+        const q = reqById[x.request_id];
+        if (!q || q.active === false || (q.expires_at && Date.parse(q.expires_at) < nowMs)) items.push([x, 'The rider cancelled or the request ended']);
+        else if (full(x)) items.push([x, 'Your trip was full']);
+        else if (fitServer[x.id] === false) items.push([x, 'It no longer fits your detour limits']);
+      }
+    });
+    if (!items.length) return '';
+    return card('Missed requests', fold('f-missed', 'Missed requests (' + items.length + ')', items.slice(0, 15).map(([x, why]) => '<div style="padding:6px 0;border-top:1px solid var(--line)"><b>' + nm(x.rider_id) + '</b> &middot; ' + esc(dateLong(x.ride_date)) + '<div class="mut">' + esc(why) + '</div></div>').join('')));
+  }
   function renderRequests() {
     const wrap = $('req-wrap'); if (!wrap) return;
     const reqById = {}; [...otherReqs, ...extraReqs].forEach((q) => { reqById[q.id] = q; });
@@ -1612,7 +1632,7 @@ const grpOpts = (G) => [['', 'Any']].concat(G.map(([k, l]) => [k, l + ' (' + bas
     ].filter(Boolean).join('');
     const filterBar = '<div class="days" style="margin-bottom:6px">' + chip('data-tfw', 'upcoming', 'Upcoming (' + nWhen('upcoming') + ')', tf.when === 'upcoming') + chip('data-tfw', 'past', 'Past (' + nWhen('past') + ')', tf.when === 'past') + chip('data-tfw', 'all', 'All', tf.when === 'all') + '</div>'
       + fold('f-filters', 'Filters' + (nOn ? ' (' + nOn + ' on)' : ''), '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">' + drops + '</div>' + (filtersOn ? '<div style="margin-top:8px"><button type="button" class="btn ghost" data-tfclear="1" style="padding:4px 10px;min-height:0">Clear filters</button></div>' : ''));
-    const listPaneHtml = paneSegBar() + lostBanner() + card('Trips', filterBar + listBody) + (tripList.length && !byTrip ? card('Manage my trips', fold('f-manage-trips', 'My trips (' + tripList.length + '): edit or stop', tripList.map(tripRow).join(''))) : '') + cancelAllCard();
+    const listPaneHtml = paneSegBar() + lostBanner() + card('Trips', filterBar + listBody) + missedCard() + (tripList.length && !byTrip ? card('Manage my trips', fold('f-manage-trips', 'My trips (' + tripList.length + '): edit or stop', tripList.map(tripRow).join(''))) : '') + cancelAllCard();
     window.__rules = card('Cancellation rules', policy);
     if (tripsPane === 'list') return listPaneHtml;
     if (tripsView === 'rider') {
@@ -1621,7 +1641,7 @@ const grpOpts = (G) => [['', 'Any']].concat(G.map(([k, l]) => [k, l + ' (' + bas
       return toggle + bar + lostBanner() + (tripsPane === 'cal' ? calCard : comingR) + card('Past rides', rideRows ? fold('f-past-rides', 'Show past rides', rideRows) : '<p class="mut">Nothing yet. Rides you have taken show up here.</p>') + cancelAllCard();
     }
     const askN = asDriver.filter((x) => x.status === 'requested').length;
-    const comingD = (tripList.length ? card('Upcoming trips', mineTrip) : '') + (asDriver.length ? card('Upcoming riders', driverRows) : '')
+    const comingD = (tripList.length ? card('Upcoming trips', mineTrip) : '') + (asDriver.length ? card('Upcoming riders', driverRows) : '') + missedCard()
       || card('Upcoming trip', '<p class="mut">Nothing yet. Switch on <b>Offer seats to riders</b> on Home, or post a trip for a set day and time.</p>');
     return toggle + bar + (tripsPane === 'cal' ? calCard : comingD) + card('Past trips', tripRows ? fold('f-past-trips', 'Show past trips', tripRows) : '<p class="mut">Nothing yet. Finished trips show up here.</p>') + cancelAllCard();
   }
