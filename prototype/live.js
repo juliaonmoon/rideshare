@@ -888,7 +888,7 @@
     const mineAll = user ? matches.filter((x) => x.driver_id === user.id && x.ride_date >= t0) : [];
     const gone = (x) => { const q = reqById[x.request_id]; return !q || q.active === false || (q.expires_at && Date.parse(q.expires_at) < nowMs); };
     const tripFull = (x) => { const tr = tripBy(x.trip_id); return !!tr && mineAll.filter((a) => a.trip_id === x.trip_id && a.ride_date === x.ride_date && (a.status === 'accepted' || a.status === 'completed')).length >= (tr.max_pickups || 3); };
-    const asks = mineAll.filter((x) => x.status === 'requested' && !gone(x) && fitServer[x.id] !== false && !tripFull(x));
+    const asks = mineAll.filter((x) => x.status === 'requested' && !gone(x) && fitServer[x.id] !== false && !tripFull(x) && !(homeView === 'trip' && detailTripId && x.trip_id === detailTripId));
     // riders I accepted who are still waiting for me to set off, with the time I must leave by
     const waiting = mineAll.filter((x) => x.status === 'accepted' && !x.en_route_at && !x.picked_up_at && leaveInfo[x.id] && !leaveInfo[x.id].moving && leaveInfo[x.id].leave_by_ms)
       .sort((p, q) => leaveInfo[p.id].leave_by_ms - leaveInfo[q.id].leave_by_ms);
