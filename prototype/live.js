@@ -696,7 +696,7 @@
         leaveInfo = li;
       } catch (e) { leaveInfo = {}; /* older database: no leave-by */ }
       if (CDOK === null) CDOK = !(await sb.from('trips').select('changed_day').limit(1)).error;
-      if (NTOK !== false) { try { const nr = await sb.from('notices').select('id,kind,title,body,created_at').is('read_at', null).order('created_at', { ascending: false }).limit(10); if (nr.error) { NTOK = false; notices = []; } else { NTOK = true; notices = nr.data || []; } } catch (e) { notices = []; } }
+      if (NTOK !== false) { try { const nr = await sb.from('notices').select('id,kind,title,body,created_at').is('read_at', null).order('created_at', { ascending: false }).limit(10); if (nr.error) { NTOK = false; notices = []; } else { NTOK = true; notices = nr.data || []; const oldN = notices.filter((n) => Date.now() - Date.parse(n.created_at) > 2 * 864e5); if (oldN.length) { try { sb.rpc('mark_notices_read', { p_ids: oldN.map((n) => n.id) }); } catch (e) { /* ignore */ } notices = notices.filter((n) => !oldN.includes(n)); } } } catch (e) { notices = []; } }
       if (RPOK) {
         try {
           const ids = [...new Set([...myTrips, ...otherTrips, ...extraTrips].filter((x) => x.repeat_days && x.repeat_days.length).map((x) => x.id))];
@@ -887,7 +887,8 @@
     const t0 = todayStr(), nowMs = Date.now();
     const mineAll = user ? matches.filter((x) => x.driver_id === user.id && x.ride_date >= t0) : [];
     const gone = (x) => { const q = reqById[x.request_id]; return !q || q.active === false || (q.expires_at && Date.parse(q.expires_at) < nowMs); };
-    const asks = mineAll.filter((x) => x.status === 'requested' && !gone(x) && fitServer[x.id] !== false);
+    const tripFull = (x) => { const tr = tripBy(x.trip_id); return !!tr && mineAll.filter((a) => a.trip_id === x.trip_id && a.ride_date === x.ride_date && (a.status === 'accepted' || a.status === 'completed')).length >= (tr.max_pickups || 3); };
+    const asks = mineAll.filter((x) => x.status === 'requested' && !gone(x) && fitServer[x.id] !== false && !tripFull(x));
     // riders I accepted who are still waiting for me to set off, with the time I must leave by
     const waiting = mineAll.filter((x) => x.status === 'accepted' && !x.en_route_at && !x.picked_up_at && leaveInfo[x.id] && !leaveInfo[x.id].moving && leaveInfo[x.id].leave_by_ms)
       .sort((p, q) => leaveInfo[p.id].leave_by_ms - leaveInfo[q.id].leave_by_ms);
