@@ -113,6 +113,10 @@ public class LocationService extends Service {
     private boolean firstPoll = true;            // requests already waiting when we start are not announced
     private int inactive = 0;
     private final Set<String> notified = new HashSet<>();
+    private volatile boolean shareRider = false;    // a rider chose to share their position with the driver: use the location (also with the screen off)
+    private volatile String shareMatch = "";        // the ride to send the rider's position for ("" = none)
+    private int shareIdle = 0;                      // polls in a row with nothing to share
+    private long lastRiderPost = 0;
     private volatile boolean riderOnly = false;     // started for a rider: watch rides and alert, but do not use or send the location
     private volatile boolean riderActive = false;   // the rider has a request or ride that matters today
     private volatile double destLat = Double.NaN, destLng = Double.NaN;   // where the driver's trip ends
@@ -148,12 +152,13 @@ public class LocationService extends Service {
         SharedPreferences sp = getSharedPreferences("rideshare_tracking", MODE_PRIVATE);
         if (intent != null && intent.hasExtra("token")) {
             sp.edit().putString("url", intent.getStringExtra("url")).putString("key", intent.getStringExtra("key"))
-                    .putString("token", intent.getStringExtra("token")).putBoolean("riderOnly", intent.getBooleanExtra("riderOnly", false)).apply();
+                    .putString("token", intent.getStringExtra("token")).putBoolean("riderOnly", intent.getBooleanExtra("riderOnly", false)).putBoolean("shareRider", intent.getBooleanExtra("shareRider", false)).apply();
         }
         url = sp.getString("url", "");
         key = sp.getString("key", "");
         token = sp.getString("token", "");
         riderOnly = sp.getBoolean("riderOnly", false);
+        shareRider = riderOnly && sp.getBoolean("shareRider", false);
         if (riderStage.isEmpty()) loadRiderStages();
         if (token.isEmpty() || url.isEmpty()) {
             stopSelf();
@@ -171,11 +176,16 @@ public class LocationService extends Service {
                 .setCategory(NotificationCompat.CATEGORY_SERVICE)
                 .build();
         if (Build.VERSION.SDK_INT >= 29) {
-            startForeground(1, n, riderOnly ? ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC : ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION);
+            try {
+                startForeground(1, n, (riderOnly && !shareRider) ? ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC : ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION);
+            } catch (Exception e) {   // started from the background: Android does not allow the location type, so go on as alerts only
+                shareRider = false;
+                startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
+            }
         } else {
             startForeground(1, n);
         }
-        if (!riderOnly) startUpdates();
+        if (!riderOnly || shareRider) startUpdates();
         if (!polling) { polling = true; main.post(poller); }
         if (!fakeLooping) { fakeLooping = true; main.post(fakeLoop); }
         running = true;
@@ -192,7 +202,7 @@ public class LocationService extends Service {
                 Location loc = result.getLastLocation();
                 if (loc == null || fakeActive()) return;   // while testing with a pretend position, the real one is ignored
                 lastLoc = loc;
-                io.execute(() -> { post(loc); checkStops(loc); });
+                io.execute(() -> { post(loc); checkStops(loc); postRider(loc); });
             }
         };
         LocationRequest req = new LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 4000)
@@ -203,6 +213,36 @@ public class LocationService extends Service {
             lastError = "Location permission missing";
             stopSelf();
         }
+    }
+
+    /** A rider who turned sharing on: send the position for that ride (the server only keeps it for the driver of that ride, and deletes it after). */
+    private void postRider(Location loc) {
+        String match = shareMatch;
+        if (match == null || match.isEmpty()) return;
+        long nowMs = System.currentTimeMillis();
+        if (nowMs - lastRiderPost < 8000) return;
+        lastRiderPost = nowMs;
+        try {
+            JSONObject body = new JSONObject().put("p_token", token).put("p_match", match)
+                    .put("p_lat", loc.getLatitude()).put("p_lng", loc.getLongitude())
+                    .put("p_accuracy", loc.hasAccuracy() ? (double) loc.getAccuracy() : JSONObject.NULL);
+            String b = rpc("share_rider_position_token", body);
+            if ("false".equals(b)) shareMatch = "";   // the server says sharing is over
+        } catch (Exception ignore) { /* next reading */ }
+    }
+
+    /** The rider's sharing is over: stop using the location and go back to alerts only. */
+    private void endRiderShare() {
+        shareRider = false; shareMatch = ""; shareIdle = 0;
+        getSharedPreferences("rideshare_tracking", MODE_PRIVATE).edit().putBoolean("shareRider", false).apply();
+        if (client != null && callback != null) client.removeLocationUpdates(callback);
+        callback = null;
+        try {
+            Notification n = new NotificationCompat.Builder(this, CHANNEL).setContentTitle("RideShare is on")
+                    .setContentText("You get alerts about your rides and seat requests.").setSmallIcon(android.R.drawable.ic_menu_mylocation)
+                    .setOngoing(true).setContentIntent(openIntent()).setCategory(NotificationCompat.CATEGORY_SERVICE).build();
+            if (Build.VERSION.SDK_INT >= 29) startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC); else startForeground(1, n);
+        } catch (Exception ignore) { }
     }
 
     private void post(Location loc) {
@@ -642,6 +682,8 @@ public class LocationService extends Service {
             if (b == null) return;   // no network, or an older database without rider alerts
             JSONObject o = new JSONObject(b);
             riderActive = o.optBoolean("active", false);
+            shareMatch = o.isNull("share_match") ? "" : o.optString("share_match", "");
+            if (riderOnly && shareRider) { if (shareMatch.isEmpty()) { if (++shareIdle >= 3) endRiderShare(); } else shareIdle = 0; }
             JSONArray rs = o.optJSONArray("rides");
             Set<String> seen = new HashSet<>();
             if (rs != null) {

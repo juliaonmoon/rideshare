@@ -75,5 +75,5 @@
 ## Rider location sharing (BUILT v1, migration 071 + app #174)
 - The rider chooses, per ride, with a plain consent message. Off by default. Available from 15 minutes before pickup to 60 minutes after, until picked up.
 - Only the driver of that ride sees it (distance to the pickup spot, plus a Show-on-map link). Deleted when the ride ends. Nothing is kept as history.
-- v1 works while the app is open (Android and web, iPhone web too). Sharing with the screen off on Android needs a native step: not built yet.
+- Works while the app is open (Android and web, iPhone web too). In the Android app it also keeps working with the screen off (migration 072, app #175): the phone helper switches to location mode only while sharing and goes back to alerts-only after.
 - Position goes through our own server, so Android and iPhone can share with each other.
