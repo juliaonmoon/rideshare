@@ -67,3 +67,10 @@ phone push for the late heads-up (not built); rider double booking (not built).
 - Fake server sent a ride with a new-time request and a driver predicted 12 min late. The phone showed "may be late" and "New pickup time?" notices with the right times. DB test tests/db/run66.mjs 4/4. Not yet tried end to end with two real people.
 
 - Rider location sharing with the screen off (emulator, fake server, 2026-11-18): PASS. Position kept arriving with the screen off, stopped when sharing ended, and the helper dropped back to alerts-only. Not yet tried with a real rider and driver.
+
+## Real two-account test (2026-11-18/19, driver = Jules' phone, rider = spare account)
+- Seat request, accept, pickup, drop-off, points moved: PASS.
+- Rider location sharing: PASS (driver saw distance to the pickup spot; deleted after the ride). Found: it was hard to find, now on the Home Next trip card (#176).
+- Found: a full trip still showed another waiting request, and accepting it gave a wrong message. Fixed (073, #177). Old notices piled up as pop-ups. Fixed (#177).
+- New pickup time: PASS. Phone alert data carries the proposal; Keep original leaves the time and counts it as declined; Accept changes the time; Cancel for free closes the ride with no late mark.
+- Not yet checked: the phone alert popping up on a real rider phone (no second Android phone), the rider no-show and I'm here buttons with real people.
