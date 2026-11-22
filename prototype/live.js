@@ -347,7 +347,7 @@
   async function riderAlertsCheck() {
     const nat = nativeLoc(); if (!nat || !user || driveSession) return;
     const t0 = todayStr();
-    if (!(matches.some((x) => x.rider_id === user.id && (x.status === 'accepted' || x.status === 'requested') && x.ride_date >= t0) || myLiveReq || myReq)) return;
+    if (!(matches.some((x) => x.rider_id === user.id && (x.status === 'accepted' || x.status === 'requested') && x.ride_date >= t0) || myLiveReq || myReq || myTrips.some((t) => tripOn(t, t0)))) return;
     if (Date.now() - riderAlertsAt < 60000) return; riderAlertsAt = Date.now();
     try {
       const st = await nat.status(); if (st && st.running) return;
