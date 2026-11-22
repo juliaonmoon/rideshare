@@ -38,7 +38,7 @@ How it works (checked by reading the code 2026-11-09; a real-phone test is still
 
 ## New pickup time (migration 063)
 - The driver can ask for a later pickup time before tapping Arrived (up to 60 min later). The rider can accept, keep the original time, or cancel for free if the new time is 3+ minutes later.
-- **No answer = no change.** The agreed time stays until the rider accepts.
+- **CHANGED 2026-11-22 (Jules): a late driver's new time takes effect at once.** The driver cannot undo being late, so the rider's answer does not decide the time. The rider is told (card + Android phone alert) and can tap OK, or cancel for free if the new time is 3 or more minutes later. Every change is counted privately and the first agreed time is kept for the team (migration 078).
 - Lateness is measured against the agreed time.
 
 ## Driver never arrived and rider left (migration 065)
