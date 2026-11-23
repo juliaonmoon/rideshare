@@ -54,7 +54,8 @@ Open https://supabase.com/dashboard/project/iivhfapvkseeomxtsrxf/sql/new, paste 
 | `supabase/migrations/063_new_pickup_time.sql` | New pickup time: driver asks for a later time (before Arrived), rider Accept / Keep original / Cancel for free (3+ min later). No answer = no change (needs 062) | **To run** |
 | `supabase/migrations/064_driver_on_time.sql` | Driver on-time record: a ride is on time when the driver tapped Arrived within 3 minutes of the agreed pickup time (needs 058) | **To run** |
 | `supabase/migrations/065_auto_cancel_no_arrival.sql` | If the driver never taps Arrived, the ride closes itself 30 min after pickup time: rider gets all points back, driver gets a late mark | **To run** |
-| `supabase/migrations/078_late_time_takes_effect.sql` | A late driver's new pickup time takes effect right away (rider can OK or cancel for free if 3+ min later); needs 063, 072; new Android app for the phone alert | **To run** |
+| `supabase/migrations/078_late_time_takes_effect.sql` | A late driver's new pickup time takes effect right away (rider can OK or cancel for free if 3+ min later); needs 063, 072; new Android app for the phone alert | Done |
+| `supabase/migrations/079_cancel_notice_details.sql` | "A rider cancelled" notices now say the pickup time, place and how long before pickup, so two cancels never look the same; needs 053 | **To run** |
 | `supabase/migrations/077_test_riders_follow_rules.sql` | Made-up (sample) test riders only send a request if it fits the trip by the same rules as a real rider (needs 042) | **To run** |
 | `supabase/migrations/076_alerts_skip_full_trips.sql` | The phone alert for a seat request is skipped when the trip is already full (needs 048) | **To run** |
 | `supabase/migrations/075_supersede_proposal_notices.sql` | A new pickup-time proposal replaces the older unread notices for that ride, and answering clears it (needs 053 and 063) | Ran |
