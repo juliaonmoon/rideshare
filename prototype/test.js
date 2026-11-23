@@ -94,9 +94,9 @@ t('dates: one-off and weekly repeat occurrences (ISO days, Mon=1)', () => {
   assert.strictEqual(D.label('2026-10-22', now), 'Thu Oct 22');
   assert.strictEqual(D.repeatText([3, 1, 5]), 'Mon Wed Fri');
 });
-t('dates: booking rules (30 min ahead, 30 days max, no past)', () => {
+t('dates: booking rules (5 min ahead, 30 days max, no past)', () => {
   const D = require('./dates.js'), now = new Date(2026, 9, 18, 10, 0);
-  assert.strictEqual(D.check('2026-10-18', 10 * 60 + 29, now), 'Pick a time at least 30 minutes from now');
+  assert.strictEqual(D.check('2026-10-18', 10 * 60 + 4, now), 'Pick a time at least 5 minutes from now');
   assert.strictEqual(D.check('2026-10-18', 10 * 60 + 30, now), '');
   assert.strictEqual(D.check('2026-10-17', 600, now), 'That date has passed');
   assert.strictEqual(D.check('2026-11-17', 600, now), '');

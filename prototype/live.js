@@ -28,7 +28,7 @@
   const hint = '<div class="card"><p class="mut">Sign in at the top of the page to use RideShare.</p></div>';
   const todayStr = () => RSD.today();
   const clk = (m) => { const t = Math.round(m), h = Math.floor(t / 60) % 24, mm = t % 60; return ((h % 12) || 12) + ':' + String(mm).padStart(2, '0') + ' ' + (h < 12 ? 'am' : 'pm'); };
-  // Default date for a form: the saved date, but never in the past, and if today's time has already passed (or is under 30 minutes away) use tomorrow.
+  // Default date for a form: the saved date, but never in the past, and if today's time has already passed (or is under 5 minutes away) use tomorrow.
   const defaultDate = (saved, minutes) => { let d = !saved || saved < todayStr() ? todayStr() : saved; if (d === todayStr() && RSD.check(d, minutes)) d = RSD.addDays(todayStr(), 1); return d; };
   const maxDate = () => RSD.addDays(todayStr(), RSD.MAX_AHEAD_DAYS);
   const dayChips = (id, sel) => `<div class="days" id="${id}">${RSD.DAY_NAMES.map((n, i) => `<button type="button" data-day="${i + 1}" class="${(sel || []).includes(i + 1) ? 'on' : ''}">${n}</button>`).join('')}</div>`;
