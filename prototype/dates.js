@@ -3,7 +3,7 @@
 (function (root) {
   'use strict';
   const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-  const MIN_LEAD_MIN = 30;   // like Uber: at least 30 minutes ahead
+  const MIN_LEAD_MIN = 5;    // a driver can leave soon; riders are matched against the driver's live position (Jules 2026-11-23)
   const MAX_AHEAD_DAYS = 30; // like Uber: up to 30 days ahead
 
   const pad = (n) => String(n).padStart(2, '0');
