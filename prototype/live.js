@@ -1306,7 +1306,7 @@
     if (pending && pending.kind === 'trip') {
       const r = pending.row, upd = myTrip && !editing.newTrip;
       return card('Confirm your trip', `<p><b>${esc(disp(r, 'origin'))}</b> to <b>${esc(disp(r, 'dest'))}</b></p><p>${tripWhen(r)}</p>${pending.note ? '<p class="mut">' + esc(pending.note) + '</p>' : ''}
-        <p class="mut">${r.max_pickups === 1 ? 'One pickup only' : 'Up to ' + r.max_pickups + ' pickups'} &middot; max ${r.max_detour} extra min for one pickup${r.max_pickups > 1 && r.max_total_detour != null ? ' &middot; max ' + r.max_total_detour + ' extra min for all pickups together' : ''} &middot; accepts ${r.accepts === 'either' ? 'points or cash' : r.accepts === 'points' ? 'points only' : 'cash gas-share only'}${r.auto_accept ? ' &middot; accepts riders automatically' : ''}</p>
+        <p class="mut">${r.max_pickups === 1 ? 'One pickup only' : 'Up to ' + r.max_pickups + ' pickups'} &middot; max ${r.max_total_detour != null && r.max_total_detour !== r.max_detour ? r.max_total_detour : r.max_detour} extra min for the whole trip${r.max_pickups > 1 && r.max_total_detour != null && r.max_total_detour !== r.max_detour ? ' (up to ' + r.max_detour + ' for one rider)' : ''} &middot; accepts ${r.accepts === 'either' ? 'points or cash' : r.accepts === 'points' ? 'points only' : 'cash gas-share only'}${r.auto_accept ? ' &middot; accepts riders automatically' : ''}</p>
         <div style="margin-top:10px"><button class="btn" id="lt-confirm">${upd ? 'Confirm and update' : 'Confirm and post'}</button> <button class="btn ghost" id="lt-back">Back</button></div>`);
     }
     if (myTrip && !editing.trip) return '';

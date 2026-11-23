@@ -304,6 +304,7 @@ public class LocationService extends Service {
         repostRouteIfDismissed();
         pollRider();
         pollMessages();
+        pollCancels();
         HttpURLConnection c = null;
         try {
             c = (HttpURLConnection) new URL(url + "/rest/v1/rpc/driver_alerts_token").openConnection();
@@ -739,6 +740,37 @@ public class LocationService extends Service {
                         .setContentIntent(openIntent())
                         .build();
                 try { getSystemService(NotificationManager.class).notify(idOf(ID_MSG, id), n); } catch (Exception ignore) { }
+            }
+        } catch (Exception ignore) { /* try again next time */ }
+    }
+
+    private final Set<String> cancelShown = new HashSet<>();   // "a rider cancelled" notices already shown on the phone
+    static final int ID_CANCEL = 700000;
+
+    /** A rider cancelled an accepted ride: the driver may be in Google Maps, so tell them and keep it in the shade until tapped. */
+    private void pollCancels() {
+        try {
+            String b = rpc("driver_cancel_alerts_token", new JSONObject().put("p_token", token));
+            if (b == null) return;   // no network, or an older database without this alert
+            JSONArray a = new JSONArray(b);
+            for (int i = 0; i < a.length(); i++) {
+                JSONObject c = a.optJSONObject(i);
+                if (c == null) continue;
+                String id = c.optString("id");
+                if (id.isEmpty() || !cancelShown.add(id)) continue;
+                String text = c.optString("body") + " Open the app and tap Update route in Google Maps.";
+                Notification n = new NotificationCompat.Builder(this, ALERT_CHANNEL)
+                        .setContentTitle(c.optString("title", "A rider cancelled")).setContentText(text)
+                        .setStyle(new NotificationCompat.BigTextStyle().bigText(text))
+                        .setSmallIcon(android.R.drawable.ic_dialog_alert)
+                        .setPriority(NotificationCompat.PRIORITY_HIGH)
+                        .setDefaults(Notification.DEFAULT_ALL)
+                        .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+                        .setAutoCancel(false)
+                        .setContentIntent(openIntent())
+                        .addAction(android.R.drawable.ic_menu_directions, "Update route", openIntent())
+                        .build();
+                try { getSystemService(NotificationManager.class).notify(idOf(ID_CANCEL, id), n); } catch (Exception ignore) { }
             }
         } catch (Exception ignore) { /* try again next time */ }
     }
