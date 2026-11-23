@@ -57,6 +57,7 @@ Open https://supabase.com/dashboard/project/iivhfapvkseeomxtsrxf/sql/new, paste 
 | `supabase/migrations/078_late_time_takes_effect.sql` | A late driver's new pickup time takes effect right away (rider can OK or cancel for free if 3+ min later); needs 063, 072; new Android app for the phone alert | Done |
 | `supabase/migrations/079_cancel_notice_details.sql` | "A rider cancelled" notices now say the pickup time, place and how long before pickup, so two cancels never look the same; needs 053 | **To run** |
 | `supabase/migrations/080_driver_cancel_phone_alert.sql` | The phone helper shows "A rider cancelled" while the driver is in Google Maps (stays in the shade, "Update route" button opens the app); needs 053 and 079 | **To run** |
+| `supabase/migrations/081_measure_from_live_position.sql` | Once a driver is on the road, new riders are measured from the car's live position, and no new rider is shown or taken without a position under 2 minutes old; needs 042 | **To run** |
 | `supabase/migrations/077_test_riders_follow_rules.sql` | Made-up (sample) test riders only send a request if it fits the trip by the same rules as a real rider (needs 042) | **To run** |
 | `supabase/migrations/076_alerts_skip_full_trips.sql` | The phone alert for a seat request is skipped when the trip is already full (needs 048) | **To run** |
 | `supabase/migrations/075_supersede_proposal_notices.sql` | A new pickup-time proposal replaces the older unread notices for that ride, and answering clears it (needs 053 and 063) | Ran |
