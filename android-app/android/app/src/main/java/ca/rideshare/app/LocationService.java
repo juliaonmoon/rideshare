@@ -578,7 +578,7 @@ public class LocationService extends Service {
             now.add(nid);
             Notification n = new NotificationCompat.Builder(this, STEPS_CHANNEL)
                     .setContentTitle(picked ? "Drop off " + name : "Pick up " + name)
-                    .setContentText(picked ? r.optString("dropoff_name") : r.optString("pickup_name") + (r.optString("meet_note", "").isEmpty() ? "" : " - " + r.optString("meet_note")))
+                    .setContentText(picked ? r.optString("dropoff_name") : r.optString("pickup_name") + (sOpt(r, "meet_note").isEmpty() ? "" : " - " + sOpt(r, "meet_note")))
                     .setSmallIcon(android.R.drawable.ic_menu_directions)
                     .setPriority(NotificationCompat.PRIORITY_LOW)
                     .setOnlyAlertOnce(true)
@@ -616,7 +616,7 @@ public class LocationService extends Service {
                 }
             } else if (r.optBoolean("pickup_exact", false) && !r.isNull("pickup_lat")
                     && meters(loc.getLatitude(), loc.getLongitude(), r.optDouble("pickup_lat"), r.optDouble("pickup_lng")) <= ARRIVE_M && dueAlert("pick:" + id, now)) {
-                headsUp(id, "At " + name + "'s pickup", "Tap when " + name + " is in the car." + (r.optString("meet_note", "").isEmpty() ? "" : " Meeting spot: " + r.optString("meet_note")), "picked_up", "Picked up " + name, name);
+                headsUp(id, "At " + name + "'s pickup", "Tap when " + name + " is in the car." + (sOpt(r, "meet_note").isEmpty() ? "" : " Meeting spot: " + sOpt(r, "meet_note")), "picked_up", "Picked up " + name, name);
             }
         }
         autoEnd(loc);
@@ -852,7 +852,7 @@ public class LocationService extends Service {
     }
 
     private void notifyRider(JSONObject r, String stage) {
-        String id = r.optString("id"), who = r.optString("driver_name", "Your driver"), car = r.optString("car", ""), note = r.optString("meet_note", "");
+        String id = r.optString("id"), who = r.optString("driver_name", "Your driver"), car = sOpt(r, "car"), note = sOpt(r, "meet_note");
         String title, text;
         if ("arrived".equals(stage)) {
             title = who + " has arrived";
@@ -879,10 +879,13 @@ public class LocationService extends Service {
     /** Android keeps a pop-up on screen for only a few seconds, so while the car is at a stop and the button has not been tapped,
      *  pop it up again every 10 seconds (at most 90 times, about 15 minutes). The button also stays in the notification list the whole time. */
     private final java.util.Map<String, long[]> alertTimes = new java.util.HashMap<>();   // key -> { last time, times shown }
+    /** A text from the server that may be JSON null: org.json would turn null into the word "null". */
+    private static String sOpt(JSONObject o, String k) { return o == null || o.isNull(k) ? "" : o.optString(k, ""); }
+
     private boolean dueAlert(String key, long now) {
         long[] a = alertTimes.get(key);
         if (a == null) { alertTimes.put(key, new long[]{now, 1}); return true; }
-        if (a[1] < 90 && now - a[0] >= 10000) { a[0] = now; a[1]++; return true; }
+        if (a[1] < 3 && now - a[0] >= 60000) { a[0] = now; a[1]++; return true; }   // at most 3 pop-ups, a minute apart
         return false;
     }
 
