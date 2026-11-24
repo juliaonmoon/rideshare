@@ -747,10 +747,10 @@ public class LocationService extends Service {
     private final Set<String> cancelShown = new HashSet<>();   // "a rider cancelled" notices already shown on the phone
     static final int ID_CANCEL = 700000;
 
-    /** A rider cancelled an accepted ride: the driver may be in Google Maps, so tell them and keep it in the shade until tapped. */
+    /** A rider cancelled, tapped I'm here, or started sharing their location: the driver may be in Google Maps, so tell them and keep it in the shade until tapped. */
     private void pollCancels() {
         try {
-            String b = rpc("driver_cancel_alerts_token", new JSONObject().put("p_token", token));
+            String b = rpc("driver_notice_alerts_token", new JSONObject().put("p_token", token));
             if (b == null) return;   // no network, or an older database without this alert
             JSONArray a = new JSONArray(b);
             for (int i = 0; i < a.length(); i++) {
@@ -758,7 +758,8 @@ public class LocationService extends Service {
                 if (c == null) continue;
                 String id = c.optString("id");
                 if (id.isEmpty() || !cancelShown.add(id)) continue;
-                String text = c.optString("body") + " Open the app and tap Update route in Google Maps.";
+                boolean cancel = "ride_cancelled_by_rider".equals(c.optString("kind", "ride_cancelled_by_rider"));
+                String text = c.optString("body") + (cancel ? " Open the app and tap Update route in Google Maps." : "");
                 Notification n = new NotificationCompat.Builder(this, ALERT_CHANNEL)
                         .setContentTitle(c.optString("title", "A rider cancelled")).setContentText(text)
                         .setStyle(new NotificationCompat.BigTextStyle().bigText(text))
@@ -768,7 +769,7 @@ public class LocationService extends Service {
                         .setCategory(NotificationCompat.CATEGORY_MESSAGE)
                         .setAutoCancel(false)
                         .setContentIntent(openIntent())
-                        .addAction(android.R.drawable.ic_menu_directions, "Update route", openIntent())
+                        .addAction(android.R.drawable.ic_menu_directions, cancel ? "Update route" : "Open", openIntent())
                         .build();
                 try { getSystemService(NotificationManager.class).notify(idOf(ID_CANCEL, id), n); } catch (Exception ignore) { }
             }
