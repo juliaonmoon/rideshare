@@ -87,3 +87,9 @@ Newest decisions first. Nothing here is being built. Jules decides what moves up
 - Phone push for the 'driver about N min late' heads-up with Keep / Cancel buttons (LocationService.java notifyLate, rider_alerts_token in migration 035). The in-app heads-up works while the app is open.
 - Real-phone test of the route reset (accept a test rider, start the trip, cancel as the rider, confirm the alert and Maps).
 - Legal: after the detour starts a late-cancelling rider's driver keeps ALL the points (Jules' decision 2026-11-09). Ask the lawyer whether that still counts as cost sharing (question 2 above).
+
+## Late driver: tell every rider, show old and new time (Jules, 2026-11-25)
+- Idea: when a driver says "Running late", every rider on the trip is told, and each pickup time changes right away, whether or not the rider taps OK. The driver can't make the old time anyway.
+- Already true today (migration 078): the new pickup time takes effect at once, and a rider can tap OK or cancel free if it is 3+ min later.
+- Still to do: show the original time and the new time together (for example "2:02 am, now 2:12 am") on both the driver's and the rider's screens. Claude's pick: show both, with the new time bold.
+- Also check: the driver's "late" notice should reach riders who have not yet been picked up, not only the one whose time was changed.
