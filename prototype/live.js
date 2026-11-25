@@ -815,7 +815,11 @@
       if (s.type === 'pickup') return 'Pick up <b>' + esc(s.rider.name) + '</b>' + (q ? '<div>' + placeTxt(q, 'pickup') + mapLink(s.loc) + '</div>' : '') + meet;
       return 'Drop off <b>' + esc(s.rider.name) + '</b>' + (q ? '<div>' + placeTxt(q, 'dropoff') + mapLink(s.loc) + '</div>' : '');
     };
-    const rows = ev.timeline.map((t, i) => '<div style="display:flex;gap:10px;padding:8px 0;border-top:1px solid var(--line)"><span style="flex:none;width:24px;height:24px;border-radius:50%;background:var(--acc);color:#fff;font-weight:700;font-size:13px;display:inline-flex;align-items:center;justify-content:center">' + (i + 1) + '</span><b style="min-width:76px;white-space:nowrap">' + (i === 0 ? clk(dr.departMin) : clk(t.arrive)) + '</b><span>' + label(t.stop) + '</span></div>').join('');
+    // A rider's agreed pickup time (including a late driver's new time) wins over the computed arrival; later stops shift by the same wait.
+    let planShift = 0;
+    const rows = ev.timeline.map((t, i) => { const px = t.stop && t.stop.type === 'pickup' && t.stop.rider ? acc.find((m) => m.request_id === t.stop.rider.id) : null, pms = px ? pickupMs(px) : null;
+      if (i > 0 && pms != null) planShift = Math.max(planShift, (pms - RSD.vanEpoch(px.ride_date, 0)) / 60000 - t.arrive);
+      return { t, i, shown: i === 0 ? dr.departMin : t.arrive + planShift }; }).map(({ t, i, shown }) => '<div style="display:flex;gap:10px;padding:8px 0;border-top:1px solid var(--line)"><span style="flex:none;width:24px;height:24px;border-radius:50%;background:var(--acc);color:#fff;font-weight:700;font-size:13px;display:inline-flex;align-items:center;justify-content:center">' + (i + 1) + '</span><b style="min-width:76px;white-space:nowrap">' + clk(shown) + '</b><span>' + label(t.stop) + '</span></div>').join('');
     const extra = Math.max(0, Math.round(ev.totalMin - direct));
     // One big button at a time, in order: Start trip, then Picked up (per rider, in route order), then Dropped off. Same actions as the phone notification.
     let tripOnId = ''; try { tripOnId = localStorage.getItem('rs_trip_on') || ''; } catch (e) { /* storage blocked */ }
